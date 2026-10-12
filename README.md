@@ -32,7 +32,7 @@
 
 ## 本地开发
 
-需要 Node.js 22+ 和 Docker。复制环境配置，并设置高强度随机 `SESSION_SECRET`。
+推荐 Node.js 24 LTS；Docker 仅用于以下开发数据库示例，不是运行应用的前提。复制环境配置，并设置高强度随机 `SESSION_SECRET`。
 
 ```bash
 cp .env.example .env
@@ -46,6 +46,10 @@ npm run dev:api
 
 默认不开启模型；如需向外部模型发送项目聊天，需先配置服务端 `OPENAI_API_KEY`，再由项目负责人显式启用。请先确认组织的数据处理要求。未启用时仍可手动创建任务、发送聊天和生成报告。
 
+## 跨平台构建与部署
+
+支持同一份源码分别构建 Windows/Linux 原生 Node.js 服务及完整 Docker Compose 示例：`npm run build`、`npm run db:migrate:prod`、`npm run start:api`、`npm run start:worker`、`npm run start:web`。Windows/Linux 可直接安装 PostgreSQL，无需 Docker；浏览器统一请求同源 `/api`。详见 [部署指南](docs/installation/README.md) 与 [中文安装步骤](docs/community/zh/development.md)。**目前仅提供部署入口和 CI 构建验证，未完成生产实机安全验收。**
+
 ## 本地演示路线
 
 1. 注册账号并创建团队/项目，邀请已注册的成员。
@@ -54,7 +58,7 @@ npm run dev:api
 4. 由负责人审批候选、确认任务负责人和期限，配置工作时间与提醒冷却。
 5. 在「报告」中生成并审核当前项目状态的周/月报草稿。
 
-此演示需要真实的本地运行环境；尚无公开在线 Demo 或完整生产镜像。
+此演示需要真实的本地运行环境；尚无公开在线 Demo；仓库提供完整 Compose 的本机构建方案，但尚未发布经过生产验收的正式镜像。
 
 ## 验证
 

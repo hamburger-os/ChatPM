@@ -9,7 +9,7 @@ RUN npm prune --omit=dev
 FROM node:24-bookworm-slim
 WORKDIR /app
 ENV NODE_ENV=production
-COPY --from=build /app /app
+COPY --chown=node:node --from=build /app /app
 USER node
 EXPOSE 3000 3001
 CMD ["npm","run","start:web"]

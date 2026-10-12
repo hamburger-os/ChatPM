@@ -19,7 +19,7 @@
 | 附件（规划） | S3 兼容对象存储 | 原始附件独立于业务表；当前未交付 |
 | 知识检索（规划） | PostgreSQL 全文检索优先，pgvector 按效果引入 | 当前未交付，不把向量相似度当事实 |
 | AI | 单一编排器 + Provider 接口 | 避免锁定模型及多 Agent 复杂性 |
-| 部署 | Docker Compose 开发，后续按规模迁移 | 控制初期运维成本 |
+| 部署 | 同一编译核心 + Docker Compose / Windows / Linux | 不锁定部署工具；使用统一配置、迁移和 HTTP 契约 |
 
 ## 领域边界
 Identity/Tenancy、Projects、Conversations、Work、Risk/Decision、AI Orchestration、Automation、Knowledge、Reporting、Integrations、Audit。每个模块拥有数据写入权，跨模块通过明确服务契约调用。所有入口依赖同一鉴权与审计体系。
@@ -38,3 +38,5 @@ Identity/Tenancy、Projects、Conversations、Work、Risk/Decision、AI Orchestr
 目前 API、Web、Worker 分进程运行，PostgreSQL 是唯一正式项目事实来源；Worker 直接轮询事务型 Outbox 和跟进计划，不依赖 Redis/BullMQ。聊天使用 HTTP 轮询。所有外部 AI 请求需要项目负责人开启。
 
 目标为共用产品核心的官方 SaaS 与自部署，云端与本地模型通过适配器接入。只有在实测需求充分时才增加其他分布式组件，避免建立无使用依据的兼容层。
+
+详见 [部署架构和跨平台运行契约](deployment.md)，完整生产安全验收仍未完成。

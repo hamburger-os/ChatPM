@@ -141,10 +141,11 @@ async function processReports() {
     if(!page.rows.length)break;
     for(const p of page.rows){
       const time=localClock(new Date(),p.timezone);
-      if(time.hour!==9)continue;
+      // Catch up within the current reporting period after downtime.
+      // Never fabricate snapshots for past periods we can no longer observe.
       const dt=new Date(time.date+'T12:00:00Z');
-      const weekly=dt.getUTCDay()===1;
-      const monthly=dt.getUTCDate()===1;
+      const weekly=dt.getUTCDay()!==1 || time.hour>=9;
+      const monthly=dt.getUTCDate()!==1 || time.hour>=9;
       if(!weekly&&!monthly)continue;
       await transaction(async db=>{
         if(weekly)await generateScheduledReport(db,p.id,'week');
@@ -156,25 +157,38 @@ async function processReports() {
 }
 
 let busy=false;
-let lastReportScanMinute=-1;
+let lastReportScanSlot=-1;
 async function tick() {
   if(busy)return;
   busy=true;
   try {
     await processEvents();
     await processReminders();
-    // One scan per minute per Worker, with DB locks guarding multiple replicas.
-    const minute=Math.floor(Date.now()/60000);
-    if(lastReportScanMinute!==minute){
+    // Bounded catch-up scan once per 5-minute slot; DB lock prevents duplicates.
+    const slot=Math.floor(Date.now()/300000);
+    if(lastReportScanSlot!==slot){
       await processReports();
-      lastReportScanMinute=minute;
+      lastReportScanSlot=slot;
     }
   }
   catch(e) { console.error('Worker tick failed',e instanceof Error?e.message:e); }
   finally {busy=false;}
 }
 console.log('ChatPM worker started: reliable outbox, reminders and report drafts.');
-await tick();
-setInterval(()=>void tick(),15000);
-process.once('SIGTERM',()=>{void pool.end().then(()=>process.exit(0));});
-process.once('SIGINT',()=>{void pool.end().then(()=>process.exit(0));});
+let activeTick:Promise<void>|null=null;
+let stopping=false;
+function scheduleTick(){
+  if(stopping || activeTick)return;
+  activeTick=tick().finally(()=>{activeTick=null;});
+}
+const timer=setInterval(scheduleTick,15000);
+async function shutdown(){
+  if(stopping)return;
+  stopping=true;
+  clearInterval(timer);
+  if(activeTick)await activeTick;
+  await pool.end();
+}
+process.once('SIGTERM',()=>{void shutdown().catch(e=>{console.error('Shutdown failed',e);process.exitCode=1;});});
+process.once('SIGINT',()=>{void shutdown().catch(e=>{console.error('Shutdown failed',e);process.exitCode=1;});});
+scheduleTick();

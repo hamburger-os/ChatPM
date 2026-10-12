@@ -33,3 +33,12 @@
 - 业务关系必须在数据库中保证项目归属一致；不能只依靠 AI 输出或路由校验。
 - 未在工作时间内成功投递的提醒不消耗冷却间隔，下一次检查必须在最近合法工作窗口。
 - 不识别的 Outbox 事件类型不允许静默确认完成；应走明确失败和隔离路径。
+
+## 跨平台部署实现约束
+
+- API 和 Worker 使用 TypeScript 编译后的 JS 运行，SQL migration 随构建产物一起交付；不能依赖开发态 tsx watch。
+- Web 浏览器固定使用同源 `/api`；服务器内部 `API_INTERNAL_URL` 是可信配置而非客户端参数。转发身份 Cookie、Origin，不转发任意上游 URL。
+- 生产配置启动时校验，必须提供数据库配置和非示例 SESSION_SECRET；公网须 HTTPS。
+- Windows / Linux 原生服务、Docker Compose 必须运行相同数据库迁移及业务代码。升级先备份、迁移后启动。
+- Worker 只补偿本周和本月当前状态报告，不虚构停机期间已过的周期快照；停止信号等待当前 tick 结束。
+- 跨平台编译和测试不等于 Windows Service、TLS 或数据库恢复的实际验收。
