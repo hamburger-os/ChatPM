@@ -18,6 +18,10 @@ async function runAnalysis(event:EventRow) {
   if(!msg || msg.kind!=='user'||!msg.ai_enabled) return;
   if(await processClarification({id:event.message_id,projectId:event.project_id,
     content:msg.content,projectName:msg.name}))return;
+  const existing=await pool.query(
+    'SELECT 1 FROM proposed_changes WHERE project_id=$1 AND source_message_id=$2 LIMIT 1',
+    [event.project_id,event.message_id]);
+  if(existing.rowCount)return; // A retried event must not bill the model twice for stored proposals.
   const output=await new OpenAIProvider(event.project_id).extractCandidates(msg.name,msg.content);
   const suggestions=output.value;
   if(!suggestions.length)return;
