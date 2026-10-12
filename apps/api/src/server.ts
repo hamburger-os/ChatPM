@@ -34,11 +34,12 @@ app.addHook('onRequest', async (req) => {
   }
 });
 app.setErrorHandler((err, _req, reply) => {
-  let code = (err as { statusCode?:number }).statusCode || 500;
+  const error=err as Error & {statusCode?:number,code?:string};
+  let code=error.statusCode||500;
   if (err instanceof ZodError) code=400;
-  if ('code' in err && err.code === '23505') code=409;
-  if (code >= 500) app.log.error(err);
-  reply.code(code).send({ error: code>=500?'Internal server error':err.message });
+  if (error.code==='23505') code=409;
+  if (code>=500) app.log.error(err);
+  reply.code(code).send({error:code>=500?'Internal server error':error.message});
 });
 
 async function authenticated(req: { cookies: Record<string,string|undefined>, headers: {authorization?:string} }) {
