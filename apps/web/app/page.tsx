@@ -94,7 +94,7 @@ export default function Home(){
     if(!selected)return;
     const id=selected;
     activeProject.current=id;cursor.current=0;
-    setMessages([]);setTasks([]);setProposals([]);setReports([]);
+    setMessages([]);setTasks([]);setProposals([]);setReports([]);setFailedEvents([]);
     const update=()=>void refresh(id).catch(e=>setNotice(e.message));
     update();
     const timer=setInterval(update,5000);
@@ -201,7 +201,7 @@ export default function Home(){
   }
   async function loadDeadEvents(projectId:string){
     const data=await request<{events:FailedEvent[]}>('/projects/'+projectId+'/outbox/dead');
-    setFailedEvents(data.events);
+    if(activeProject.current===projectId)setFailedEvents(data.events);
   }
   async function retryEvent(eventId:string){
     if(!selected)return;
