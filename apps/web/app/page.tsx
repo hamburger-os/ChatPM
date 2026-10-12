@@ -9,10 +9,13 @@ type Message={id:string,seq:number,kind:string,content:string,author:string|null
 type Task={id:string,title:string,status:string,version:number,assignee_id:string|null,
   assignee:string|null,due_at:string|null};
 type Proposal={id:string,kind:'task'|'risk',title:string,detail:string,assignee_hint:string|null,
-  due_at:string|null,status:string,confidence:string};
+  due_at:string|null,status:string,confidence:string,
+  clarified_assignee_hint:string|null,clarified_due_at:string|null,
+  clarification_status:string|null,evidence_text:string,model_name:string};
 type Report={id:string,kind:'week'|'month',period_key:string,content:string,
   state:'draft'|'published'};
 type Risk={id:string,title:string,status:string};
+type FailedEvent={id:string,kind:string,attempts:number,last_error_code:string,dead_at:string};
 const API=process.env.NEXT_PUBLIC_API_URL||'http://localhost:3001';
 
 function browserLocalDateTime(iso:string|null):string {
@@ -40,6 +43,7 @@ export default function Home(){
   const [members,setMembers]=useState<Member[]>([]),[messages,setMessages]=useState<Message[]>([]);
   const [tasks,setTasks]=useState<Task[]>([]),[proposals,setProposals]=useState<Proposal[]>([]);
   const [reports,setReports]=useState<Report[]>([]),[risks,setRisks]=useState<Risk[]>([]);
+  const [failedEvents,setFailedEvents]=useState<FailedEvent[]>([]);
   const [chat,setChat]=useState(''),[newProject,setNewProject]=useState(''),
     [newTask,setNewTask]=useState(''),[invite,setInvite]=useState('');
   const [newTaskOwner,setNewTaskOwner]=useState(''),[newTaskDue,setNewTaskDue]=useState('');
@@ -192,6 +196,18 @@ export default function Home(){
       setInvite('');await refresh(selected);
     });
   }
+  async function loadDeadEvents(projectId:string){
+    const data=await request<{events:FailedEvent[]}>('/projects/'+projectId+'/outbox/dead');
+    setFailedEvents(data.events);
+  }
+  async function retryEvent(eventId:string){
+    if(!selected)return;
+    await action(async()=>{
+      await request('/projects/'+selected+'/outbox/'+eventId+'/retry',{method:'POST'});
+      await loadDeadEvents(selected);
+      setNotice('事件已重新排队');
+    });
+  }
   async function publish(report:Report){
     if(!selected)return;
     await action(async()=>{
@@ -267,7 +283,8 @@ export default function Home(){
     <aside className="details">
       <div className="tabs">
         {(['tasks','proposals','reports','settings'] as const).map(t=>
-          <button key={t} className={tab===t?'active':''} onClick={()=>setTab(t)}>
+          <button key={t} className={tab===t?'active':''} onClick={()=>{setTab(t);if(t==='settings'&&selected&&current?.role==='owner')
+            void loadDeadEvents(selected).catch(e=>setNotice(e.message));}}>
             {({tasks:'任务',proposals:'AI 待确认',reports:'汇报',settings:'设置'})[t]}
           </button>)}
       </div>
@@ -327,7 +344,12 @@ export default function Home(){
           {proposals.filter(p=>p.status==='pending').map(p=><article className="item" key={p.id}>
             <small className="pill">{p.kind==='task'?'候选任务':'候选风险'}</small>
             <h4>{p.title}</h4><p>{p.detail}</p>
-            <small>{p.assignee_hint||'负责人待确认'} · {p.due_at||'时间待确认'}</small>
+            <small>候选引用：【候选:{p.id}】</small>
+            <small>原始线索：{p.assignee_hint||'负责人待确认'} · {p.due_at||'时间待确认'}</small>
+            {p.clarification_status==='answered'&&<small>回复补充：{p.clarified_assignee_hint||'无负责人线索'} ·
+              {p.clarified_due_at||'未提供明确期限'}（仍需负责人审核）</small>}
+            {p.evidence_text&&<small>消息证据：{p.evidence_text.slice(0,240)}</small>}
+            <small>模型：{p.model_name||'未知'}</small>
             {current?.role==='owner'&&p.kind==='task'&&
               <select aria-label={'候选负责人：'+p.title} value={proposalOwners[p.id]||''}
                 onChange={e=>setProposalOwners(x=>({...x,[p.id]:e.target.value}))}>
@@ -380,6 +402,15 @@ export default function Home(){
             </div>
             <p className="hint">请完整填写时间策略才会启动自动催办。周末静默，时间以项目时区计。</p>
             <button onClick={()=>void saveSettings()} disabled={working}>保存设置</button>
+            <h3>待处理的后台失败事件 <span className="count">{failedEvents.length}</span></h3>
+            <p className="hint">仅项目负责人可查看和重放隔离事件。重放会重新执行原操作，并保留审计记录。</p>
+            {failedEvents.map(e=><article className="item" key={e.id}>
+              <strong>{e.kind}</strong>
+              <small>失败代码：{e.last_error_code||'UNKNOWN'} · 尝试 {e.attempts} 次</small>
+              <small>{new Date(e.dead_at).toLocaleString('zh-CN')}</small>
+              <button disabled={working} onClick={()=>void retryEvent(e.id)}>安全重试</button>
+            </article>)}
+            {!failedEvents.length&&<p className="hint">目前没有隔离的失败事件。</p>
           </>}
         </>}
       </div>}
