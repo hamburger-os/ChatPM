@@ -62,7 +62,7 @@ export function main(argv = process.argv.slice(2)) {
   let fd;
   let saved = false;
   try {
-    fd = openSync(temporary, 'wx', 0o600);
+    fd = openSync(temporary, 'wx+', 0o600);
     const command = options.docker ? 'docker' : 'pg_dump';
     const pgArgs = ['--format=custom', '--no-owner', '--no-privileges'];
     const cmdArgs = options.docker
