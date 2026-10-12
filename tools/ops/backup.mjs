@@ -65,8 +65,11 @@ export function main(argv = process.argv.slice(2)) {
     fd = openSync(temporary, 'wx+', 0o600);
     const command = options.docker ? 'docker' : 'pg_dump';
     const pgArgs = ['--format=custom', '--no-owner', '--no-privileges'];
+    const dockerEnvFile = resolve(root, '.env');
     const cmdArgs = options.docker
-      ? ['compose', '-f', 'infra/compose.prod.yml', 'exec', '-T', 'postgres',
+      ? ['compose', '-p', 'chatpm',
+          ...(existsSync(dockerEnvFile) ? ['--env-file', dockerEnvFile] : []),
+          '-f', 'infra/compose.prod.yml', 'exec', '-T', 'postgres',
           'pg_dump', '-U', 'chatpm', '-d', 'chatpm', ...pgArgs]
       : pgArgs;
     const outcome = spawnSync(command, cmdArgs, {
