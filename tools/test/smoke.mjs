@@ -186,6 +186,11 @@ try{
     [pid])).rows[0];
   const memberDead=await api('/projects/'+pid+'/outbox/dead',{cookie:cookieB});
   assert.equal(memberDead.status,403,'Only owner can read dead-letter details');
+  const memberSummary=await api('/projects/'+pid+'/outbox/summary',{cookie:cookieB});
+  assert.equal(memberSummary.status,403);
+  const ownerSummary=await api('/projects/'+pid+'/outbox/summary');
+  assert.equal(ownerSummary.status,200);
+  assert.ok(ownerSummary.data.summary.dead>=1);
   const ownerDead=await api('/projects/'+pid+'/outbox/dead');
   assert.ok(ownerDead.data.events.some(x=>x.id===dead.id));
   const memberRetry=await api('/projects/'+pid+'/outbox/'+dead.id+'/retry',{
