@@ -2,6 +2,7 @@
 ALTER TABLE outbox_events
   ADD COLUMN next_attempt_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   ADD COLUMN dead_at TIMESTAMPTZ,
+  ADD COLUMN claim_token UUID,
   ADD COLUMN last_error_code TEXT;
 CREATE INDEX idx_outbox_due ON outbox_events(next_attempt_at,created_at)
   WHERE processed_at IS NULL AND dead_at IS NULL;
