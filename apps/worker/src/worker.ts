@@ -1,7 +1,7 @@
 import 'dotenv/config';
 import { pool, transaction, audit } from '../../../packages/core/src/db.ts';
 import { canSendReminder, localClock } from '../../../packages/core/src/policy.ts';
-import { generateReport } from '../../../packages/core/src/reports.ts';
+import { generateScheduledReport } from '../../../packages/core/src/reports.ts';
 import { insertMessage } from '../../../packages/core/src/messages.ts';
 import { OpenAIProvider } from '../../../packages/core/src/ai-provider.ts';
 import { processClarification } from '../../../packages/core/src/clarification.ts';
@@ -126,27 +126,45 @@ async function processReminders() {
   });
 }
 async function processReports() {
-  const {rows:projects}=await pool.query(
-    'SELECT id,timezone FROM projects ORDER BY created_at DESC LIMIT 1000');
-  for (const p of projects) {
-    const time=localClock(new Date(),p.timezone);
-    if(time.hour!==9) continue;
-    const dt=new Date(time.date+'T12:00:00Z');
-    const weekly=dt.getUTCDay()===1;
-    const monthly=dt.getUTCDate()===1;
-    if(!weekly&&!monthly)continue;
-    await transaction(async db=>{
-      if(weekly) await generateReport(db,p.id,'week',null);
-      if(monthly) await generateReport(db,p.id,'month',null);
-    });
+  // Keyset pagination avoids permanently starving projects beyond the first 1000.
+  let cursor:string|null=null;
+  while(true){
+    const result=await pool.query(
+      `SELECT id,timezone FROM projects
+       WHERE ($1::uuid IS NULL OR id > $1::uuid)
+       ORDER BY id LIMIT 250`,[cursor]);
+    if(!result.rows.length)break;
+    for(const p of result.rows as {id:string;timezone:string}[]){
+      const time=localClock(new Date(),p.timezone);
+      if(time.hour!==9)continue;
+      const dt=new Date(time.date+'T12:00:00Z');
+      const weekly=dt.getUTCDay()===1;
+      const monthly=dt.getUTCDate()===1;
+      if(!weekly&&!monthly)continue;
+      await transaction(async db=>{
+        if(weekly)await generateScheduledReport(db,p.id,'week');
+        if(monthly)await generateScheduledReport(db,p.id,'month');
+      });
+    }
+    cursor=result.rows[result.rows.length-1].id;
   }
 }
 
 let busy=false;
+let lastReportScanMinute=-1;
 async function tick() {
   if(busy)return;
   busy=true;
-  try { await processEvents();await processReminders();await processReports(); }
+  try {
+    await processEvents();
+    await processReminders();
+    // One scan per minute per Worker, with DB locks guarding multiple replicas.
+    const minute=Math.floor(Date.now()/60000);
+    if(lastReportScanMinute!==minute){
+      await processReports();
+      lastReportScanMinute=minute;
+    }
+  }
   catch(e) { console.error('Worker tick failed',e instanceof Error?e.message:e); }
   finally {busy=false;}
 }
