@@ -55,11 +55,11 @@ Worker 只在项目时区符合计划时创建本期周/月报一次；不会每
 
 ### 不使用 Docker 的 Linux 安装
 
-1. 安装 Node.js 24、PostgreSQL 17（本机或远端）、PostgreSQL 客户端工具；创建独立系统用户 `chatpm`。
-2. 将源码安装在 `/opt/chatpm`；配置好数据库及运行环境后运行 `npm run setup:native`（已包含迁移）。
-3. 设置 `/etc/chatpm/chatpm.env`（仅服务账户可读），至少提供生产 NODE_ENV、DATABASE_URL、随机 SESSION_SECRET、WEB_ORIGIN、API_HOST=127.0.0.1。首次运行迁移时应从正确的环境文件导入变量；不要仅因存在 `/etc/chatpm/chatpm.env` 就假设 `npm run setup:native` 会自动读取它。
-4. 复制 `infra/linux/*.service` 至 `/etc/systemd/system/`，按实际 Node 路径调整 `ExecStart`，执行 `sudo systemctl daemon-reload && sudo systemctl enable --now chatpm-api chatpm-worker chatpm-web`。
-5. 通过 `infra/proxy/Caddyfile` 配置公网域名和 HTTPS；不要直接向互联网暴露 API/数据库端口。部署路径及文件权限应允许 ChatPM 账户读取构建产物且只写必要的 Next 缓存。
+1. 安装 Node.js 24、PostgreSQL 17（本机或远端）及客户端工具，并创建数据库、数据库角色和独立系统用户 `chatpm`。
+2. 将源码放在 `/opt/chatpm`，在仓库根目录从 `.env.example` 复制 `.env`；设置 `NODE_ENV=production`、`DATABASE_URL`、随机 `SESSION_SECRET`、`WEB_ORIGIN`、`API_HOST=127.0.0.1`，并确保 `.env` 只允许 `chatpm` 用户读取（建议 `chmod 600`）。开发模板的示例数据库密码不得用于正式环境。
+3. 在 `/opt/chatpm` 使用拥有必要文件与数据库权限的账户执行 `npm run setup:native`。该命令依次安装依赖、构建、检查、迁移；systemd 也读取同一份 `/opt/chatpm/.env`，避免手动维护第二份配置。
+4. 复制 `infra/linux/*.service` 至 `/etc/systemd/system/`，按实际 Node 路径调整 `ExecStart`，执行 `sudo systemctl daemon-reload && sudo systemctl enable --now chatpm-api chatpm-worker chatpm-web`。使用 `systemctl status chatpm-api chatpm-worker chatpm-web` 查看状态。
+5. 通过 `infra/proxy/Caddyfile` 配置公网域名和 HTTPS；不要直接向互联网暴露 API/数据库端口。部署路径和 `.next` 缓存权限应符合 systemd 文件保护策略。
 
 ### 一键 Docker Compose 自部署
 
