@@ -1,8 +1,9 @@
+# ChatPM — 开源 AI 项目经理
+
 <p align="center">
   <img src="assets/brand/banner.svg" alt="ChatPM — Turn conversations into accountable progress" width="100%" />
 </p>
 
-# ChatPM — 开源 AI 项目经理
 
 [![Product verification](https://github.com/hamburger-os/ChatPM/actions/workflows/app-quality.yml/badge.svg)](https://github.com/hamburger-os/ChatPM/actions/workflows/app-quality.yml)
 [![Documentation](https://github.com/hamburger-os/ChatPM/actions/workflows/docs-quality.yml/badge.svg)](https://github.com/hamburger-os/ChatPM/actions/workflows/docs-quality.yml)
