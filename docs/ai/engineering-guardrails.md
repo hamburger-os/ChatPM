@@ -51,3 +51,11 @@
 - 原生迁移与编译通过 `npm run setup:native` 统一执行；PostgreSQL 配置必须预先有效，不能在失败后静默创建或删除已有数据库。
 - Linux systemd 三服务统一读取 `/opt/chatpm/.env`，Windows WinSW 使用根目录 `.env`。秘密文件只授权服务运行账户读取；Windows 当前 WinSW 默认 LocalSystem 仍是需要人工加固的风险。
 - CI 覆盖 Docker 配置的秘密生成、重复执行、已有设置保护以及 Windows/Linux Node 入口语法；Docker 服务自启和原生服务实际故障恢复需要另外在目标系统验证。
+
+## 运维健康、备份、恢复的非业务边界（ADR-018）
+
+- 新 SQL `004_worker_health.sql` 创建单行健康状态。Worker 每次完整 tick 后记录存活、最后成功和最后失败时间；维护脚本只读这些遥测和 Outbox，不借此变更正式任务、模型审批或成员权限。
+- `tools/ops/doctor.mjs` 为**本机 CLI**，不向未授权的 Web HTTP 路由开放数据库/队列内部状态；失败用非零退出码连接外部监控。超过 3 分钟无心跳、5 分钟没有成功 tick、积压事件延迟大于 10 分钟或存在死信都为诊断异常，阈值需实测调优。
+- `tools/ops/backup.mjs` 每次使用唯一文件名、独立私有临时文件、成功后原子更名；仅对匹配名称的本工具归档应用保留策略，失败不得删历史备份。custom-format 签名检查不是数据可恢复性证明。
+- Docker `--docker` 使用容器内 `pg_dump`；原生从受限环境读 DB 凭证。系统定时任务使用低权限主体，DB 密码不得出现在任务计划命令或日志中。
+- 数据库迁移保持 checksum 不可更改与单调执行。故障恢复只能在停止在线写入、目标环境隔离和明确确认后进行。CI 不得伪称为 Win11/Linux 服务实机验收或 PITR/加密异地恢复。
