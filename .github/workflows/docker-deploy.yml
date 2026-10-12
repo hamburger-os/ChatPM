@@ -43,6 +43,21 @@ jobs:
           test -n "$archive"
           test "$(head -c 5 "$archive")" = "PGDMP"
           docker compose -f infra/compose.prod.yml exec -T postgres pg_restore --list < "$archive" >/dev/null
+      - name: Verify fresh one-command bootstrap and existing-volume credential protection
+        shell: bash
+        run: |
+          docker compose -f infra/compose.prod.yml down -v --remove-orphans
+          unset POSTGRES_PASSWORD SESSION_SECRET
+          npm run deploy:docker
+          node tools/test/proxy-smoke.mjs
+          cp .env .env.saved
+          sed -i '/^POSTGRES_PASSWORD=/d' .env
+          if npm run deploy:docker >/tmp/chatpm-protect.log 2>&1; then
+            echo 'Credential rotation should have been refused'
+            exit 1
+          fi
+          grep -q 'Recover the original' /tmp/chatpm-protect.log
+          mv .env.saved .env
       - name: Logs on failure
         if: failure()
         run: docker compose -f infra/compose.prod.yml logs --no-color --tail=150
