@@ -38,7 +38,7 @@
 npm run deploy:docker
 ```
 
-命令会在首次运行时创建 `.env`，自动生成独立随机 `POSTGRES_PASSWORD` 与 `SESSION_SECRET`（不覆盖既有非占位配置），并构建、迁移和后台启动全部服务。访问 **http://localhost:3000**。再次执行不会重新生成秘密。使用 `docker compose -f infra/compose.prod.yml ps` 查看状态，`docker compose -f infra/compose.prod.yml down` 停止；不要使用 `down -v`，它会删除数据库卷。
+命令会在首次运行时创建 `.env`，自动生成独立随机 `POSTGRES_PASSWORD` 与 `SESSION_SECRET`（不覆盖既有非占位配置），并构建、迁移和后台启动全部服务。访问 **http://localhost:3000**。再次执行不会重新生成秘密。使用 `docker compose --env-file .env -f infra/compose.prod.yml ps` 查看状态，`docker compose --env-file .env -f infra/compose.prod.yml down` 停止；不要使用 `down -v`，它会删除数据库卷。
 
 开机自启依赖宿主机 **Docker 引擎也随系统启动**；Compose 的服务已经设置 `restart: unless-stopped`。Windows Docker Desktop 通常需要在登录时启动。默认只允许本机访问；公网部署仍需 HTTPS、备份及安全验收。
 
@@ -111,11 +111,11 @@ npm start
 
 ## Docker（可选）
 
-Docker 不是必需组件。上述 `npm run deploy:docker` 提供第一次安装时的配置与秘密初始化；已有安全配置的环境也可直接执行 `docker compose -f infra/compose.prod.yml up -d --build`。开发用 `infra/compose.yml` 只启动 PostgreSQL。
+Docker 不是必需组件。上述 `npm run deploy:docker` 提供第一次安装时的配置与秘密初始化；已有安全配置的环境也可直接执行 `docker compose --env-file .env -f infra/compose.prod.yml up -d --build`。开发用 `infra/compose.yml` 只启动 PostgreSQL。
 
 ## 运维诊断、备份与升级
 
-原生部署可执行 `npm run doctor` 检查 API、数据库、Worker 心跳和积压事件；Docker 可执行 `docker compose -f infra/compose.prod.yml exec -T api node tools/ops/doctor.mjs`。检测异常时返回非零退出码，可由外部监控系统采集。启动后的首个 Worker tick 及迁移完成前不应直接判定为健康。
+原生部署可执行 `npm run doctor` 检查 API、数据库、Worker 心跳和积压事件；Docker 可执行 `docker compose --env-file .env -f infra/compose.prod.yml exec -T api node tools/ops/doctor.mjs`。检测异常时返回非零退出码，可由外部监控系统采集。启动后的首个 Worker tick 及迁移完成前不应直接判定为健康。
 
 - 原生：`npm run backup -- --dir=./backups --keep=14`
 - Docker：`npm run backup:docker -- --dir=./backups --keep=14`
