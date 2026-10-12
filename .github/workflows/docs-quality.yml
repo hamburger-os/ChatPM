@@ -1,0 +1,27 @@
+name: Documentation governance
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  documentation:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Validate structure, links, and bilingual files
+        run: node tools/docs/check-docs.mjs
+      - name: Verify documentation changes in PR
+        if: github.event_name == 'pull_request'
+        run: node tools/docs/check-sync.mjs "origin/$GITHUB_BASE_REF" HEAD
