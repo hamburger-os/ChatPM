@@ -30,3 +30,20 @@ jobs:
       - run: npm run test:ops
       - run: npm run build
       - run: npm run check:distribution
+      - name: Package experimental portable distribution
+        uses: actions/upload-artifact@v4
+        with:
+          name: chatpm-experimental-${{ matrix.os }}
+          include-hidden-files: true
+          retention-days: 14
+          path: |
+            dist/
+            apps/web/.next/
+            apps/web/next.config.ts
+            package.json
+            package-lock.json
+            tools/ops/
+            infra/
+            .env.example
+            README.md
+            LICENSE
