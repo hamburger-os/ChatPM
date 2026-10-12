@@ -1,8 +1,9 @@
 import pg from 'pg';
+import { serverConfig } from './config.ts';
 
 export const pool = new pg.Pool({
-  connectionString: process.env.DATABASE_URL,
-  max: 15,
+  connectionString: serverConfig.DATABASE_URL,
+  max: serverConfig.DB_POOL_MAX,
   connectionTimeoutMillis: 5000,
 });
 export type DbClient = pg.PoolClient;

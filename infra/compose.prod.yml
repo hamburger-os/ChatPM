@@ -1,0 +1,74 @@
+name: chatpm
+x-app: &app
+  build:
+    context: ..
+    dockerfile: infra/docker/Dockerfile
+  image: chatpm:local
+  restart: unless-stopped
+  environment: &app-env
+    NODE_ENV: production
+    PGHOST: postgres
+    PGUSER: chatpm
+    PGDATABASE: chatpm
+    PGPASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
+    SESSION_SECRET: ${SESSION_SECRET:?Set SESSION_SECRET in .env}
+    WEB_ORIGIN: ${WEB_ORIGIN:-http://localhost:3000}
+    DB_POOL_MAX: ${DB_POOL_MAX:-10}
+    OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+    OPENAI_MODEL: ${OPENAI_MODEL:-gpt-4.1-mini}
+  depends_on:
+    migrate:
+      condition: service_completed_successfully
+services:
+  postgres:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: chatpm
+      POSTGRES_USER: chatpm
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U chatpm -d chatpm"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+  migrate:
+    build:
+      context: ..
+      dockerfile: infra/docker/Dockerfile
+    image: chatpm:local
+    restart: "no"
+    command: ["npm","run","db:migrate:prod"]
+    environment: *app-env
+    depends_on:
+      postgres:
+        condition: service_healthy
+  api:
+    <<: *app
+    command: ["npm","run","start:api"]
+    environment:
+      <<: *app-env
+      API_HOST: 0.0.0.0
+      API_PORT: 3001
+    healthcheck:
+      test: ["CMD","node","-e","fetch('http://127.0.0.1:3001/health').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"]
+      interval: 15s
+      timeout: 5s
+      retries: 4
+  worker:
+    <<: *app
+    command: ["npm","run","start:worker"]
+  web:
+    <<: *app
+    environment:
+      <<: *app-env
+      API_INTERNAL_URL: http://api:3001
+    depends_on:
+      api:
+        condition: service_healthy
+    ports:
+      - "127.0.0.1:${CHATPM_PORT:-3000}:3000"
+volumes:
+  postgres_data:

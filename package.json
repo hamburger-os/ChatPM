@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "engines": {
-    "node": ">=22.0.0"
+    "node": ">=22.18.0 <25"
   },
   "scripts": {
     "dev:api": "tsx watch apps/api/src/server.ts",
@@ -14,7 +14,14 @@
     "test": "tsx --test packages/core/test/*.test.ts",
     "typecheck": "tsc --noEmit",
     "build:web": "next build apps/web",
-    "check:docs": "node tools/docs/check-docs.mjs"
+    "check:docs": "node tools/docs/check-docs.mjs",
+    "build:server": "tsc -p tsconfig.server.json && node tools/build/copy-sql.mjs",
+    "build": "npm run build:server && npm run build:web",
+    "db:migrate:prod": "node dist/packages/core/src/migrate.js",
+    "start:api": "node dist/apps/api/src/server.js",
+    "start:worker": "node dist/apps/worker/src/worker.js",
+    "start:web": "next start apps/web -p 3000 -H 0.0.0.0",
+    "check:distribution": "node tools/test/distribution.mjs"
   },
   "dependencies": {
     "@fastify/cookie": "^11.0.0",
