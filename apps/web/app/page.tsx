@@ -16,6 +16,7 @@ type Report={id:string,kind:'week'|'month',period_key:string,content:string,
   state:'draft'|'published'};
 type Risk={id:string,title:string,status:string};
 type FailedEvent={id:string,kind:string,attempts:number,last_error_code:string,dead_at:string};
+type OutboxStats={pending:number,dead:number,model_errors:number,oldest_pending_at:string|null};
 const API=process.env.NEXT_PUBLIC_API_URL||'http://localhost:3001';
 
 function browserLocalDateTime(iso:string|null):string {
@@ -44,6 +45,7 @@ export default function Home(){
   const [tasks,setTasks]=useState<Task[]>([]),[proposals,setProposals]=useState<Proposal[]>([]);
   const [reports,setReports]=useState<Report[]>([]),[risks,setRisks]=useState<Risk[]>([]);
   const [failedEvents,setFailedEvents]=useState<FailedEvent[]>([]);
+  const [outboxStats,setOutboxStats]=useState<OutboxStats|null>(null);
   const [chat,setChat]=useState(''),[newProject,setNewProject]=useState(''),
     [newTask,setNewTask]=useState(''),[invite,setInvite]=useState('');
   const [newTaskOwner,setNewTaskOwner]=useState(''),[newTaskDue,setNewTaskDue]=useState('');
@@ -94,7 +96,7 @@ export default function Home(){
     if(!selected)return;
     const id=selected;
     activeProject.current=id;cursor.current=0;
-    setMessages([]);setTasks([]);setProposals([]);setReports([]);setFailedEvents([]);
+    setMessages([]);setTasks([]);setProposals([]);setReports([]);setFailedEvents([]);setOutboxStats(null);
     const update=()=>void refresh(id).catch(e=>setNotice(e.message));
     update();
     const timer=setInterval(update,5000);
@@ -200,8 +202,14 @@ export default function Home(){
     });
   }
   async function loadDeadEvents(projectId:string){
-    const data=await request<{events:FailedEvent[]}>('/projects/'+projectId+'/outbox/dead');
-    if(activeProject.current===projectId)setFailedEvents(data.events);
+    const [data,health]=await Promise.all([
+      request<{events:FailedEvent[]}>('/projects/'+projectId+'/outbox/dead'),
+      request<{summary:OutboxStats}>('/projects/'+projectId+'/outbox/summary'),
+    ]);
+    if(activeProject.current===projectId){
+      setFailedEvents(data.events);
+      setOutboxStats(health.summary);
+    }
   }
   async function retryEvent(eventId:string){
     if(!selected)return;
@@ -411,6 +419,10 @@ export default function Home(){
             </div>
             <p className="hint">请完整填写时间策略才会启动自动催办。周末静默，时间以项目时区计。</p>
             <button onClick={()=>void saveSettings()} disabled={working}>保存设置</button>
+            <h3>后台任务运行状态</h3>
+            {outboxStats&&<p className="hint">待处理：{outboxStats.pending} · 隔离：{outboxStats.dead} ·
+              模型失败记录：{outboxStats.model_errors} ·
+              最早待处理：{outboxStats.oldest_pending_at?new Date(outboxStats.oldest_pending_at).toLocaleString('zh-CN'):'无'}</p>}
             <h3>待处理的后台失败事件 <span className="count">{failedEvents.length}</span></h3>
             <p className="hint">仅项目负责人可查看和重放隔离事件。重放会重新执行原操作，并保留审计记录。</p>
             {failedEvents.map(e=><article className="item" key={e.id}>
