@@ -15,6 +15,14 @@ type Report={id:string,kind:'week'|'month',period_key:string,content:string,
 type Risk={id:string,title:string,status:string};
 const API=process.env.NEXT_PUBLIC_API_URL||'http://localhost:3001';
 
+function browserLocalDateTime(iso:string|null):string {
+  if(!iso)return '';
+  const date=new Date(iso);
+  const pad=(n:number)=>String(n).padStart(2,'0');
+  return date.getFullYear()+'-'+pad(date.getMonth()+1)+'-'+pad(date.getDate())+
+    'T'+pad(date.getHours())+':'+pad(date.getMinutes());
+}
+
 async function request<T>(path:string,options?:RequestInit):Promise<T>{
   const response=await fetch(API+path,{...options,credentials:'include',cache:'no-store',
     headers:{...(options?.body?{'Content-Type':'application/json'}:{}),...options?.headers}});
@@ -275,7 +283,7 @@ export default function Home(){
                 <option value="">负责人待定</option>
                 {members.map(m=><option key={m.id} value={m.id}>{m.display_name}</option>)}
               </select>
-              <input aria-label="截止日期" type="datetime-local" value={newTaskDue}
+              <input aria-label="截止日期（浏览器本地时间）" type="datetime-local" value={newTaskDue}
                 onChange={e=>setNewTaskDue(e.target.value)}/>
             </div>
             <button disabled={working}>＋ 创建任务</button>
@@ -299,8 +307,8 @@ export default function Home(){
               </label>
               <label>截止时间
                 <input key={t.id+':'+t.version} type="datetime-local"
-                  aria-label={'调整截止日期：'+t.title}
-                  defaultValue={t.due_at?new Date(t.due_at).toISOString().slice(0,16):''}
+                  aria-label={'调整截止日期（浏览器本地时间）：'+t.title}
+                  defaultValue={browserLocalDateTime(t.due_at)}
                   onBlur={e=>{const value=e.target.value;
                     const next=value?new Date(value).toISOString():null;
                     if(next!==(t.due_at?new Date(t.due_at).toISOString():null))
