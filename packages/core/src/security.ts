@@ -39,12 +39,15 @@ export async function readSession(token: string): Promise<string | null> {
   }
 }
 export async function revokeSession(token: string): Promise<void> {
+  let claims: {jti?:string;sub?:string};
   try {
-    const result=await jwtVerify(token,secret(),{algorithms:['HS256']});
-    if(typeof result.payload.jti==='string' && typeof result.payload.sub==='string')
-      await pool.query('UPDATE sessions SET revoked_at=NOW() WHERE id=$1 AND user_id=$2',
-        [result.payload.jti,result.payload.sub]);
+    const verified=await jwtVerify(token,secret(),{algorithms:['HS256']});
+    claims=verified.payload;
   } catch {
-    // An invalid or already expired token does not prevent cookie clearing.
+    // Invalid or expired tokens have no active session to revoke.
+    return;
   }
+  if(typeof claims.jti==='string' && typeof claims.sub==='string')
+    await pool.query('UPDATE sessions SET revoked_at=NOW() WHERE id=$1 AND user_id=$2',
+      [claims.jti,claims.sub]);
 }

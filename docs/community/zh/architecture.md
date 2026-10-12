@@ -1,6 +1,6 @@
 # 社区架构简介
 
-设计采用 **TypeScript Monorepo、模块化单体和独立 Worker 进程**。Web 使用 Next.js，v0.1 API 使用 Fastify，PostgreSQL 保存业务事实，PostgreSQL Outbox + Worker 轮询完成异步分析与提醒。模型和通知渠道通过适配器连接，未来可替换。
+设计采用 **TypeScript Monorepo、模块化单体和独立 Worker 进程**。Web 使用 Next.js， API 使用 Fastify，PostgreSQL 保存业务事实，PostgreSQL Outbox + Worker 轮询完成异步分析与提醒。模型和通知渠道通过适配器连接，未来可替换。
 
 ## 主要模块
 - 项目与权限：成员、租户、项目作用域。

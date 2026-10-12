@@ -1,7 +1,5 @@
 # Development Guide
 
-**Status: experimental v0.2 MVP for local use, not production-ready.**
-
 Requires Node.js 22+ and Docker. From the repository root:
 
 ```bash
@@ -29,7 +27,7 @@ See [implementation gaps (Chinese)](../../design/implementation-status.md) for u
 ## Reliability notes
 The per-project message cursor follows transaction commit order to prevent missing chat messages. Replanning a task preserves the cooldown of its last reminder. Weekly/monthly counts cover all project tasks while detail lists are bounded; drafts can be regenerated, but published reports remain immutable. Verify these behaviors with `node tools/test/smoke.mjs` against a migrated PostgreSQL instance.
 
-## v0.2 clarification and recovery
+## clarification and recovery
 For opted-in AI, tasks with missing details get a `【候选:UUID】` reference. Team members may reply with the exact reference and an explicit assignee or timezone-aware deadline. Suggestions remain pending until the project owner approves them. Owners may inspect and retry quarantined background events in Settings. AI_DAILY_REQUEST_LIMIT limits each project's daily model calls (default 50); external AI remains disabled by default. Database regression: `node --import tsx packages/core/test/outbox.integration.ts`.
 
 ## Scheduled reporting

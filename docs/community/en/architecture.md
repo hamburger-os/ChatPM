@@ -1,6 +1,6 @@
 # Community Architecture Overview
 
-The proposed architecture uses a **TypeScript monorepo, modular monolith, and a separate worker process**. Next.js provides the UI, Fastify the v0.1 API, PostgreSQL stores authoritative records, and a PostgreSQL Outbox and polling worker handle asynchronous analysis and reminders. Model and notification providers are replaceable adapters.
+The proposed architecture uses a **TypeScript monorepo, modular monolith, and a separate worker process**. Next.js provides the UI, Fastify the API, PostgreSQL stores authoritative records, and a PostgreSQL Outbox and polling worker handle asynchronous analysis and reminders. Model and notification providers are replaceable adapters.
 
 ## Core modules
 - Project and access control: membership, tenants, project scopes.
