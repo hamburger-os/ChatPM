@@ -1,0 +1,11 @@
+[Unit]
+Description=Daily ChatPM database backup
+
+[Timer]
+OnCalendar=*-*-* 02:30:00
+Persistent=true
+RandomizedDelaySec=15m
+Unit=chatpm-backup.service
+
+[Install]
+WantedBy=timers.target

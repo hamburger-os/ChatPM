@@ -30,6 +30,18 @@
 
 **尚未实现：** 本地模型与多提供商接入、文档知识库、自动语义关联、完整风险升级、实时推送、完整企业身份管理和正式 SaaS 运营。以上属于 [路线图](docs/design/roadmap-acceptance.md)，不是现有功能。
 
+## 最简安装：Docker 一条命令
+
+已安装并启动 Docker Engine/Compose、Node.js 后，在仓库根目录运行：
+
+```bash
+npm run deploy:docker
+```
+
+命令会在首次运行时创建 `.env`，自动生成独立随机 `POSTGRES_PASSWORD` 与 `SESSION_SECRET`（不覆盖既有非占位配置），并构建、迁移和后台启动全部服务。访问 **http://localhost:3000**。再次执行不会重新生成秘密。使用 `docker compose --env-file .env -f infra/compose.prod.yml ps` 查看状态，`docker compose --env-file .env -f infra/compose.prod.yml down` 停止；不要使用 `down -v`，它会删除数据库卷。
+
+开机自启依赖宿主机 **Docker 引擎也随系统启动**；Compose 的服务已经设置 `restart: unless-stopped`。Windows Docker Desktop 通常需要在登录时启动。默认只允许本机访问；公网部署仍需 HTTPS、备份及安全验收。
+
 ## 在本机直接部署（无需 Docker）
 
 **Windows 11 和 Linux 都可以原生部署。** ChatPM 由 Web、API、Worker 三个 Node.js 进程和一个 PostgreSQL 数据库组成。下面是**本机安装 PostgreSQL + 运行正式构建产物**的步骤；不需要 Docker、WSL 或容器引擎。
@@ -64,7 +76,7 @@ node -e "console.log(require('node:crypto').randomBytes(32).toString('hex'))"
 打开根目录的 `.env`，至少修改以下配置：
 
 ```dotenv
-NODE_ENV=development
+NODE_ENV=production
 DATABASE_URL=postgres://chatpm:<数据库密码的URL编码值>@127.0.0.1:5432/chatpm
 SESSION_SECRET=<粘贴上面生成的随机密钥>
 WEB_ORIGIN=http://localhost:3000
@@ -80,37 +92,41 @@ API_INTERNAL_URL=http://127.0.0.1:3001
 在仓库根目录运行（Windows PowerShell / Linux Bash 命令相同）：
 
 ```bash
-npm ci
-npm run build
-npm run check:distribution
-npm run db:migrate:prod
+npm run setup:local
 ```
 
-### 4. 启动服务
+### 4. 一个终端启动
 
-**打开三个终端**，均切换到 ChatPM 根目录：
+```bash
+npm start
+```
 
-| 终端 | 执行命令 | 用途 |
-|---|---|---|
-| 1 | `npm run start:api` | API（本机 3001 端口） |
-| 2 | `npm run start:worker` | AI 处理、任务跟进和报告调度 |
-| 3 | `npm run start:web` | Web（本机 3000 端口） |
+此命令统一启动 API、Worker、Web 三个独立进程，在同一终端输出日志；任一进程异常退出时停止整组，防止产生不完整的服务。打开 **http://localhost:3000**，使用 **http://127.0.0.1:3001/health** 检查 API。关闭终端会结束服务，这适用于本地演示，不是开机自启模式。
 
-访问 **http://localhost:3000** 注册账号、创建项目。可打开 **http://127.0.0.1:3001/health** 检查 API 数据库连接。关闭终端会停止相应服务；需要后台常驻时使用下方文档中的 Windows Service / Linux systemd 示例。
+**开机自启**：Linux 使用仓库自带的三个 systemd 单元执行 `sudo systemctl enable --now chatpm-api chatpm-worker chatpm-web`；Windows 11 需将安装目录放在用户个人目录之外（例如 `C:\\ChatPM`），系统级安装 Node.js，准备并验证 WinSW 后，以管理员权限运行 `./infra/windows/install-services.ps1 -WinSWPath <路径> -StartNow`，默认注册为 Automatic 服务。Windows 服务安装器使用内置低权限 LocalService 并设置运行目录和密钥文件 ACL。运行前仍须由管理员验证目录继承权限、数据库连接、服务启停和重启。两种平台均需要 PostgreSQL 服务先行可用。
+
+开发调试只需一个终端执行 `npm run dev`（需先 `npm ci`、配置数据库并迁移）。
 
 更详细的原生安装、服务托管、备份与恢复方法：[中文指南](docs/community/development.md#中文) · [English guide](docs/community/development.md#english) · [部署设计](docs/design/deployment.md)。
 
 ## Docker（可选）
 
-Docker 不是必需组件。如果更喜欢容器方式，可在根目录 `.env` 中另外设置 `POSTGRES_PASSWORD`，确认 `SESSION_SECRET` 是随机密钥，再执行：
+Docker 不是必需组件。上述 `npm run deploy:docker` 提供第一次安装时的配置与秘密初始化；已有安全配置的环境也可直接执行 `docker compose --env-file .env -f infra/compose.prod.yml up -d --build`。开发用 `infra/compose.yml` 只启动 PostgreSQL。
 
-```bash
-docker compose -f infra/compose.prod.yml up -d --build
-```
+## 运维诊断、备份与升级
 
-该 Compose 提供完整的 Web、API、Worker 和 PostgreSQL，默认只在 `127.0.0.1:3000` 提供访问。**请勿直接把本地测试配置开放到公网。**
+原生部署可执行 `npm run doctor` 检查 API、数据库、Worker 心跳和积压事件；Docker 可执行 `docker compose --env-file .env -f infra/compose.prod.yml exec -T api node tools/ops/doctor.mjs`。检测异常时返回非零退出码，可由外部监控系统采集。启动后的首个 Worker tick 及迁移完成前不应直接判定为健康。
 
-如果只是开发代码，可使用 `npm run dev:api`、`npm run dev:worker`、`npm run dev:web`；开发用 `infra/compose.yml` 仅启动 PostgreSQL。
+- 原生：`npm run backup -- --dir=./backups --keep=14`
+- Docker：`npm run backup:docker -- --dir=./backups --keep=14`
+- Linux：安装 `infra/linux/chatpm-backup.{service,timer}`、`chatpm-doctor.{service,timer}`，启用对应 timer 后获得定期执行。
+- Windows：管理员在完成服务账户 ACL 验收后运行 `infra/windows/install-backup-task.ps1`，注册定时备份任务。
+
+备份只保留本工具生成的最近 N 个本地文件；**本地保留不等于备份安全**，必须将备份复制到加密的离机位置并定期在隔离数据库进行恢复演练。原生升级可在确认全部进程已停止后执行 `npm run upgrade:native -- --confirm-services-stopped`（先备份再构建迁移），随后启动服务、运行 `doctor`；数据库迁移不承诺自动回滚。操作细节见 [开发与部署指南](docs/community/development.md#中文)。
+
+## 预构建跨平台分发包（实验性）
+
+GitHub Actions 的 `Cross-platform native builds` 工作流会为 Windows 和 Linux 生成包含 `dist/`、Next.js 构建结果、SQL、配置模板与运维工具的实验性 Artifact，不携带数据库或私有密钥。取出与目标系统匹配的 Artifact 后，仍需 Node.js/npm 和 PostgreSQL；执行 `npm ci --omit=dev`、配置本机 `.env`、`npm run db:migrate:prod`，然后 `npm start` 或安装系统服务。它不是经过签名验证的 Windows MSI/Linux DEB/RPM 安装包，也不意味着已完成开机或恢复验收。
 
 ## 本地演示路线
 

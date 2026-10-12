@@ -25,7 +25,39 @@ jobs:
           node-version: '24'
           cache: npm
       - run: npm ci --no-audit --no-fund
+      - name: Parse Windows service and scheduled-task scripts
+        if: matrix.os == 'windows-latest'
+        shell: pwsh
+        run: |
+          $files = @('infra/windows/install-services.ps1', 'infra/windows/install-backup-task.ps1')
+          foreach ($file in $files) {
+            $tokens = $null
+            $errors = $null
+            [System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path $file), [ref]$tokens, [ref]$errors) | Out-Null
+            if ($errors.Count -gt 0) {
+              $errors | ForEach-Object { Write-Error "$file : $_" }
+              exit 1
+            }
+          }
       - run: npm run typecheck
       - run: npm test
+      - run: npm run test:ops
       - run: npm run build
       - run: npm run check:distribution
+      - name: Package experimental portable distribution
+        uses: actions/upload-artifact@v4
+        with:
+          name: chatpm-experimental-${{ matrix.os }}
+          include-hidden-files: true
+          retention-days: 14
+          path: |
+            dist/
+            apps/web/.next/
+            apps/web/next.config.ts
+            package.json
+            package-lock.json
+            tools/ops/
+            infra/
+            .env.example
+            README.md
+            LICENSE

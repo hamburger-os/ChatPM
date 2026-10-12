@@ -6,3 +6,9 @@ node_modules/
 dist/
 coverage/
 .DS_Store
+/chatpm-*.exe
+/chatpm-*.xml
+/chatpm-*.wrapper.log
+backups/
+logs/
+*.partial

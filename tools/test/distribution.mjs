@@ -7,6 +7,7 @@ const required = [
   'dist/packages/core/sql/001_init.sql',
   'dist/packages/core/sql/002_reliability.sql',
   'dist/packages/core/sql/003_integrity_sessions.sql',
+  'dist/packages/core/sql/004_worker_health.sql',
   'apps/web/.next/BUILD_ID',
 ];
 for (const file of required) assert.ok(existsSync(file), 'Missing distribution file: ' + file);

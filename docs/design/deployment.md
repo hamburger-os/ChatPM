@@ -39,6 +39,37 @@ Windows PowerShell 前台启动脚本与 WinSW 服务包装示例；Linux system
 
 原生环境可执行 `node tools/ops/postgres.mjs backup ./backups/chatpm-YYYYMMDD.dump`，在**停止 API/Worker/Web 且确认隔离目标库后**显式执行 `node tools/ops/postgres.mjs restore ./backups/chatpm-YYYYMMDD.dump --confirm-replace`，随后运行数据库迁移。恢复操作会覆盖已有数据库对象，不允许对仍在提供业务服务的生产库直接恢复。备份必须限制访问、加密并定期在隔离环境做恢复演练。
 
-Compose 默认不暴露 PostgreSQL 宿主机端口，使用 `docker compose -f infra/compose.prod.yml exec -T postgres pg_dump -U chatpm -d chatpm -Fc > backups/chatpm.dump` 等容器内客户端备份方式，操作前保证目标目录存在。
+Compose 默认不暴露 PostgreSQL 宿主机端口，使用 `docker compose --env-file .env -f infra/compose.prod.yml exec -T postgres pg_dump -U chatpm -d chatpm -Fc > backups/chatpm.dump` 等容器内客户端备份方式，操作前保证目标目录存在。
 
 上述仅提供操作路径，不等同于自动备份计划、数据完整性验收、PITR、生产灾备认证；生产级逆向代理、权限、安全、监控与恢复演练仍是未完成的发布门槛。
+
+
+## 简化部署的运行入口与验收
+
+- `npm run dev`：原生开发的单终端入口，统一启动并监看三个开发进程；不负责数据库创建。
+- `npm start`：本机已有正式构建产物时，单终端前台运行三个生产进程；适合试运行，不提供脱离终端的开机自启。进程收到停止信号时向子进程转发，任一进程退出则整组停止，防止静默退化。
+- `npm run deploy:docker`：前提是 Docker Compose 可用。首次根据模板生成 `.env`，对缺失或模板默认的 SESSION_SECRET、POSTGRES_PASSWORD 生成独立高熵随机值；保留已有用户设置，拒绝静默改写已设置的秘密；后台构建并启动服务。自动启动依赖宿主机 Docker 引擎在系统启动后运行。
+- Windows/Linux 原生 PostgreSQL 仍是明确的先决条件，正式长期运行使用既有 WinSW/systemd 三服务模板，不用前台进程管理器替换服务管理器。安装、升级、初始化数据库应与每次开机启动区分，不在应用服务的 ExecStart 中执行 `npm ci` 或自动数据库恢复。
+- 验收要求：Windows/Linux 使用同一 Node 入口；没有依赖安装时有可操作的失败提示；占位秘密能替换，既有配置原样保留；重复部署不生成新密钥；子进程崩溃不留下失管服务；独立验证 Docker 宿主机自启及服务恢复。仅运行单元测试不代表目标系统的开机自启实测。
+
+## 运维可靠性与服务治理（ADR-018）
+
+- Worker 在 PostgreSQL 中记录最近存活、最后成功及最后失败时刻。独立诊断命令 `npm run doctor` 检查数据库和部署 API，并将心跳超时及过期未处理事件作为失败信号；此诊断不要求浏览器权限，也不提供公网运维接口。
+- `npm run backup` 默认创建新的 PostgreSQL custom-format 文件并按保留份数清理**本工具创建且匹配命名规则**的旧文件。必须在受限目录执行，成功后才允许清理历史文件。Docker 模式在宿主机使用 `--docker`，由 Compose 内 `pg_dump` 输出到宿主机备份目录。重复执行不可覆盖已有备份文件。
+- Linux 定时器使用专用 `chatpm` 账户，按需授权备份文件路径；Windows Task Scheduler 使用指定低权限主体，不内嵌数据库密码。备份文件需加密、离机保存并在隔离库实测恢复。
+- 版本升级避免不停机自动迁移；先停止服务和可验证备份，再迁移。复杂/破坏性数据迁移需另行发布计划；非兼容迁移不保证通过代码回滚恢复旧版。
+- 全流程测试边界：CI 可以验证迁移/基本健康与备份失败语义，但设备关机恢复、Windows Service 权限、远端告警与恢复时间目标必须在目标平台人工验收并保留记录。
+
+
+## 原生升级守护与可携式发行边界
+
+- `npm run setup:local` 可在本机创建缺失的带随机会话密钥的配置，遇到默认数据库密码时拒绝继续；操作系统级 PostgreSQL 的创建与密码管理仍由安装者执行。
+- `npm run upgrade:native -- --confirm-services-stopped` 在用户明确确认已停止 Web/API/Worker、且 API 回环健康端点不再可达时先运行私有备份，备份成功才执行安装、编译、校验、SQL 迁移。不能可靠推断 Worker 已停止，必须由部署管理员确认；失败后保持服务停止并人工处置。
+- 跨平台 CI 上传实验性可携式构建产物（Node 编译包 + Next 构建 + SQL + 运维脚本），不包含数据库或密钥。不自动声明为签名 MSI、DEB、RPM 或 production-ready。安装向导不应静默申请系统级提升权限。
+
+
+## /review 四项故障修正（PR #17）
+
+- 生产 Compose 入口固定项目名并显式读取仓库根 `.env`；`--env-file .env` 应用于 Docker 原生运维命令，而不是依赖 `-f infra/...` 的工作目录推断。
+- 首次初始化新秘密之前先检查受管的 `chatpm_postgres_data` 卷；数据库卷已存在但密码或会话密钥遗失时，拒绝自动轮换，提示恢复原凭证，防止新数据库密码与旧卷不一致。
+- 单终端运行器显式解析根配置再传入 Web，避免 Next.js 子应用根目录无法读取服务内部 URL；Windows 终止 Worker 使用 IPC 请求 graceful shutdown，而非依赖无法保证的 SIGTERM 事件。超时后仍可强制停止，因此不得声称绝对零中断。

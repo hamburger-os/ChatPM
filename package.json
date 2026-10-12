@@ -7,6 +7,7 @@
     "node": ">=22.18.0 <25"
   },
   "scripts": {
+    "dev": "node tools/ops/run.mjs dev",
     "dev:api": "tsx watch apps/api/src/server.ts",
     "dev:worker": "tsx watch apps/worker/src/worker.ts",
     "dev:web": "next dev apps/web -p 3000",
@@ -21,7 +22,16 @@
     "start:api": "node dist/apps/api/src/server.js",
     "start:worker": "node dist/apps/worker/src/worker.js",
     "start:web": "next start apps/web -p 3000 -H 0.0.0.0",
-    "check:distribution": "node tools/test/distribution.mjs"
+    "check:distribution": "node tools/test/distribution.mjs",
+    "start": "node tools/ops/run.mjs prod",
+    "deploy:docker": "node tools/ops/deploy.mjs",
+    "test:ops": "node --test tools/test/ops.test.mjs",
+    "setup:native": "npm ci && npm run build && npm run check:distribution && npm run db:migrate:prod",
+    "doctor": "node tools/ops/doctor.mjs",
+    "backup": "node tools/ops/backup.mjs",
+    "backup:docker": "node tools/ops/backup.mjs --docker",
+    "setup:local": "node tools/ops/bootstrap-native.mjs",
+    "upgrade:native": "node tools/ops/upgrade.mjs"
   },
   "dependencies": {
     "@fastify/cookie": "^11.0.0",

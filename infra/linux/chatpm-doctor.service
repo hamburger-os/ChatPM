@@ -1,0 +1,16 @@
+[Unit]
+Description=Check ChatPM API, Worker and database health
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=chatpm
+Group=chatpm
+WorkingDirectory=/opt/chatpm
+EnvironmentFile=/opt/chatpm/.env
+ExecStart=/usr/bin/node /opt/chatpm/tools/ops/doctor.mjs
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
