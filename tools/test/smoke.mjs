@@ -76,6 +76,34 @@ try{
   assert.equal(posted.data.message.id,duplicate.data.message.id,'Message retry must be idempotent');
   const messages=await api('/projects/'+pid+'/messages');
   assert.equal(messages.data.messages.length,1);
+  // Holding the project message lock simulates a message transaction that commits late.
+  // A later request must not allocate/commit a higher cursor before this one commits.
+  await db.query('BEGIN');
+  let unlocked=false;
+  try{
+    await db.query('SELECT pg_advisory_xact_lock(hashtextextended($1::text, 0))',
+      ['chatpm:messages:'+pid]);
+    const earlier=(await db.query(
+      `INSERT INTO messages(project_id,author_id,kind,content,client_nonce)
+       VALUES($1,$2,'user','先开始的事务',$3) RETURNING seq`,
+      [pid,uid,randomUUID()])).rows[0];
+    const pending=api('/projects/'+pid+'/messages',{method:'POST',
+      body:{content:'后开始的事务',nonce:randomUUID()}});
+    const completedBeforeCommit=await Promise.race([
+      pending.then(()=>true),delay(200).then(()=>false),
+    ]);
+    assert.equal(completedBeforeCommit,false,'Concurrent message must wait for earlier commit');
+    await db.query('COMMIT');
+    unlocked=true;
+    const later=await pending;
+    assert.equal(later.status,201,JSON.stringify(later.data));
+    assert.ok(BigInt(later.data.message.seq)>BigInt(earlier.seq));
+    const delta=await api('/projects/'+pid+'/messages?after='+earlier.seq);
+    assert.ok(delta.data.messages.some(m=>m.id===later.data.message.id),
+      'Incremental cursor must never skip a late-committing message');
+  }finally{
+    if(!unlocked)await db.query('ROLLBACK');
+  }
   const task=await api('/projects/'+pid+'/tasks',{method:'POST',
     body:{title:'正式任务',detail:'',assigneeId:uid,dueAt:null}});
   assert.equal(task.status,201,JSON.stringify(task.data));
@@ -97,6 +125,17 @@ try{
   const followup=await db.query(
     'SELECT active FROM followup_plans WHERE task_id=$1',[tid]);
   assert.equal(followup.rows[0]?.active,true,'Task follow-up must be durable');
+  await db.query(
+    "UPDATE followup_plans SET last_sent_at=NOW(),next_at=NOW()+INTERVAL '24 hours' WHERE task_id=$1",
+    [tid]);
+  const replanned=await api('/projects/'+pid+'/tasks/'+tid,{method:'PATCH',
+    body:{version:edited.data.task.version,
+      dueAt:new Date(Date.now()+3*3600000).toISOString()}});
+  assert.equal(replanned.status,200,'Replanning should succeed');
+  const cooldown=await db.query(
+    "SELECT next_at >= last_sent_at + INTERVAL '24 hours' AS preserved FROM followup_plans WHERE task_id=$1",
+    [tid]);
+  assert.equal(cooldown.rows[0]?.preserved,true,'Replanning must preserve last reminder cooldown');
 
   const candidate=(await db.query(
     `INSERT INTO proposed_changes(project_id,source_message_id,kind,title,detail)
@@ -114,12 +153,30 @@ try{
   const linked=await db.query('SELECT id FROM tasks WHERE source_proposal_id=$1',[candidate.id]);
   assert.equal(linked.rowCount,1);
 
+  // Stats must count the entire project, not only the first 200 listed tasks.
+  await db.query(
+    "INSERT INTO tasks(project_id,title) SELECT $1,'批量任务-'||n FROM generate_series(1,205) AS n",
+    [pid]);
+  const beforeCount=Number((await db.query(
+    'SELECT COUNT(*) AS total FROM tasks WHERE project_id=$1',[pid])).rows[0].total);
   const report=await api('/projects/'+pid+'/reports',{method:'POST',body:{kind:'week'}});
   assert.equal(report.status,200,JSON.stringify(report.data));
   assert.equal(report.data.report.state,'draft');
+  assert.ok(report.data.report.content.includes('总数：'+beforeCount+'；'),
+    'Report counts must not be truncated to 200');
+  const changedTask=await api('/projects/'+pid+'/tasks',{method:'POST',
+    body:{title:'晚于草稿新增的任务',assigneeId:null,dueAt:null}});
+  assert.equal(changedTask.status,201);
+  const refreshed=await api('/projects/'+pid+'/reports',{method:'POST',body:{kind:'week'}});
+  assert.equal(refreshed.data.report.id,report.data.report.id);
+  assert.ok(refreshed.data.report.content.includes('总数：'+(beforeCount+1)+'；'),
+    'Regenerated draft must reflect new data');
   const published=await api('/projects/'+pid+'/reports/'+report.data.report.id+'/publish',{method:'POST'});
   assert.equal(published.status,200);
-  console.log('API smoke tests passed: tenancy, RBAC, deduplicated chat/proposals, task versioning, durable follow-ups, report publication.');
+  const immutable=await api('/projects/'+pid+'/reports',{method:'POST',body:{kind:'week'}});
+  assert.equal(immutable.data.report.content,refreshed.data.report.content,
+    'Published reports must remain immutable');
+  console.log('API smoke tests passed: access control, ordered chat, idempotency, cooldown, full report counts and immutable publication.');
 }finally{
   await db.end();
   server.kill('SIGTERM');
