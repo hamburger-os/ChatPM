@@ -26,7 +26,10 @@
     "start": "node tools/ops/run.mjs prod",
     "deploy:docker": "node tools/ops/deploy.mjs",
     "test:ops": "node --test tools/test/ops.test.mjs",
-    "setup:native": "npm ci && npm run build && npm run check:distribution && npm run db:migrate:prod"
+    "setup:native": "npm ci && npm run build && npm run check:distribution && npm run db:migrate:prod",
+    "doctor": "node tools/ops/doctor.mjs",
+    "backup": "node tools/ops/backup.mjs",
+    "backup:docker": "node tools/ops/backup.mjs --docker"
   },
   "dependencies": {
     "@fastify/cookie": "^11.0.0",
