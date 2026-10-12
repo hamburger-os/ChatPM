@@ -97,3 +97,23 @@ export async function generateReport(
   );
   return existing.rows[0];
 }
+
+/**
+ * Scheduled reports are one-shot per project/kind/period. Manual generation
+ * still refreshes drafts, but a recurring Worker must never overwrite them.
+ * Must be called inside a DB transaction so the advisory lock spans the read
+ * and the insert. Multiple Worker replicas are safe.
+ */
+export async function generateScheduledReport(db:DbClient,projectId:string,kind:'week'|'month'):Promise<boolean>{
+  const project=await db.query('SELECT timezone FROM projects WHERE id=$1',[projectId]);
+  if(!project.rows[0])return false;
+  const key=periodKey(new Date(),project.rows[0].timezone,kind);
+  await db.query('SELECT pg_advisory_xact_lock(hashtextextended($1::text, 0))',
+    ['chatpm:report:'+projectId+':'+kind+':'+key]);
+  const existing=await db.query(
+    'SELECT 1 FROM reports WHERE project_id=$1 AND kind=$2 AND period_key=$3',
+    [projectId,kind,key]);
+  if(existing.rowCount)return false;
+  await generateReport(db,projectId,kind,null);
+  return true;
+}
