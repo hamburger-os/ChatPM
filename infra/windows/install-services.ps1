@@ -25,6 +25,7 @@ foreach ($Component in @('api','worker','web')) {
   <name>ChatPM $Component</name>
   <description>ChatPM $Component process</description>
   <startmode>Automatic</startmode>
+  <env name="NODE_ENV" value="production" />
   <executable>$([System.Security.SecurityElement]::Escape($Node))</executable>
   <arguments>$([System.Security.SecurityElement]::Escape($Arguments))</arguments>
   <workingdirectory>$([System.Security.SecurityElement]::Escape($Root))</workingdirectory>
