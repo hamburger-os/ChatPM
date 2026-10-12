@@ -25,3 +25,10 @@
 `LLMProvider`、`ChannelAdapter`、`Notifier`、`DocumentParser`、`ObjectStore`。第一版各接口可只接一个提供商；不得让模型 SDK 泄漏进领域层。
 
 跨模块写入用命令/服务边界，不直接更改其他模块表；DTO 与领域对象分离。
+
+## 当前可执行模块（v0.1）
+- `apps/api/src/server.ts`：Fastify HTTP 接入、身份、项目权限、消息、任务、候选、报告；后续继续拆成领域路由/服务。
+- `apps/worker/src/worker.ts`：扫描 Outbox、仅在项目开启 AI 时分析、持久化候选、工作时段催办及生成报告草稿。
+- `packages/core/src/db.ts`：PostgreSQL 事务；`security.ts`：会话与密码；`followup.ts`：计划更新；`policy.ts`：时间策略；`reports.ts`：报告生成。
+- `apps/web/app/`：Next.js 客户端，当前消息 5 秒刷新。
+- 现阶段无独立 InboxReceipt、Redis/BullMQ、附件/知识库与多模型适配器，不能将设计中的全部模块称为已实现。
