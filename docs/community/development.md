@@ -14,17 +14,15 @@ npm ci
 npm run db:migrate
 ```
 
-分别在三个终端运行：
+开发时只需一个终端（内部仍启动三个独立进程）：
 
 ```bash
-npm run dev:api
-npm run dev:worker
-npm run dev:web
+npm run dev
 ```
 
 打开 http://localhost:3000，注册、创建项目、与成员聊天。系统默认不向外部模型发送内容；要启用 AI 需在服务端设置 `OPENAI_API_KEY` 并由项目负责人在设置页面明确开启。催办需任务负责人/期限及完整工作时间和冷却策略。
 
-生产构建：`npm run build`，编译后执行 `npm run db:migrate:prod`、`npm run start:api`、`npm run start:worker`、`npm run start:web`。浏览器请求统一使用同源 `/api`，服务端通过 `API_INTERNAL_URL` 连接 API（默认 127.0.0.1:3001）。
+原生首次安装在设置好数据库和 `.env` 后执行 `npm run setup:native`（安装依赖、构建、校验产物、执行迁移），然后 `npm start` 可在**单个前台终端**运行三进程；关闭终端会停止服务。长期运行应交给下述 Windows/Linux 系统服务管理器。浏览器请求统一使用同源 `/api`，服务端通过 `API_INTERNAL_URL` 连接 API（默认 127.0.0.1:3001）。
 
 检查命令：`npm run typecheck`、`npm test`、`npm run build:web`、`npm run check:docs`。更新代码需执行 [docs-sync](../../.agents/skills/docs-sync/SKILL.md)。
 
@@ -51,28 +49,29 @@ Worker 只在项目时区符合计划时创建本期周/月报一次；不会每
 
 1. 安装 Node.js 24、PostgreSQL 17 和 Git；创建数据库及专用用户并授予必要权限，确保 `pg_dump` / `pg_restore` 可执行。
 2. 在 PowerShell 根目录执行 `Copy-Item .env.example .env`，设置数据库连接、随机 SESSION_SECRET 和部署对外 WEB_ORIGIN。
-3. 执行 `npm ci; npm run build; npm run db:migrate:prod`，确认无错误。
-4. 分别开三个 PowerShell 窗口执行 `./infra/windows/start.ps1 api`、`./infra/windows/start.ps1 worker`、`./infra/windows/start.ps1 web`；浏览器打开 http://localhost:3000。
-5. 如需 Windows Service，先自行从 WinSW 官方来源取得并验证可执行文件，再以管理员执行 `./infra/windows/install-services.ps1 -WinSWPath <WinSW路径>`。该脚本只注册服务，投入生产前必须设置最小权限运行账户、目录 ACL、自动启动及停止/重启演练。
+3. 执行 `npm run setup:native`，确认构建和迁移无错误。
+4. 执行 `npm start` 直接在一个 PowerShell 终端运行三个进程；浏览器打开 http://localhost:3000。仅适合前台试运行。
+5. 开机自启需取得并验证官方 WinSW，以管理员身份执行 `./infra/windows/install-services.ps1 -WinSWPath <WinSW路径> -StartNow`。三个服务注册为 Automatic，并立即启动；可用 `Get-Service chatpm-*` 检查、`Restart-Service chatpm-api,chatpm-worker,chatpm-web` 重启。**WinSW 默认以高权限 LocalSystem 安装**，务必在正式使用前配置最小权限账户、受限 `.env` 文件 ACL 及服务访问权，并演练重启和恢复；这些步骤不可跳过。
 
 ### 不使用 Docker 的 Linux 安装
 
 1. 安装 Node.js 24、PostgreSQL 17（本机或远端）、PostgreSQL 客户端工具；创建独立系统用户 `chatpm`。
-2. 将源码安装在 `/opt/chatpm`；运行 `npm ci && npm run build && npm run check:distribution`。
-3. 设置 `/etc/chatpm/chatpm.env`（仅服务账户可读），至少提供生产 NODE_ENV、DATABASE_URL、随机 SESSION_SECRET、WEB_ORIGIN、API_HOST=127.0.0.1。执行 `npm run db:migrate:prod`。
+2. 将源码安装在 `/opt/chatpm`；配置好数据库及运行环境后运行 `npm run setup:native`（已包含迁移）。
+3. 设置 `/etc/chatpm/chatpm.env`（仅服务账户可读），至少提供生产 NODE_ENV、DATABASE_URL、随机 SESSION_SECRET、WEB_ORIGIN、API_HOST=127.0.0.1。首次运行迁移时应从正确的环境文件导入变量；不要仅因存在 `/etc/chatpm/chatpm.env` 就假设 `npm run setup:native` 会自动读取它。
 4. 复制 `infra/linux/*.service` 至 `/etc/systemd/system/`，按实际 Node 路径调整 `ExecStart`，执行 `sudo systemctl daemon-reload && sudo systemctl enable --now chatpm-api chatpm-worker chatpm-web`。
 5. 通过 `infra/proxy/Caddyfile` 配置公网域名和 HTTPS；不要直接向互联网暴露 API/数据库端口。部署路径及文件权限应允许 ChatPM 账户读取构建产物且只写必要的 Next 缓存。
 
 ### 一键 Docker Compose 自部署
 
-复制 `.env.example` 到 `.env`，配置生产随机 `SESSION_SECRET`、`POSTGRES_PASSWORD` 和 `WEB_ORIGIN`。执行：
+Docker/Compose 与 Node 已安装后，在仓库根目录执行：
 
 ```bash
-docker compose -f infra/compose.prod.yml up -d --build
-docker compose -f infra/compose.prod.yml ps
+npm run deploy:docker
 ```
 
-默认仅监听本机 `127.0.0.1:3000`。公网访问应由 HTTPS 反向代理接入；数据库持久化为命名卷。开发用 `infra/compose.yml` 仍只有 PostgreSQL。
+首次自动创建 `.env` 并生成缺失/模板中的随机 SESSION_SECRET 与 POSTGRES_PASSWORD；不覆盖已有非占位符秘密，重复执行幂等。该命令不安装 Docker，不自动创建公网 TLS，也不覆盖已存在数据库。已有配置可继续直接执行 `docker compose -f infra/compose.prod.yml up -d --build`。查看运行状态：`docker compose -f infra/compose.prod.yml ps`；停服务：`docker compose -f infra/compose.prod.yml down`（不要添加 `-v`）。
+
+默认仅监听本机 `127.0.0.1:3000`。已配置 `restart: unless-stopped`，但主机重启自动恢复仍需要 Docker 引擎随系统启动（Windows Docker Desktop 通常在用户登录后启动）。公网访问应由 HTTPS 反向代理接入；数据库持久化为命名卷。开发用 `infra/compose.yml` 仍只有 PostgreSQL。
 
 ### 备份、恢复和正式上线限制
 
@@ -105,17 +104,15 @@ npm ci
 npm run db:migrate
 ```
 
-Start three terminals:
+Start all three development processes in **one terminal**:
 
 ```bash
-npm run dev:api
-npm run dev:worker
-npm run dev:web
+npm run dev
 ```
 
 Open http://localhost:3000, register and create a project. External AI is disabled by default. To opt in, set `OPENAI_API_KEY` on the server and enable AI explicitly in project settings. Reminders require a task owner, due date, working hours and cooldown policy.
 
-Production: run `npm run build`, `npm run db:migrate:prod`, and start the compiled `start:api`, `start:worker`, and `start:web` scripts. The browser always uses same-origin `/api`, which is forwarded to `API_INTERNAL_URL` by Next.js.
+Native installation after configuring PostgreSQL and `.env`: run `npm run setup:native` to install, build, verify and migrate; `npm start` runs all three compiled processes in a single foreground terminal. For persistent production hosting, use the native system service manager below. The browser always uses same-origin `/api`, which is forwarded to `API_INTERNAL_URL` by Next.js.
 
 Checks: `npm run typecheck`, `npm test`, `npm run build:web`, `npm run check:docs`. Changes must follow [docs-sync](../../.agents/skills/docs-sync/SKILL.md).
 
@@ -140,17 +137,17 @@ PRs must pass the `verify` (product and database validation) and `documentation`
 
 ### Native Windows 11 (no Docker)
 
-Install Node.js 24 and PostgreSQL 17 (including `pg_dump` and `pg_restore`). Create a dedicated database and user. From PowerShell: `Copy-Item .env.example .env`, configure database credentials and a secure SESSION_SECRET, then `npm ci; npm run build; npm run db:migrate:prod`. Start three PowerShell windows with `./infra/windows/start.ps1 api`, `./infra/windows/start.ps1 worker`, and `./infra/windows/start.ps1 web`.
+Install Node.js 24 and PostgreSQL 17 (including `pg_dump` and `pg_restore`). Create a dedicated database and user. From PowerShell: `Copy-Item .env.example .env`, configure database credentials and a secure SESSION_SECRET, then `npm run setup:native`. Use `npm start` for a one-terminal foreground run.
 
-For Windows services, obtain and verify WinSW independently, then run `./infra/windows/install-services.ps1 -WinSWPath <path>` as administrator. It registers services only; choose least-privilege accounts, protect files and verify start/stop/restart before production use.
+For Windows services, obtain and verify WinSW independently, then run `./infra/windows/install-services.ps1 -WinSWPath <path> -StartNow` as administrator. It registers automatic-start services and starts them immediately; check with `Get-Service chatpm-*`. WinSW defaults to high-privilege LocalSystem: configure restricted service accounts and file ACLs before real production use, and test restart/recovery.
 
 ### Native Linux (no Docker)
 
-Install Node.js 24, PostgreSQL 17 and client utilities. Install the source at `/opt/chatpm`, create a dedicated `chatpm` user, and run `npm ci && npm run build && npm run check:distribution`. Supply `NODE_ENV=production`, DATABASE_URL, SESSION_SECRET, WEB_ORIGIN and API_HOST=127.0.0.1 in a restricted `/etc/chatpm/chatpm.env`. Run `npm run db:migrate:prod`. Install the templates from `infra/linux/` to systemd, adjust the actual Node path and start `chatpm-api`, `chatpm-worker`, `chatpm-web`. Put Caddy or another HTTPS proxy in front of Web; do not expose the API/database publicly.
+Install Node.js 24, PostgreSQL 17 and client utilities. Install the source at `/opt/chatpm`, create a dedicated `chatpm` user, and run `npm run setup:native` after configuring the database environment. Supply `NODE_ENV=production`, DATABASE_URL, SESSION_SECRET, WEB_ORIGIN and API_HOST=127.0.0.1 in a restricted `/etc/chatpm/chatpm.env`. Ensure migrations ran with the correct environment variables (`/etc/chatpm/chatpm.env` is not loaded automatically by npm). Install the templates from `infra/linux/` to systemd, adjust the actual Node path and start `chatpm-api`, `chatpm-worker`, `chatpm-web`. Put Caddy or another HTTPS proxy in front of Web; do not expose the API/database publicly.
 
 ### Complete Docker Compose
 
-Set POSTGRES_PASSWORD, SESSION_SECRET and WEB_ORIGIN in root `.env`. Run `docker compose -f infra/compose.prod.yml up -d --build`. Only `127.0.0.1:3000` is published; add a secure external HTTPS proxy to expose it. `infra/compose.yml` remains the database-only development Compose.
+With Docker/Compose and Node installed, run `npm run deploy:docker`. It initializes missing/placeholder SESSION_SECRET and POSTGRES_PASSWORD in `.env`, then builds and starts the stack in the background without replacing configured secrets or databases. Repeat runs preserve secrets. To check use `docker compose -f infra/compose.prod.yml ps`, and to stop use `docker compose -f infra/compose.prod.yml down` (never add `-v` unless deleting data is intended). `restart: unless-stopped` works after a host reboot only if Docker itself starts; Docker Desktop commonly starts after user sign-in. Only `127.0.0.1:3000` is published; add a secure external HTTPS proxy to expose it. `infra/compose.yml` remains the database-only development Compose.
 
 ### Database operations and release status
 
