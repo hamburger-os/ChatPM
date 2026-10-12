@@ -47,3 +47,8 @@ Web 仅承担界面与固定上游 HTTP 代理，生产 Compose 不再向 Web �
 ### 本次复审追加：发行与升级
 
 原生初装新增 `setup:local` 的模板密钥生成与数据库默认密码阻止；升级新增 `upgrade:native` 的人工停服确认、HTTP 运行态检查与备份先行顺序。CI 可上传便携构建包，但目标机仍需自行安装 Node/PostgreSQL、验证密钥和服务账户，不能标记为已完成正式 MSI/DEB/RPM。
+
+
+### PR 审查会话修复确认
+
+PR 自动代码审查发现数据卷存在时误轮换凭证、Compose 默认环境目录偏移、Web 子应用缺少根 `.env`、Windows SIGTERM 非优雅停止四项问题。现以受管卷检测、显式 Compose 环境文件、跨进程注入根环境、Windows Worker IPC 排空修复；CI 追加真实首次启动与数据库已有卷凭证丢失的失败关闭用例。修复完成后须重新检查全部 CI，才能关闭审查会话并合并。
