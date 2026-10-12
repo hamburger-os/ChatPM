@@ -26,3 +26,19 @@
 ### PR /review 补充：最小权限
 
 Web 仅承担界面与固定上游 HTTP 代理，生产 Compose 不再向 Web 注入数据库连接口令、Session 签名密钥和 OpenAI API 密钥。API、Worker、迁移按职责获取所需凭据。PostgreSQL 不开放宿主机端口，容器备份需通过数据库容器执行。持续验证 Cookie、Origin 和跨平台构建。
+
+
+## /review · 部署、权限、备份与可观测性复审（2026-10-13）
+
+审查范围：跨平台运行脚本、Compose 依赖与服务健康、Worker Outbox 处理、SQL 迁移、Windows WinSW、Linux systemd、备份工具与双语使用手册。
+
+**已处理的高风险设计点：**
+- 消除日常运行的三终端门槛，同时保留 API/Worker/Web 独立进程；前台 CLI 不替代系统级守护。
+- 生产 Docker 初次安装生成独立随机数据库密码及会话密钥，不在重复启动中无故重置。
+- Windows 服务配置从默认 LocalSystem 改为 LocalService，并将写权限限制到日志和 Next 缓存，密钥文件不继承目录的普通访问权限；管理员仍须检查已有显式 ACL 与程序目录写权限。
+- 新增 Worker 最后成功 tick 的数据库心跳和 Doctor 诊断，发现 API/数据库不通、Worker 停滞、Outbox 逾期及死信；这里只提供本地非零退出码，外部告警发送仍需监控平台接入。
+- 新增原生/Docker 备份及 Linux/Windows 定时任务模板，备份使用 custom-format、私有临时文件、完成后原子更名以及受约束的留存清理。文件签名检查不能替代隔离恢复演练。
+
+**未关闭、需要实机独立验收的事项：** Windows 11 WinSW LocalService 实际权限与重启、Linux 断电/开机恢复、任务调度故障告警接入、数据库 PITR、离机加密备份、异机还原演练、生产 HTTPS/Cookie 端到端测试、压力与安全测评。以上均不能由 PR CI 通过直接宣布完成。
+
+**合并判定规则**：新增迁移经 PostgreSQL CI、应用回归与 Docker Compose 冒烟、Windows/Linux 构建、安装脚本语法/运维单元测试及文档检查全部通过，并确认 PR 可合并后，代码可作为实验性运维功能进入 main；生产级承诺仍不得发布。
