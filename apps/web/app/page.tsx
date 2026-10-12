@@ -350,6 +350,7 @@ export default function Home(){
               {p.clarified_due_at||'未提供明确期限'}（仍需负责人审核）</small>}
             {p.evidence_text&&<small>消息证据：{p.evidence_text.slice(0,240)}</small>}
             <small>模型：{p.model_name||'未知'}</small>
+            {p.kind==='task'&&<button className="secondary" onClick={()=>setChat('【候选:'+p.id+'】 ')}>在聊天室补充此任务</button>}
             {current?.role==='owner'&&p.kind==='task'&&
               <select aria-label={'候选负责人：'+p.title} value={proposalOwners[p.id]||''}
                 onChange={e=>setProposalOwners(x=>({...x,[p.id]:e.target.value}))}>
