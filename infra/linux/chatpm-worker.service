@@ -1,0 +1,23 @@
+[Unit]
+Description=ChatPM background worker
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=chatpm
+Group=chatpm
+WorkingDirectory=/opt/chatpm
+Environment=NODE_ENV=production
+EnvironmentFile=/etc/chatpm/chatpm.env
+ExecStart=/usr/bin/node /opt/chatpm/dist/apps/worker/src/worker.js
+Restart=on-failure
+RestartSec=10
+TimeoutStopSec=60
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

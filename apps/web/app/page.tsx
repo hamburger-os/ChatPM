@@ -18,7 +18,7 @@ type Report={id:string,kind:'week'|'month',period_key:string,content:string,
 type Risk={id:string,title:string,status:string};
 type FailedEvent={id:string,kind:string,attempts:number,last_error_code:string,dead_at:string};
 type OutboxStats={pending:number,dead:number,model_errors:number,oldest_pending_at:string|null};
-const API=process.env.NEXT_PUBLIC_API_URL||'http://localhost:3001';
+const API='/api';
 
 function browserLocalDateTime(iso:string|null):string {
   if(!iso)return '';

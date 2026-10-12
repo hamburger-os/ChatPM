@@ -1,4 +1,4 @@
-import 'dotenv/config';
+import { serverConfig } from '../../../packages/core/src/config.ts';
 import { randomUUID } from 'node:crypto';
 import Fastify from 'fastify';
 import cors from '@fastify/cors';
@@ -14,8 +14,8 @@ import { insertMessage } from '../../../packages/core/src/messages.ts';
 import { generateReport } from '../../../packages/core/src/reports.ts';
 import { deadEvents, outboxSummary } from '../../../packages/core/src/outbox.ts';
 
-const port = Number(process.env.API_PORT ?? '3001');
-const origin = process.env.WEB_ORIGIN ?? 'http://localhost:3000';
+const port = serverConfig.API_PORT;
+const origin = serverConfig.WEB_ORIGIN;
 const uuid = z.string().uuid();
 const text = z.string().trim().min(1).max(10000);
 const app = Fastify({ logger: true, bodyLimit: 128 * 1024 });
@@ -66,7 +66,7 @@ function owner(m:{role:string}) {
 }
 async function issueSession(reply:{setCookie:Function},userId:string) {
   reply.setCookie('chatpm_session',await createSession(userId),{
-    path:'/',httpOnly:true,secure:process.env.NODE_ENV==='production',
+    path:'/',httpOnly:true,secure:serverConfig.NODE_ENV==='production',
     sameSite:'lax',maxAge:7*86400,
   });
 }
@@ -461,4 +461,4 @@ app.post('/projects/:id/reports/:reportId/publish',async req=>{
 });
 
 app.addHook('onClose',async()=>{await pool.end();});
-await app.listen({port,host:'0.0.0.0'});
+await app.listen({port,host:serverConfig.API_HOST});

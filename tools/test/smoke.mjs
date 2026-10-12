@@ -6,7 +6,10 @@ import pg from 'pg';
 
 const port=33217;
 const host='http://127.0.0.1:'+port;
-const server=spawn(process.execPath,['--import','tsx','apps/api/src/server.ts'],{
+const serverArgs=process.env.SMOKE_PRODUCTION==='1'
+  ? ['dist/apps/api/src/server.js']
+  : ['--import','tsx','apps/api/src/server.ts'];
+const server=spawn(process.execPath,serverArgs,{
   env:{...process.env,API_PORT:String(port)},stdio:'inherit',
 });
 let exited=false;
