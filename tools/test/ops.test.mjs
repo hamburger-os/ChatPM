@@ -73,3 +73,17 @@ test('health assessment fails closed for stale Worker and overdue outbox', () =>
   assert.deepEqual(evaluateHealth({ ...input, successAgeSec: null }).issues,
     ['WORKER_TICK_NOT_SUCCESSFUL']);
 });
+
+import { prepareNativeEnv, validateNativeEnv } from '../ops/bootstrap-native.mjs';
+
+test('native installer generates secret but never accepts template database password', () => {
+  const template = 'NODE_ENV=production\nDATABASE_URL=postgres://chatpm:chatpm@127.0.0.1:5432/chatpm\n' +
+    'SESSION_SECRET=replace-with-a-long-random-secret-at-least-32-characters\n' +
+    'WEB_ORIGIN=http://localhost:3000\n';
+  const prepared = prepareNativeEnv(template);
+  assert.match(prepared, /^SESSION_SECRET=[a-f0-9]{64}$/m);
+  assert.ok(validateNativeEnv(prepared).some(x => x.includes('DATABASE_URL')));
+  const valid = prepared.replace('chatpm:chatpm@', 'chatpm:uniqueStrongPassword@');
+  assert.deepEqual(validateNativeEnv(valid), []);
+  assert.equal(prepareNativeEnv(valid), valid);
+});
