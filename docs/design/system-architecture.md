@@ -1,11 +1,11 @@
 # 系统架构与技术选型
 
-**状态：设计基线已审查（尚未实施）。**
+**状态：设计基线已审查；v0.1 实验性 MVP 已部分实施。**
 
 ## 架构选择
 采用**TypeScript Monorepo + 模块化单体**：Web 前端、API 进程、异步 Worker 进程，共享清晰的领域模块和契约。初期使用一个 PostgreSQL 业务数据库，不拆微服务。API 与 Worker 可以独立扩缩容，但属于同一个产品系统。
 
-`Web (Next.js) → API (NestJS) → 领域模块 → PostgreSQL`
+`Web (Next.js) → API (Fastify) → 领域模块 → PostgreSQL`
 
 `数据库 Outbox → 事件发布器 → PostgreSQL 轮询 Worker → 领域命令 / 外部渠道`
 
@@ -16,7 +16,7 @@
 |---|---|---|
 | Web | Next.js + React + Tailwind | 聊天与任务界面统一开发 |
 | API | Fastify + TypeScript strict（v0.1） | 模块治理、验证、注入及测试结构 |
-| 数据 | PostgreSQL + Prisma（拟定） | 事务、约束、版本化业务记录 |
+| 数据 | PostgreSQL + pg（v0.1），不额外引入 ORM | 事务、约束、版本化业务记录；按模块拆分 SQL 所有权 |
 | 异步调度 | PostgreSQL Outbox 与轮询 Worker | 初期避免双持久化，按规模再引入独立队列 |
 | 文档 | S3 兼容对象存储 | 原始附件独立于业务表 |
 | 检索 | PostgreSQL 全文检索优先，pgvector 按效果引入 | 不把向量相似度当事实 |
