@@ -8,7 +8,7 @@
 cp .env.example .env
 # 请将 SESSION_SECRET 更换为至少 32 字符的随机字符串
 docker compose -f infra/compose.yml up -d
-npm install
+npm ci
 npm run db:migrate
 ```
 
