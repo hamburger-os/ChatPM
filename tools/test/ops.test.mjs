@@ -87,3 +87,12 @@ test('native installer generates secret but never accepts template database pass
   assert.deepEqual(validateNativeEnv(valid), []);
   assert.equal(prepareNativeEnv(valid), valid);
 });
+
+import { parseUpgradeArgs } from '../ops/upgrade.mjs';
+
+test('native upgrade requires explicit maintenance acknowledgement', () => {
+  assert.throws(() => parseUpgradeArgs([]), /Stop API/);
+  assert.throws(() => parseUpgradeArgs(['--confirm-services-stopped', '--unsafe']), /Usage:/);
+  assert.deepEqual(parseUpgradeArgs(['--confirm-services-stopped', '--dir=/secure/backups']),
+    ['--dir=/secure/backups']);
+});
