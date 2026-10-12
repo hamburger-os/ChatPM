@@ -48,6 +48,7 @@ export default function Home(){
     [newTask,setNewTask]=useState(''),[invite,setInvite]=useState('');
   const [newTaskOwner,setNewTaskOwner]=useState(''),[newTaskDue,setNewTaskDue]=useState('');
   const [proposalOwners,setProposalOwners]=useState<Record<string,string>>({});
+  const [proposalDates,setProposalDates]=useState<Record<string,string>>({});
   const [settings,setSettings]=useState({aiEnabled:false,workStart:null as number|null,
     workEnd:null as number|null,cooldownHours:null as number|null});
   const [notice,setNotice]=useState(''),[working,setWorking]=useState(false);
@@ -167,8 +168,10 @@ export default function Home(){
     if(!selected)return;
     await action(async()=>{
       const assigneeId=accepted&&p.kind==='task'?proposalOwners[p.id]||null:null;
+      const dueText=proposalDates[p.id];
+      const dueAt=dueText===undefined?undefined:dueText?new Date(dueText).toISOString():null;
       await request('/projects/'+selected+'/proposals/'+p.id+'/decision',{
-        method:'POST',body:JSON.stringify({decision:accepted?'accepted':'rejected',assigneeId})});
+        method:'POST',body:JSON.stringify({decision:accepted?'accepted':'rejected',assigneeId,dueAt})});
       await refresh(selected);
     });
   }
@@ -357,6 +360,11 @@ export default function Home(){
                 <option value="">负责人待指定</option>
                 {members.map(m=><option key={m.id} value={m.id}>{m.display_name}</option>)}
               </select>}
+            {current?.role==='owner'&&p.kind==='task'&&<label>确认截止时间（可修改 AI 建议）
+              <input type="datetime-local" key={p.id+':'+(p.clarified_due_at||p.due_at||'none')}
+                defaultValue={browserLocalDateTime(p.clarified_due_at||p.due_at)}
+                onChange={e=>setProposalDates(old=>({...old,[p.id]:e.target.value}))}/>
+            </label>}
             {current?.role==='owner'&&<div className="actions">
               <button onClick={()=>void decision(p,true)} disabled={working}>确认</button>
               <button className="secondary" onClick={()=>void decision(p,false)} disabled={working}>忽略</button>
