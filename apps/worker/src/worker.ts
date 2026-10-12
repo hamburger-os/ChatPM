@@ -204,6 +204,7 @@ async function shutdown(){
   clearInterval(timer);
   if(activeTick)await activeTick;
   await pool.end();
+  if (process.connected) process.disconnect();
 }
 // The one-terminal runner uses IPC on Windows because SIGTERM forcibly terminates Node there.
 if (process.send) {
