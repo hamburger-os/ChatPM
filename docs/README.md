@@ -29,6 +29,7 @@
 | 整体审查 | [审查结论与修复记录](design/review-2026-10-12.md) |
 | 实施差距 | [MVP 状态与下一步](design/implementation-status.md) |
 | MVP 审查 | [代码及验收审查](design/review-mvp-2026-10-12.md) |
+| 可靠性复审 | [并发一致性与后续里程碑](design/review-reliability-2026-10-12.md) |
 
 ## 同步原则
 `docs/design/` 是经负责人审查的权威架构设计；`docs/ai/` 是对应的工程实施契约，`docs/community/` 是供社区理解的双语说明，`docs/knowledge/` 为参考知识。发生冲突应提出设计审查，不得自行选择实现。更改代码时运行 [docs-sync Skill](../.agents/skills/docs-sync/SKILL.md)。
