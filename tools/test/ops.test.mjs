@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { prepareDockerEnv } from '../ops/deploy.mjs';
+import { prepareDockerEnv, assertSafeDockerBootstrap } from '../ops/deploy.mjs';
 
 const template = [
   'NODE_ENV=development',
@@ -95,4 +95,11 @@ test('native upgrade requires explicit maintenance acknowledgement', () => {
   assert.throws(() => parseUpgradeArgs(['--confirm-services-stopped', '--unsafe']), /Usage:/);
   assert.deepEqual(parseUpgradeArgs(['--confirm-services-stopped', '--dir=/secure/backups']),
     ['--dir=/secure/backups']);
+});
+
+test('existing PostgreSQL volume blocks missing or placeholder credentials', () => {
+  assert.throws(() => assertSafeDockerBootstrap(['POSTGRES_PASSWORD'], true), /existing ChatPM PostgreSQL/);
+  assert.throws(() => assertSafeDockerBootstrap(['SESSION_SECRET'], true), /Recover the original/);
+  assert.doesNotThrow(() => assertSafeDockerBootstrap([], true));
+  assert.doesNotThrow(() => assertSafeDockerBootstrap(['SESSION_SECRET', 'POSTGRES_PASSWORD'], false));
 });
