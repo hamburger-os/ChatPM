@@ -9,7 +9,7 @@ if (!base) {
 }
 
 const result = spawnSync('git', [
-  'diff', '--name-only', '--diff-filter=ACMRT', base + '...' + head,
+  'diff', '--name-only', '--diff-filter=ACDMRT', base + '...' + head,
 ], { encoding: 'utf8' });
 
 if (result.status !== 0) {
