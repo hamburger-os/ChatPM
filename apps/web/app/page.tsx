@@ -17,7 +17,7 @@ const API=process.env.NEXT_PUBLIC_API_URL||'http://localhost:3001';
 
 async function request<T>(path:string,options?:RequestInit):Promise<T>{
   const response=await fetch(API+path,{...options,credentials:'include',cache:'no-store',
-    headers:{'Content-Type':'application/json',...options?.headers}});
+    headers:{...(options?.body?{'Content-Type':'application/json'}:{}),...options?.headers}});
   const result=await response.json().catch(()=>({error:'服务暂时不可用'}));
   if(!response.ok)throw new Error(result.error||'请求失败');
   return result as T;

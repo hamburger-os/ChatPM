@@ -22,7 +22,8 @@ const origin=process.env.WEB_ORIGIN||'http://localhost:3000';
 let cookieA='',cookieB='';
 async function api(path,{method='GET',body,cookie=cookieA}={}){
   const r=await fetch(host+path,{
-    method,headers:{'Content-Type':'application/json',Origin:origin,...(cookie?{Cookie:cookie}:{})},
+    method,headers:{...(body!==undefined?{'Content-Type':'application/json'}:{}),Origin:origin,
+      ...(cookie?{Cookie:cookie}:{})},
     body:body===undefined?undefined:JSON.stringify(body),
   });
   let data;try{data=await r.json();}catch{data={};}
