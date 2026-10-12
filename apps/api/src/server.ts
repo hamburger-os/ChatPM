@@ -322,7 +322,8 @@ app.post('/projects/:id/proposals/:proposalId/decision',async req=>{
   const userId=await authenticated(req);
   owner(await member(userId,projectId));
   const v=z.object({decision:z.enum(['accepted','rejected']),
-    assigneeId:uuid.nullable().default(null)}).parse(req.body);
+    assigneeId:uuid.nullable().default(null),
+    dueAt:z.string().datetime({offset:true}).nullable().optional()}).parse(req.body);
   return transaction(async db=>{
     const p=(await db.query(
       `SELECT pc.*,ct.due_at AS clarified_due_at FROM proposed_changes pc
@@ -337,7 +338,7 @@ app.post('/projects/:id/proposals/:proposalId/decision',async req=>{
         const t=(await db.query(
           `INSERT INTO tasks(project_id,title,detail,assignee_id,due_at,source_proposal_id)
            VALUES($1,$2,$3,$4,$5,$6) RETURNING id`,
-          [projectId,p.title,p.detail,v.assigneeId,p.clarified_due_at??p.due_at,p.id])).rows[0];
+          [projectId,p.title,p.detail,v.assigneeId,v.dueAt===undefined?(p.clarified_due_at??p.due_at):v.dueAt,p.id])).rows[0];
         await syncFollowup(db,projectId,t.id);
       } else {
         await db.query(
