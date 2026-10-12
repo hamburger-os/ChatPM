@@ -51,7 +51,7 @@ Worker 只在项目时区符合计划时创建本期周/月报一次；不会每
 2. 在 PowerShell 根目录执行 `Copy-Item .env.example .env`，设置数据库连接、随机 SESSION_SECRET 和部署对外 WEB_ORIGIN。
 3. 执行 `npm run setup:native`，确认构建和迁移无错误。
 4. 执行 `npm start` 直接在一个 PowerShell 终端运行三个进程；浏览器打开 http://localhost:3000。仅适合前台试运行。
-5. 开机自启需取得并验证官方 WinSW，以管理员身份执行 `./infra/windows/install-services.ps1 -WinSWPath <WinSW路径> -StartNow`。三个服务注册为 Automatic，并立即启动；可用 `Get-Service chatpm-*` 检查、`Restart-Service chatpm-api,chatpm-worker,chatpm-web` 重启。**WinSW 默认以高权限 LocalSystem 安装**，务必在正式使用前配置最小权限账户、受限 `.env` 文件 ACL 及服务访问权，并演练重启和恢复；这些步骤不可跳过。
+5. 开机自启需取得并验证官方 WinSW，以管理员身份执行 `./infra/windows/install-services.ps1 -WinSWPath <WinSW路径> -StartNow`。三个服务注册为 Automatic，并立即启动；可用 `Get-Service chatpm-*` 检查、`Restart-Service chatpm-api,chatpm-worker,chatpm-web` 重启。脚本显式安装为内置低权限 LocalService，授权运行目录读取、Next 缓存及日志写入，限制 `.env` 文件继承权限；管理员仍需审查所有显式 ACL 项与安装目录可写主体，确保普通账户不能替换程序文件，并演练重启及恢复。
 
 ### 不使用 Docker 的 Linux 安装
 
@@ -72,6 +72,16 @@ npm run deploy:docker
 首次自动创建 `.env` 并生成缺失/模板中的随机 SESSION_SECRET 与 POSTGRES_PASSWORD；不覆盖已有非占位符秘密，重复执行幂等。该命令不安装 Docker，不自动创建公网 TLS，也不覆盖已存在数据库。已有配置可继续直接执行 `docker compose -f infra/compose.prod.yml up -d --build`。查看运行状态：`docker compose -f infra/compose.prod.yml ps`；停服务：`docker compose -f infra/compose.prod.yml down`（不要添加 `-v`）。
 
 默认仅监听本机 `127.0.0.1:3000`。已配置 `restart: unless-stopped`，但主机重启自动恢复仍需要 Docker 引擎随系统启动（Windows Docker Desktop 通常在用户登录后启动）。公网访问应由 HTTPS 反向代理接入；数据库持久化为命名卷。开发用 `infra/compose.yml` 仍只有 PostgreSQL。
+
+### 运维诊断、自动备份与升级
+
+- `npm run doctor` 检查 API、PostgreSQL、Worker 心跳与 Outbox 延迟/隔离数，返回 0 表示当前检查通过，否则返回非零状态；正式监控应由外部系统读取该结果并报警。Docker 中使用 `docker compose -f infra/compose.prod.yml exec -T api node tools/ops/doctor.mjs`。部署完数据库迁移并启动 Worker 后，等待首个完整 tick 再检查。
+- 原生备份：`npm run backup -- --dir=./backups --keep=14`；Docker 备份：`npm run backup:docker -- --dir=./backups --keep=14`。使用 `pg_dump` custom format、独立临时文件、完成后原子更名、失败清理临时文件。仅删除本工具命名的历史备份，默认保留最近 14 份。Linux 备份目录须只有服务用户可访问（权限 0700）；不要把此目录直接暴露给 Web。
+- Linux：先以管理员创建 `sudo install -d -o chatpm -g chatpm -m 700 /var/lib/chatpm/backups`，复制 `infra/linux/chatpm-backup.service`、`chatpm-backup.timer`、`chatpm-doctor.service`、`chatpm-doctor.timer` 到 `/etc/systemd/system/`；之后执行 `sudo systemctl daemon-reload && sudo systemctl enable --now chatpm-backup.timer chatpm-doctor.timer`。检查 `systemctl list-timers` 和 `journalctl -u chatpm-backup.service -u chatpm-doctor.service`，将失败交给现有告警平台。
+- Windows：完成 `install-services.ps1` 的 LocalService 权限配置后，以管理员执行 `./infra/windows/install-backup-task.ps1` 注册使用 LocalService 的每日 02:30 备份任务（可选 `-BackupDirectory`）。通过任务计划程序执行一次并检查产物；绝不能将密码写入任务参数。
+- 升级前：确认最新备份完成且可读取，并持有安全的离机副本；安排维护窗口，停止 Web/API/Worker，安装/构建新版本，执行 `npm run db:migrate:prod`，启动各服务，运行 `doctor` 并确认核心登录、消息及 Worker。数据库 schema 没有通用向下迁移机制，不能因旧版代码能回退就假设数据库可以回滚。
+
+以上是可部署的工具和定时任务模板，而非已经完成目标机器的开机故障恢复、加密离机复制、PITR、定期隔离恢复和集中告警验收。
 
 ### 备份、恢复和正式上线限制
 
@@ -139,7 +149,7 @@ PRs must pass the `verify` (product and database validation) and `documentation`
 
 Install Node.js 24 and PostgreSQL 17 (including `pg_dump` and `pg_restore`). Create a dedicated database and user. From PowerShell: `Copy-Item .env.example .env`, configure database credentials and a secure SESSION_SECRET, then `npm run setup:native`. Use `npm start` for a one-terminal foreground run.
 
-For Windows services, obtain and verify WinSW independently, then run `./infra/windows/install-services.ps1 -WinSWPath <path> -StartNow` as administrator. It registers automatic-start services and starts them immediately; check with `Get-Service chatpm-*`. WinSW defaults to high-privilege LocalSystem: configure restricted service accounts and file ACLs before real production use, and test restart/recovery.
+For Windows services, obtain and verify WinSW independently, then run `./infra/windows/install-services.ps1 -WinSWPath <path> -StartNow` as administrator. It registers automatic-start services and starts them immediately; check with `Get-Service chatpm-*`. The installer explicitly selects built-in low-privilege LocalService instead of WinSW's LocalSystem default. It grants read access to the application tree, write access to log/Next cache paths, and restricts inheritance on `.env`. Administrators must audit remaining explicit ACL entries and prevent untrusted write access to executable files, then test restart/recovery.
 
 ### Native Linux (no Docker)
 
@@ -148,6 +158,16 @@ Install Node.js 24 and PostgreSQL 17/client tools; create a database, database r
 ### Complete Docker Compose
 
 With Docker/Compose and Node installed, run `npm run deploy:docker`. It initializes missing/placeholder SESSION_SECRET and POSTGRES_PASSWORD in `.env`, then builds and starts the stack in the background without replacing configured secrets or databases. Repeat runs preserve secrets. To check use `docker compose -f infra/compose.prod.yml ps`, and to stop use `docker compose -f infra/compose.prod.yml down` (never add `-v` unless deleting data is intended). `restart: unless-stopped` works after a host reboot only if Docker itself starts; Docker Desktop commonly starts after user sign-in. Only `127.0.0.1:3000` is published; add a secure external HTTPS proxy to expose it. `infra/compose.yml` remains the database-only development Compose.
+
+### Diagnostics, scheduled backups, and controlled upgrades
+
+- `npm run doctor` tests local API reachability, PostgreSQL, Worker heartbeat/success, and overdue/dead Outbox events. Exit code is nonzero on failure, suitable for an external monitoring collector; the command itself does not send alerts. Inside Docker run `docker compose -f infra/compose.prod.yml exec -T api node tools/ops/doctor.mjs`. Let Worker complete a tick after migration/startup.
+- Use `npm run backup -- --dir=./backups --keep=14` for native PostgreSQL or `npm run backup:docker -- --dir=./backups --keep=14` for Compose. Archives use custom-format `pg_dump`, unique temporary files, no overwrite, and an atomic rename on success. Retention deletes only archives created by this tool, defaulting to the newest 14; private backup storage is mandatory.
+- Linux: `sudo install -d -o chatpm -g chatpm -m 700 /var/lib/chatpm/backups`, install both `chatpm-backup.{service,timer}` and `chatpm-doctor.{service,timer}` from `infra/linux` into `/etc/systemd/system`, then `sudo systemctl daemon-reload && sudo systemctl enable --now chatpm-backup.timer chatpm-doctor.timer`. Inspect timers and `journalctl` and connect failures to an alerting service.
+- Windows: after secure service installation, elevated PowerShell `./infra/windows/install-backup-task.ps1` registers the low-privilege LocalService daily 02:30 job. Test it manually and inspect backups; database secrets must remain in protected `.env`, never task command lines.
+- Upgrades: verify a fresh backup and encrypted off-host copy, schedule downtime, stop all three services, build the new version and migrate once, restart, run `doctor` and functional smoke tests. SQL migrations are not generally reversible; rollback of binaries is not equivalent to restoring database state.
+
+Templates and CI do not prove real machine boot-recovery, end-to-end restore, encryption, PITR, Windows filesystem ACL audit or centralized alert delivery. Do not process sensitive production data until these checks are complete.
 
 ### Database operations and release status
 
