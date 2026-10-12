@@ -410,7 +410,7 @@ export default function Home(){
               <small>{new Date(e.dead_at).toLocaleString('zh-CN')}</small>
               <button disabled={working} onClick={()=>void retryEvent(e.id)}>安全重试</button>
             </article>)}
-            {!failedEvents.length&&<p className="hint">目前没有隔离的失败事件。</p>
+            {!failedEvents.length&&<p className="hint">目前没有隔离的失败事件。</p>}
           </>}
         </>}
       </div>}
