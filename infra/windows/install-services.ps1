@@ -39,6 +39,21 @@ Set-AclChecked -Path $NextCache -AclArguments @('/grant', '*S-1-5-19:(OI)(CI)(M)
 Set-AclChecked -Path $EnvFile -AclArguments @('/inheritance:r')
 Set-AclChecked -Path $EnvFile -AclArguments @('/grant:r', '*S-1-5-19:(R)', '*S-1-5-18:(F)', '*S-1-5-32-544:(F)')
 
+# Next.js loads apps/web as its project root; explicitly provide non-secret internal API URL.
+$EnvContents = Get-Content -LiteralPath $EnvFile -Raw
+$ApiUrlMatch = [regex]::Match($EnvContents, '(?m)^API_INTERNAL_URL=([^\r\n]*)')
+$ApiInternalUrl = $ApiUrlMatch.Groups[1].Value.Trim()
+if (-not $ApiInternalUrl) {
+  $ApiPortMatch = [regex]::Match($EnvContents, '(?m)^API_PORT=(\d+)')
+  $ApiPort = if ($ApiPortMatch.Success) { $ApiPortMatch.Groups[1].Value } else { '3001' }
+  $ApiInternalUrl = "http://127.0.0.1:$ApiPort"
+}
+$ApiUri = $null
+if (-not [Uri]::TryCreate($ApiInternalUrl, [UriKind]::Absolute, [ref]$ApiUri) -or
+    $ApiUri.Scheme -notin @('http', 'https') -or $ApiUri.UserInfo) {
+  throw 'API_INTERNAL_URL must be an absolute HTTP(S) URL without credentials.'
+}
+
 $Services = @{
   'api' = 'dist/apps/api/src/server.js'
   'worker' = 'dist/apps/worker/src/worker.js'
@@ -52,6 +67,10 @@ foreach ($Component in @('api','worker','web')) {
   $Wrapper = Join-Path $Root "$Id.exe"
   $ExtraArgs = if ($Component -eq 'web') { ' start apps/web -p 3000 -H 127.0.0.1' } else { '' }
   $Arguments = "$($Services[$Component])$ExtraArgs"
+  $WebApiEnv = if ($Component -eq 'web') {
+    '<env name="API_INTERNAL_URL" value="' +
+      [System.Security.SecurityElement]::Escape($ApiInternalUrl) + '" />'
+  } else { '' }
   $Xml = @"
 <service>
   <id>$Id</id>
@@ -60,6 +79,7 @@ foreach ($Component in @('api','worker','web')) {
   <startmode>Automatic</startmode>
   <serviceaccount><username>NT AUTHORITY\LocalService</username></serviceaccount>
   <env name="NODE_ENV" value="production" />
+  $WebApiEnv
   <executable>$([System.Security.SecurityElement]::Escape($Node))</executable>
   <arguments>$([System.Security.SecurityElement]::Escape($Arguments))</arguments>
   <workingdirectory>$([System.Security.SecurityElement]::Escape($Root))</workingdirectory>
