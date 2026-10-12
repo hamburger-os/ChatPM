@@ -192,10 +192,17 @@ app.delete('/projects/:id/members/:memberId',async req=>{
   owner(await member(actor,projectId));
   if(actor===target) fail(400,'不能通过此接口移除项目负责人');
   return transaction(async db=>{
-    const {rows}=await db.query(`DELETE FROM project_members
-      WHERE project_id=$1 AND user_id=$2 AND role='member' RETURNING user_id`,
+    // Serialize revocation with task creation/assignment using the member row lock.
+    const found=await db.query(`SELECT 1 FROM project_members
+      WHERE project_id=$1 AND user_id=$2 AND role='member' FOR UPDATE`,
       [projectId,target]);
-    if(!rows.length) fail(404,'项目成员不存在');
+    if(!found.rowCount) fail(404,'项目成员不存在');
+    const assigned=await db.query(`SELECT 1 FROM tasks
+      WHERE project_id=$1 AND assignee_id=$2 AND status NOT IN ('done','cancelled')
+      LIMIT 1`,[projectId,target]);
+    if(assigned.rowCount) fail(409,'该成员仍有未完成任务，请先重新指派或取消任务');
+    await db.query(`DELETE FROM project_members
+      WHERE project_id=$1 AND user_id=$2 AND role='member'`,[projectId,target]);
     await audit(db,projectId,actor,'project.member_removed',target);
     return {ok:true};
   });
@@ -286,7 +293,8 @@ app.post('/projects/:id/tasks',async(req,reply)=>{
   return reply.code(201).send({task:row});
 });
 async function ensureAssignee(db: DbClient, projectId:string,userId:string) {
-  const r=await db.query('SELECT 1 FROM project_members WHERE project_id=$1 AND user_id=$2',
+  const r=await db.query(
+    'SELECT 1 FROM project_members WHERE project_id=$1 AND user_id=$2 FOR KEY SHARE',
     [projectId,userId]);
   if (!r.rowCount) fail(400,'负责人不属于本项目');
 }

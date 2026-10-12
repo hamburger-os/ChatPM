@@ -245,6 +245,11 @@ try{
   const removeDenied=await api('/projects/'+pid+'/members/'+second.data.user.id,{
     method:'DELETE',cookie:cookieB});
   assert.equal(removeDenied.status,403);
+  const blockedRemoval=await api('/projects/'+pid+'/members/'+second.data.user.id,{method:'DELETE'});
+  assert.equal(blockedRemoval.status,409,'Members with unfinished assigned tasks must be reassigned first');
+  const reassigned=await api('/projects/'+pid+'/tasks/'+linked.rows[0].id,{
+    method:'PATCH',body:{version:1,assigneeId:uid}});
+  assert.equal(reassigned.status,200,'Owner can reassign unfinished work before removing a member');
   const removed=await api('/projects/'+pid+'/members/'+second.data.user.id,{method:'DELETE'});
   assert.equal(removed.status,200);
   const revokedMember=await api('/projects/'+pid+'/messages',{cookie:cookieB});
