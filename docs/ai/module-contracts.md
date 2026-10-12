@@ -76,3 +76,10 @@ Web 端从 `GET /projects` 初始化项目列表和设置面板。该接口返�
 - `npm run setup:native` 串行执行依赖安装、正式构建、分发检查、数据库迁移；要求已有 PostgreSQL 与经校验的环境。
 - `npm run deploy:docker` 使用 `tools/ops/deploy.mjs` 安全初始化本地 `.env` 并调用生产 Compose，确保它不会因重复部署轮换已有会话秘密或数据库密码。
 - 开机自启不属于 CLI 前台入口职责：Linux systemd、Windows WinSW 或 Docker Engine + Compose 重启策略分别提供宿主机进程守护。
+
+## 运维诊断与备份入口（ADR-018）
+
+- `packages/core/sql/004_worker_health.sql`：单行默认 Worker 心跳；`apps/worker/src/worker.ts` 在 tick 结束记录最近存活/成功/失败。心跳不构成业务事件或自动任务完成证据。
+- `npm run doctor`：读取数据库/schema、API `/health`、Worker 心跳与 Outbox 状态；非零退出以供监控器告警，不通过公网返回内部细节。Compose 内可在 API 容器执行相同 Node 脚本。
+- `npm run backup` / `npm run backup:docker`：`pg_dump` custom-format，写新私有文件成功后保留 N 份；不执行数据库恢复与自动回滚。Linux `chatpm-backup.timer` / `chatpm-doctor.timer` 和 Windows `ChatPM-Backup` Task Scheduler 可触发运维任务。
+- Windows WinSW 服务使用内置 LocalService（代替默认 LocalSystem）和最小运行期写权限。未经过安装环境 ACL/服务故障恢复实测前不可认为正式生产就绪。
