@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
 import { setTimeout as delay } from 'node:timers/promises';
 import { randomUUID } from 'node:crypto';
+import pg from 'pg';
 
 const port=33217;
 const host='http://127.0.0.1:'+port;
@@ -18,6 +19,8 @@ async function waitForHealth(){
   }
   throw new Error('API did not become healthy');
 }
+const db=new pg.Client({connectionString:process.env.DATABASE_URL});
+await db.connect();
 const origin=process.env.WEB_ORIGIN||'http://localhost:3000';
 let cookieA='',cookieB='';
 async function api(path,{method='GET',body,cookie=cookieA}={}){
@@ -53,6 +56,15 @@ try{
   const denied=await api('/projects/'+pid+'/tasks',{method:'POST',cookie:cookieB,
     body:{title:'越权任务',assigneeId:null,dueAt:null}});
   assert.equal(denied.status,404,'Cross-project write must not be allowed');
+  const invited=await api('/projects/'+pid+'/members',{method:'POST',body:{
+    email:'second+'+suffix2+'@example.com',
+  }});
+  assert.equal(invited.status,200,'Owner should be able to add a registered project member');
+  const memberView=await api('/projects/'+pid+'/members',{cookie:cookieB});
+  assert.equal(memberView.status,200);
+  const ownerOnly=await api('/projects/'+pid+'/settings',{method:'PATCH',cookie:cookieB,
+    body:{aiEnabled:false,workStart:9,workEnd:18,cooldownHours:24}});
+  assert.equal(ownerOnly.status,403,'Project members cannot change AI or reminder policy');
   const before=await api('/projects/'+pid+'/messages');
   assert.equal(before.status,200);
   const nonce=randomUUID();
@@ -74,13 +86,42 @@ try{
   const stale=await api('/projects/'+pid+'/tasks/'+tid,{method:'PATCH',
     body:{status:'done',version:1}});
   assert.equal(stale.status,409,'Stale versions must not overwrite task state');
+  const edited=await api('/projects/'+pid+'/tasks/'+tid,{method:'PATCH',body:{
+    version:2,assigneeId:uid,dueAt:new Date(Date.now()+86400000).toISOString(),
+  }});
+  assert.equal(edited.status,200,'Owner may edit task plan');
+  const configured=await api('/projects/'+pid+'/settings',{method:'PATCH',body:{
+    aiEnabled:false,workStart:9,workEnd:18,cooldownHours:24,
+  }});
+  assert.equal(configured.status,200);
+  const followup=await db.query(
+    'SELECT active FROM followup_plans WHERE task_id=$1',[tid]);
+  assert.equal(followup.rows[0]?.active,true,'Task follow-up must be durable');
+
+  const candidate=(await db.query(
+    `INSERT INTO proposed_changes(project_id,source_message_id,kind,title,detail)
+     VALUES($1,$2,'task',$3,'请核对') RETURNING id`,
+    [pid,posted.data.message.id,'来自聊天的候选任务'])).rows[0];
+  const memberDenied=await api('/projects/'+pid+'/proposals/'+candidate.id+'/decision',{
+    method:'POST',cookie:cookieB,body:{decision:'accepted',assigneeId:second.data.user.id}});
+  assert.equal(memberDenied.status,403,'Only the project owner may approve AI proposals');
+  const accepted=await api('/projects/'+pid+'/proposals/'+candidate.id+'/decision',{
+    method:'POST',body:{decision:'accepted',assigneeId:second.data.user.id}});
+  assert.equal(accepted.status,200);
+  const duplicateApproval=await api('/projects/'+pid+'/proposals/'+candidate.id+'/decision',{
+    method:'POST',body:{decision:'accepted',assigneeId:second.data.user.id}});
+  assert.equal(duplicateApproval.status,409,'Proposal must not create duplicate tasks');
+  const linked=await db.query('SELECT id FROM tasks WHERE source_proposal_id=$1',[candidate.id]);
+  assert.equal(linked.rowCount,1);
+
   const report=await api('/projects/'+pid+'/reports',{method:'POST',body:{kind:'week'}});
   assert.equal(report.status,200,JSON.stringify(report.data));
   assert.equal(report.data.report.state,'draft');
   const published=await api('/projects/'+pid+'/reports/'+report.data.report.id+'/publish',{method:'POST'});
   assert.equal(published.status,200);
-  console.log('API smoke tests passed: project isolation, message idempotency, task optimistic concurrency, report publication.');
+  console.log('API smoke tests passed: tenancy, RBAC, deduplicated chat/proposals, task versioning, durable follow-ups, report publication.');
 }finally{
+  await db.end();
   server.kill('SIGTERM');
   await delay(250);
 }
