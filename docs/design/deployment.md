@@ -42,3 +42,12 @@ Windows PowerShell 前台启动脚本与 WinSW 服务包装示例；Linux system
 Compose 默认不暴露 PostgreSQL 宿主机端口，使用 `docker compose -f infra/compose.prod.yml exec -T postgres pg_dump -U chatpm -d chatpm -Fc > backups/chatpm.dump` 等容器内客户端备份方式，操作前保证目标目录存在。
 
 上述仅提供操作路径，不等同于自动备份计划、数据完整性验收、PITR、生产灾备认证；生产级逆向代理、权限、安全、监控与恢复演练仍是未完成的发布门槛。
+
+
+## 简化部署的运行入口与验收
+
+- `npm run dev`：原生开发的单终端入口，统一启动并监看三个开发进程；不负责数据库创建。
+- `npm start`：本机已有正式构建产物时，单终端前台运行三个生产进程；适合试运行，不提供脱离终端的开机自启。进程收到停止信号时向子进程转发，任一进程退出则整组停止，防止静默退化。
+- `npm run deploy:docker`：前提是 Docker Compose 可用。首次根据模板生成 `.env`，对缺失或模板默认的 SESSION_SECRET、POSTGRES_PASSWORD 生成独立高熵随机值；保留已有用户设置，拒绝静默改写已设置的秘密；后台构建并启动服务。自动启动依赖宿主机 Docker 引擎在系统启动后运行。
+- Windows/Linux 原生 PostgreSQL 仍是明确的先决条件，正式长期运行使用既有 WinSW/systemd 三服务模板，不用前台进程管理器替换服务管理器。安装、升级、初始化数据库应与每次开机启动区分，不在应用服务的 ExecStart 中执行 `npm ci` 或自动数据库恢复。
+- 验收要求：Windows/Linux 使用同一 Node 入口；没有依赖安装时有可操作的失败提示；占位秘密能替换，既有配置原样保留；重复部署不生成新密钥；子进程崩溃不留下失管服务；独立验证 Docker 宿主机自启及服务恢复。仅运行单元测试不代表目标系统的开机自启实测。
