@@ -205,6 +205,17 @@ async function shutdown(){
   if(activeTick)await activeTick;
   await pool.end();
 }
+// The one-terminal runner uses IPC on Windows because SIGTERM forcibly terminates Node there.
+if (process.send) {
+  process.on('message', (message: unknown) => {
+    if (message && typeof message === 'object' &&
+        'type' in message && message.type === 'chatpm:shutdown') {
+      void shutdown().then(() => {
+        if (process.connected) process.disconnect();
+      }).catch(e => { console.error('IPC shutdown failed', e); process.exitCode=1; });
+    }
+  });
+}
 process.once('SIGTERM',()=>{void shutdown().catch(e=>{console.error('Shutdown failed',e);process.exitCode=1;});});
 process.once('SIGINT',()=>{void shutdown().catch(e=>{console.error('Shutdown failed',e);process.exitCode=1;});});
 scheduleTick();
