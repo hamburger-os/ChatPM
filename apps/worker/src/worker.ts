@@ -85,11 +85,28 @@ async function runAnalysis(event:EventRow) {
       added+=result.rowCount??0;
     }
     if(added) {
-      await db.query(
-        `INSERT INTO messages(project_id,kind,content,client_nonce)
-         VALUES($1,'ai',$2,$3) ON CONFLICT(project_id,client_nonce) DO NOTHING`,
-        [event.project_id,'我识别到 '+added+
-          ' 项可能的任务或风险，已放入「待确认」列表。请项目负责人核对内容、负责人及截止时间。','analysis:'+event.id]);
+      const recent=await db.query(
+        `SELECT 1 FROM messages WHERE project_id=$1 AND kind='ai'
+         AND client_nonce LIKE 'analysis:%'
+         AND created_at > NOW()-INTERVAL '10 minutes' LIMIT 1`,
+        [event.project_id]);
+      if(!recent.rowCount){
+        const questions=suggestions.filter(item=>!item.assignee_hint||!item.due_at)
+          .slice(0,2).map(item=>{
+            const missing=[
+              !item.assignee_hint?'由谁负责':'',
+              !item.due_at?'计划何时完成':'',
+            ].filter(Boolean).join('、');
+            return '关于「'+item.title+'」，请确认'+missing+'？';
+          });
+        const content='我从刚才的讨论中提取了 '+added+
+          ' 项待确认的任务或风险，负责人可在「AI 待确认」中审核。'+
+          (questions.length?'\n'+questions.join('\n'):'');
+        await db.query(
+          `INSERT INTO messages(project_id,kind,content,client_nonce)
+           VALUES($1,'ai',$2,$3) ON CONFLICT(project_id,client_nonce) DO NOTHING`,
+          [event.project_id,content,'analysis:'+event.id]);
+      }
       await audit(db,event.project_id,null,'ai.proposals_created',event.id,
         {sourceMessageId:event.message_id,count:added});
     }
