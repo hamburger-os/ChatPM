@@ -7,7 +7,7 @@
 
 `Web (Next.js) → API (NestJS) → 领域模块 → PostgreSQL`
 
-`数据库 Outbox → 事件发布器 → Redis/BullMQ → Worker → 领域命令 / 外部渠道`
+`数据库 Outbox → 事件发布器 → PostgreSQL 轮询 Worker → 领域命令 / 外部渠道`
 
 `Worker → AI 编排器 → Model Adapter（可替换模型）`
 
@@ -15,9 +15,9 @@
 | 组件 | 方案 | 选择理由 |
 |---|---|---|
 | Web | Next.js + React + Tailwind | 聊天与任务界面统一开发 |
-| API | NestJS + TypeScript strict | 模块治理、验证、注入及测试结构 |
+| API | Fastify + TypeScript strict（v0.1） | 模块治理、验证、注入及测试结构 |
 | 数据 | PostgreSQL + Prisma（拟定） | 事务、约束、版本化业务记录 |
-| 异步调度 | Redis + BullMQ | 异步分析、提醒和失败重试 |
+| 异步调度 | PostgreSQL Outbox 与轮询 Worker | 初期避免双持久化，按规模再引入独立队列 |
 | 文档 | S3 兼容对象存储 | 原始附件独立于业务表 |
 | 检索 | PostgreSQL 全文检索优先，pgvector 按效果引入 | 不把向量相似度当事实 |
 | AI | 单一编排器 + Provider 接口 | 避免锁定模型及多 Agent 复杂性 |
@@ -34,3 +34,6 @@ Identity/Tenancy、Projects、Conversations、Work、Risk/Decision、AI Orchestr
 
 ## 非目标
 本设计没有任何旧系统接口和前后兼容包袱；一切从统一领域契约开始。
+
+## v0.1 实施变更
+API 首版选 Fastify，替代计划中的 NestJS；后台 Worker 直接从 PostgreSQL Outbox 与 FollowUpPlan 领取事件及提醒，不引入 Redis/BullMQ。理由是减少依赖和双写故障，保留 API/Worker 分进程与领域契约。前端为 Next.js，聊天室暂时短轮询，待性能需要时再升级实时连接；详见 ADR-011 至 ADR-013。
