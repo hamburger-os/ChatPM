@@ -9,7 +9,7 @@ User=chatpm
 Group=chatpm
 WorkingDirectory=/opt/chatpm
 Environment=NODE_ENV=production
-EnvironmentFile=/etc/chatpm/chatpm.env
+EnvironmentFile=/opt/chatpm/.env
 ExecStart=/usr/bin/node /opt/chatpm/dist/apps/api/src/server.js
 Restart=on-failure
 RestartSec=5
