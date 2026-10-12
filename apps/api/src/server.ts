@@ -12,7 +12,7 @@ import { isValidTimezone } from '../../../packages/core/src/policy.ts';
 import { syncFollowup } from '../../../packages/core/src/followup.ts';
 import { insertMessage } from '../../../packages/core/src/messages.ts';
 import { generateReport } from '../../../packages/core/src/reports.ts';
-import { deadEvents } from '../../../packages/core/src/outbox.ts';
+import { deadEvents, outboxSummary } from '../../../packages/core/src/outbox.ts';
 
 const port = Number(process.env.API_PORT ?? '3001');
 const origin = process.env.WEB_ORIGIN ?? 'http://localhost:3000';
@@ -357,6 +357,11 @@ app.post('/projects/:id/proposals/:proposalId/decision',async req=>{
   });
 });
 
+app.get('/projects/:id/outbox/summary',async req=>{
+  const projectId=uuid.parse((req.params as {id:string}).id);
+  owner(await member(await authenticated(req),projectId));
+  return {summary:await outboxSummary(projectId)};
+});
 app.get('/projects/:id/outbox/dead',async req=>{
   const projectId=uuid.parse((req.params as {id:string}).id);
   const userId=await authenticated(req);
