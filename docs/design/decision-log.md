@@ -31,3 +31,12 @@
 - 正式开源许可证、目标部署形态和优先集成的平台？
 
 以上各项如与 ADR-010 的保守默认策略重复，以 ADR-010 为准。未给定的用户策略不得由编码 Agent 自行猜测为已批准。
+
+## v0.1 实施 ADR
+| ID | 已决定的调整 | 原因 / 复审条件 |
+|---|---|---|
+| ADR-011 | API 使用 Fastify + strict TypeScript | 薄 API、少框架魔法；模块复杂度显著提高时重新评估 NestJS |
+| ADR-012 | PostgreSQL Outbox + 轮询 Worker，暂不采用 Redis/BullMQ | 初期减小故障面、避免双写，吞吐证据表明瓶颈后升级 |
+| ADR-013 | Web 页面采用 5 秒轮询 | 先验证任务闭环；有并发/延迟证据后使用 SSE/WebSocket |
+
+这些改动不影响 PostgreSQL 正式事实源、AI 候选审批、租户权限和人工决策原则。

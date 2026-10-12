@@ -1,6 +1,6 @@
 # ChatPM 文档中心
 
-本仓库实行**设计先行**，本次已完成架构基线审查；当前产品功能仍均待实施。根 [README](../README.md) 提供项目概述。
+本仓库实行**设计先行**，架构基线已审查；v0.1 MVP 已开始实施，仍未完成生产验收。根 [README](../README.md) 提供项目概述。
 
 ## 四层文档及权威顺序
 
@@ -27,6 +27,8 @@
 | 实施计划 | [里程碑与验收](design/roadmap-acceptance.md) |
 | 架构取舍 | [架构决策记录（ADR）](design/decision-log.md) |
 | 整体审查 | [审查结论与修复记录](design/review-2026-10-12.md) |
+| 实施差距 | [MVP 状态与下一步](design/implementation-status.md) |
+| MVP 审查 | [代码及验收审查](design/review-mvp-2026-10-12.md) |
 
 ## 同步原则
 `docs/design/` 是经负责人审查的权威架构设计；`docs/ai/` 是对应的工程实施契约，`docs/community/` 是供社区理解的双语说明，`docs/knowledge/` 为参考知识。发生冲突应提出设计审查，不得自行选择实现。更改代码时运行 [docs-sync Skill](../.agents/skills/docs-sync/SKILL.md)。

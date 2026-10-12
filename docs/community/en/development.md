@@ -1,16 +1,27 @@
 # Development Guide
 
-**The repository currently contains design documents and documentation checks only; no product code exists.** Planned technologies are not installed dependencies.
+**Status: experimental v0.1 MVP for local use, not production-ready.**
 
-## What works during design
-- Read [the docs index](../../README.md) and [root AGENTS.md](../../../AGENTS.md).
-- With Node.js installed, run `node tools/docs/check-docs.mjs` from the repository root to check structure and local links.
-- On PRs that change product code, run `node tools/docs/check-sync.mjs origin/main HEAD` for minimum documentation synchronization checks.
+Requires Node.js 22+ and Docker. From the repository root:
 
-## Planned app layout (not created)
-`apps/web` (Next.js), `apps/api` (NestJS), `apps/worker` (background jobs); reusable domain contracts and adapters will live under `packages`. Review the corresponding Chinese design before implementation.
+```bash
+cp .env.example .env
+# Replace SESSION_SECRET with a random string at least 32 characters long
+docker compose -f infra/compose.yml up -d
+npm install
+npm run db:migrate
+```
 
-## Contributions
-Start with a clear use case and acceptance criteria. Update the AI docs, Chinese design, and relevant bilingual community pages alongside implementation. Do not claim non-existent development scripts or test results.
+Start three terminals:
 
-[中文](../zh/development.md)
+```bash
+npm run dev:api
+npm run dev:worker
+npm run dev:web
+```
+
+Open http://localhost:3000, register and create a project. External AI is disabled by default. To opt in, set `OPENAI_API_KEY` on the server and enable AI explicitly in project settings. Reminders require a task owner, due date, working hours and cooldown policy.
+
+Checks: `npm run typecheck`, `npm test`, `npm run build:web`, `npm run check:docs`. Changes must follow [docs-sync](../../../.agents/skills/docs-sync/SKILL.md).
+
+See [implementation gaps (Chinese)](../../design/implementation-status.md) for unimplemented features and security limitations. [中文](../zh/development.md).
