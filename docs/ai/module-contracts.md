@@ -48,3 +48,9 @@
 - `packages/core/src/clarification.ts`：严格 `【候选:UUID】` 引用，回复只写持久澄清与来源，不修改正式 Task。仅 owner 的 `ApproveProposedChange` 可以将候选及澄清结果写正式状态。
 - `packages/core/src/migrate.ts`：以事务 + advisory lock + checksum 按文件序号应用变更；禁止修改已应用的 SQL。
 - 负责人 Outbox GET / 重试命令作用域由 API RBAC 强制，重放写 Audit，不能通过 Prompt 或模型工具跳过。
+
+## v0.2 新增模块及入口
+- `core/outbox.ts`：领取、完成、失败、死信查询，带租约、退避和安全错误码；owner 通过后端 RBAC 进行隔离事件重放，事务审计。
+- `core/ai-provider.ts`：LLMProvider、结构化候选与回复提取、项目每日调用预算（UTC），不允许模型直接写正式任务。
+- `core/clarification.ts`：解析 `【候选:UUID】`，只保存候选的多轮证据回复；owner 审批后才转成正式任务，线程关闭。
+- `core/migrate.ts`：校验和、事务、数据库锁及顺序版本迁移。
