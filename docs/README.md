@@ -9,6 +9,8 @@
 | [社区中文/英文指南](community/README.md) | 安装、贡献、架构与使用 |
 | [通用项目管理知识](knowledge/README.md) | PMBOK、风险和治理参考 |
 
+- [维护者：GitHub 合并门禁](maintainers/status-checks.md)：必需状态检查配置、代码评审与合并策略。
+
 **当前状态：** 可运行的实验性应用，尚未具备生产级敏感数据处理能力。[实施状态与限制](design/implementation-status.md) 是当前范围的单一事实入口。
 
 工程变更需同步当前设计和契约，并执行 [文档检查](../.agents/skills/docs-sync/SKILL.md)。贡献者从 [CONTRIBUTING](../CONTRIBUTING.md) 开始。

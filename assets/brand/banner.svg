@@ -1,0 +1,35 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="340" viewBox="0 0 1200 340" role="img" aria-labelledby="title desc">
+  <title id="title">ChatPM — AI project management for conversations</title>
+  <desc id="desc">ChatPM brand banner with connected conversation, task approval and project progress motifs</desc>
+  <defs>
+    <linearGradient id="background" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#111e36"/>
+      <stop offset="1" stop-color="#1b365c"/>
+    </linearGradient>
+    <linearGradient id="highlight" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#72ead2"/>
+      <stop offset="1" stop-color="#45b4ec"/>
+    </linearGradient>
+  </defs>
+  <rect width="1200" height="340" rx="26" fill="url(#background)"/>
+  <circle cx="1057" cy="60" r="200" fill="#3dbbce" opacity=".06"/>
+  <circle cx="1130" cy="260" r="210" fill="#8b85e9" opacity=".07"/>
+  <g transform="translate(64 85)">
+    <rect x="0" y="0" width="158" height="158" rx="38" fill="#f1fcff"/>
+    <path d="M31 34h96a17 17 0 0 1 17 17v52a17 17 0 0 1-17 17H79L54 141v-21H31a17 17 0 0 1-17-17V51a17 17 0 0 1 17-17Z" fill="#1e3760"/>
+    <path d="m51 77 21 19 41-48" fill="none" stroke="url(#highlight)" stroke-width="14" stroke-linecap="round" stroke-linejoin="round"/>
+  </g>
+  <g font-family="Inter,Segoe UI,Arial,sans-serif">
+    <text x="260" y="161" font-size="80" font-weight="750" letter-spacing="-3" fill="#ffffff">ChatPM</text>
+    <text x="264" y="210" font-size="26" fill="#c8deed">Turn conversations into accountable progress.</text>
+    <text x="264" y="252" font-size="18" fill="#8fc6cd">Discuss  •  Confirm  •  Follow up  •  Report</text>
+  </g>
+  <g opacity=".82" stroke="#72ead2" stroke-width="3" fill="none">
+    <path d="M985 106v34h70v36h60v40" stroke-dasharray="8 10"/>
+  </g>
+  <g fill="#72ead2">
+    <circle cx="985" cy="106" r="7"/>
+    <circle cx="1055" cy="176" r="7"/>
+    <circle cx="1115" cy="216" r="7"/>
+  </g>
+</svg>
