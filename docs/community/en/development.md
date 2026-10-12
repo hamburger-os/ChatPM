@@ -1,6 +1,6 @@
 # Development Guide
 
-**Status: experimental v0.1 MVP for local use, not production-ready.**
+**Status: experimental v0.2 MVP for local use, not production-ready.**
 
 Requires Node.js 22+ and Docker. From the repository root:
 
