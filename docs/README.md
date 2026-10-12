@@ -1,37 +1,14 @@
 # ChatPM 文档中心
 
-本仓库实行**设计先行**，架构基线已审查；v0.1 MVP 已开始实施，仍未完成生产验收。根 [README](../README.md) 提供项目概述。
+这里维护**当前有效**的产品设计、工程约束和社区说明。历史版本差异归属 [Changelog](../CHANGELOG.md)、GitHub Releases 与 Git 提交记录；不在设计正文中反复叙述旧版本。
 
-## 四层文档及权威顺序
-
-| 层 | 面向谁 | 内容 |
-|---|---|---|
-| [01 · AI 开发文档](ai/README.md) | AI 编码 Agent | 架构约束、模块契约、实施规则 |
-| [02 · 中文设计文档](design/README.md) | 产品负责人 | **首要审查入口**：架构、方案、取舍、验收 |
-| [03 · 通用知识](knowledge/README.md) | 项目团队 | PMP / PMBOK、风险管理、AI 治理 |
-| [04 · 社区文档](community/README.md) | 社区贡献者 | 中文/英文项目概览、架构及开发指引 |
-
-## 模块审查索引
-
-| 模块 | 审查文档 |
+| 文档层 | 内容 |
 |---|---|
-| 产品边界 | [产品定位和 MVP 范围](design/product-scope.md) |
-| 基础架构 | [系统架构](design/system-architecture.md) |
-| 项目事实与状态 | [领域模型](design/domain-model.md) |
-| 消息与可靠交付 | [消息和事件](design/messaging.md) |
-| AI 能力 | [AI 编排](design/ai-orchestration.md) |
-| 主动催办 | [跟进与调度](design/followup-scheduling.md) |
-| 文档和报告 | [知识与汇报](design/knowledge-reporting.md) |
-| 权限和稳定性 | [安全与运维](design/security-operations.md) |
-| 外部生态 | [集成与扩展](design/integrations.md) |
-| 实施计划 | [里程碑与验收](design/roadmap-acceptance.md) |
-| 架构取舍 | [架构决策记录（ADR）](design/decision-log.md) |
-| 整体审查 | [审查结论与修复记录](design/review-2026-10-12.md) |
-| 实施差距 | [MVP 状态与下一步](design/implementation-status.md) |
-| MVP 审查 | [代码及验收审查](design/review-mvp-2026-10-12.md) |
-| 可靠性复审 | [并发一致性与后续里程碑](design/review-reliability-2026-10-12.md) |
-| v0.2 复审 | [可靠事件、AI 澄清与生产剩余风险](design/review-v02-2026-10-12.md) |
-| 合并后 /review | [全仓库架构和可靠性复审](design/review-postmerge-2026-10-12.md) |
+| [中文产品与架构设计](design/README.md) | 产品边界、系统架构、数据与权限、异步处理、AI 规则、验收 |
+| [AI 工程契约](ai/README.md) | 开发约束、模块契约、验证流程 |
+| [社区中文/英文指南](community/README.md) | 安装、贡献、架构与使用 |
+| [通用项目管理知识](knowledge/README.md) | PMBOK、风险和治理参考 |
 
-## 同步原则
-`docs/design/` 是经负责人审查的权威架构设计；`docs/ai/` 是对应的工程实施契约，`docs/community/` 是供社区理解的双语说明，`docs/knowledge/` 为参考知识。发生冲突应提出设计审查，不得自行选择实现。更改代码时运行 [docs-sync Skill](../.agents/skills/docs-sync/SKILL.md)。
+**当前状态：** 可运行的实验性应用，尚未具备生产级敏感数据处理能力。[实施状态与限制](design/implementation-status.md) 是当前范围的单一事实入口。
+
+工程变更需同步当前设计和契约，并执行 [文档检查](../.agents/skills/docs-sync/SKILL.md)。贡献者从 [CONTRIBUTING](../CONTRIBUTING.md) 开始。

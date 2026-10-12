@@ -10,6 +10,6 @@ Contributions to design, issue scenarios, test cases, and later implementation a
 5. Run documentation checks and report actual results. Reviewers should validate domain boundaries, security, traceability, and translation consistency.
 
 ## PR description
-Include motivation, design reference, tests, documentation mapping, risks, and outstanding decisions. No license has yet been selected for this repository; contributors should consider authorization before submitting material.
+Include motivation, design reference, tests, documentation mapping, risks, and outstanding decisions. ChatPM uses [Apache-2.0](../../../LICENSE). Contributors must have rights to submit their work. Never include secrets or private customer data.
 
 [中文](../zh/contributing.md)

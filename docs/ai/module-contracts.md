@@ -58,3 +58,11 @@
 - Outbox 诊断命令 `outboxSummary(projectId)` 返回待处理、隔离、模型错误计数和最老等待时间，API 只向有权限的 owner 暴露。每次领取使用 UUID `claim_token`，旧 Worker 不能在租约过期后覆盖新 Worker 的完成状态。
 ## 定时报告不变量（合并后 /review）
 `generateScheduledReport(db,projectId,kind)` 在已有数据库事务内执行，持有项目/类型/周期 advisory lock，若本期报告存在则不再执行。它与人工 `generateReport` 分离：定时计划不得覆盖已生成草稿，人工可重算草稿，已发布内容保持不可变。Worker 按项目 ID 键集分页，每分钟扫描一次；并发副本由数据库锁保证本周期至多创建一次。CI 的 `reports.integration.ts` 覆盖这组并发不变量。
+
+## 会话、租户与成员变更契约
+
+- `GET /tenants` 返回当前用户所属团队和角色。
+- `POST /projects` 明确要求 `tenantId`，服务端校验对应团队管理员身份。
+- `DELETE /projects/:id/members/:memberId` 仅项目 Owner 可执行，且不可移除 Owner；删除后目标用户立即失去项目访问资格。
+- `POST /auth/logout` 撤销当前令牌的服务端会话记录，清除 Cookie。
+- `messages`、`proposed_changes`、`tasks`、`risks`、`clarification_threads` 等关联必须保持同一 project_id，依赖数据库外键保护。
