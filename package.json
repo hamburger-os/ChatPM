@@ -29,7 +29,8 @@
     "setup:native": "npm ci && npm run build && npm run check:distribution && npm run db:migrate:prod",
     "doctor": "node tools/ops/doctor.mjs",
     "backup": "node tools/ops/backup.mjs",
-    "backup:docker": "node tools/ops/backup.mjs --docker"
+    "backup:docker": "node tools/ops/backup.mjs --docker",
+    "setup:local": "node tools/ops/bootstrap-native.mjs"
   },
   "dependencies": {
     "@fastify/cookie": "^11.0.0",
