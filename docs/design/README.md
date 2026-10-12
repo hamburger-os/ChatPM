@@ -14,7 +14,9 @@
 9. [集成与扩展边界](integrations.md)
 10. [开发阶段与验收标准](roadmap-acceptance.md)
 11. [架构决策记录（ADR）](decision-log.md)
-12. [全量审查报告](review-2026-10-12.md)
+12. [全量架构审查报告](review-2026-10-12.md)
+13. [MVP 实施状态](implementation-status.md)
+14. [MVP 代码 /review 记录](review-mvp-2026-10-12.md)
 
 ## 如何审查
 重点判断：AI 是否能推动工作同时避免乱改项目事实；任务是否有明确负责人和确认流程；延期提醒是否有效但不会刷屏；业务失败后能否恢复；架构能否平滑扩展。

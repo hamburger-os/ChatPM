@@ -32,3 +32,6 @@
 - `packages/core/src/db.ts`：PostgreSQL 事务；`security.ts`：会话与密码；`followup.ts`：计划更新；`policy.ts`：时间策略；`reports.ts`：报告生成。
 - `apps/web/app/`：Next.js 客户端，当前消息 5 秒刷新。
 - 现阶段无独立 InboxReceipt、Redis/BullMQ、附件/知识库与多模型适配器，不能将设计中的全部模块称为已实现。
+
+## AI 主动追问（v0.1）
+对明确缺少负责人或日期的候选事项，Worker 最多在一次反馈中提出两个简短的澄清问题；同一项目在 10 分钟内不重复发布同类自动提取提示。候选本身仍持久化并等待人工确认，不因限频丢弃。当前为轻量群聊交互，不是多轮自主决策引擎。
