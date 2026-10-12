@@ -2,6 +2,8 @@
 // Private read-only diagnostics. Run locally or inside the API container, not over public HTTP.
 import 'dotenv/config';
 import pg from 'pg';
+import { resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 export function evaluateHealth({ apiOk, heartbeatAgeSec, successAgeSec, overdue, dead, migrations }) {
   const issues = [];
@@ -77,6 +79,6 @@ export async function main() {
   }
 }
 
-if (process.argv[1] && import.meta.url === new URL('file://' + process.argv[1]).href) {
+if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   await main();
 }
