@@ -3,6 +3,8 @@ import { randomUUID } from 'node:crypto';
 import Fastify from 'fastify';
 import cors from '@fastify/cors';
 import cookie from '@fastify/cookie';
+import helmet from '@fastify/helmet';
+import rateLimit from '@fastify/rate-limit';
 import { z, ZodError } from 'zod';
 import { pool, transaction, audit, type DbClient } from '../../../packages/core/src/db.ts';
 import { createSession, hashPassword, readSession, verifyPassword } from '../../../packages/core/src/security.ts';
@@ -23,6 +25,8 @@ const fail = (code:number,msg:string):never => { throw new ApiError(code,msg); }
 
 await app.register(cors, { origin, credentials: true });
 await app.register(cookie);
+await app.register(helmet);
+await app.register(rateLimit,{max:100,timeWindow:'1 minute'});
 
 app.addHook('onRequest', async (req) => {
   if (['POST','PATCH','PUT','DELETE'].includes(req.method) && req.headers.cookie) {
@@ -67,7 +71,7 @@ app.get('/health', async () => {
   await pool.query('SELECT 1');
   return {ok:true};
 });
-app.post('/auth/register', async (req,reply) => {
+app.post('/auth/register', {config:{rateLimit:{max:5,timeWindow:'1 minute'}}}, async (req,reply) => {
   const input=z.object({email:z.string().email().max(200).transform(x=>x.toLowerCase()),
     displayName:z.string().trim().min(1).max(80),password:z.string().min(10).max(128)}).parse(req.body);
   const user=await transaction(async db=>{
@@ -83,7 +87,7 @@ app.post('/auth/register', async (req,reply) => {
   await issueSession(reply,user.id);
   return {user};
 });
-app.post('/auth/login', async(req,reply)=>{
+app.post('/auth/login', {config:{rateLimit:{max:8,timeWindow:'1 minute'}}}, async(req,reply)=>{
   const input=z.object({email:z.string().email().transform(x=>x.toLowerCase()),
     password:z.string().min(1)}).parse(req.body);
   const user=(await pool.query(

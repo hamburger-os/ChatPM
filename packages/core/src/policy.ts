@@ -37,7 +37,7 @@ export function periodKey(date: Date, timezone: string, kind: 'week'|'month') {
   const weekday = (d.getUTCDay() + 6) % 7;
   d.setUTCDate(d.getUTCDate() - weekday + 3);
   const year = d.getUTCFullYear();
-  const firstThursday = new Date(Date.UTC(year,0,4,12));
-  const week = 1 + Math.round((d.getTime() - firstThursday.getTime()) / (7 * 86400000));
+  const yearStart = new Date(Date.UTC(year,0,1,12));
+  const week = Math.ceil(((d.getTime()-yearStart.getTime())/86400000+1)/7);
   return year + '-W' + String(week).padStart(2,'0');
 }

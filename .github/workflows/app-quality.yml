@@ -1,0 +1,57 @@
+name: Product verification
+
+on:
+  pull_request:
+    paths:
+      - 'apps/**'
+      - 'packages/**'
+      - 'infra/**'
+      - 'package.json'
+      - 'tsconfig.json'
+      - '.github/workflows/app-quality.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'apps/**'
+      - 'packages/**'
+      - 'infra/**'
+      - 'package.json'
+      - 'tsconfig.json'
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: chatpm
+          POSTGRES_PASSWORD: chatpm
+          POSTGRES_DB: chatpm
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U chatpm -d chatpm"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      DATABASE_URL: postgres://chatpm:chatpm@localhost:5432/chatpm
+      SESSION_SECRET: ci-test-session-secret-please-replace-123456789
+      WEB_ORIGIN: http://localhost:3000
+      NEXT_PUBLIC_API_URL: http://localhost:3001
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install dependencies
+        run: npm install --no-audit --no-fund
+      - name: Strict TypeScript
+        run: npm run typecheck
+      - name: Unit tests
+        run: npm test
+      - name: Database schema
+        run: npm run db:migrate
+      - name: Build web app
+        run: npm run build:web

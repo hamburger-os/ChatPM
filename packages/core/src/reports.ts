@@ -46,10 +46,13 @@ export async function generateReport(
   const {rows} = await db.query(
     `INSERT INTO reports(project_id,kind,period_key,content,author_id)
      VALUES($1,$2,$3,$4,$5)
-     ON CONFLICT(project_id,kind,period_key) DO UPDATE SET
-     content=CASE WHEN reports.state='draft' THEN EXCLUDED.content ELSE reports.content END
+     ON CONFLICT(project_id,kind,period_key) DO NOTHING
      RETURNING *`,
     [projectId,kind,key,content,authorId],
   );
-  return rows[0];
+  if(rows[0])return rows[0];
+  const existing=await db.query(
+    'SELECT * FROM reports WHERE project_id=$1 AND kind=$2 AND period_key=$3',
+    [projectId,kind,key]);
+  return existing.rows[0];
 }
