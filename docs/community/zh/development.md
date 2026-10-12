@@ -1,16 +1,27 @@
 # 开发指引
 
-**当前仓库只有设计文档和文档校验工具；业务代码尚未创建。** 请勿将规划中的技术栈当作已经安装。
+**状态：v0.1 实验性 MVP，可本地运行但未完成生产验收。**
 
-## 设计阶段的可用操作
-- 浏览 [docs/README.md](../../README.md) 和 [根 AGENTS.md](../../../AGENTS.md)。
-- 安装本机 Node.js 后，从仓库根目录运行 `node tools/docs/check-docs.mjs` 校验目录和链接。
-- 对有产品代码改动的 PR，运行 `node tools/docs/check-sync.mjs origin/main HEAD` 验证最低文档同步要求。
+需要 Node.js 22+ 和 Docker。在仓库根目录：
 
-## 未来应用结构（尚未创建）
-`apps/web`（Next.js）、`apps/api`（NestJS）、`apps/worker`（异步任务）；`packages` 下共享领域契约与适配器。技术落地前先审阅对应中文设计。
+```bash
+cp .env.example .env
+# 请将 SESSION_SECRET 更换为至少 32 字符的随机字符串
+docker compose -f infra/compose.yml up -d
+npm install
+npm run db:migrate
+```
 
-## 贡献原则
-优先补齐场景和验收；提交新代码同时更新 AI 文档、中文设计和必要的社区中英文说明。测试命令应以未来真实仓库脚本为准，不得伪称已经可运行。
+分别在三个终端运行：
 
-[English](../en/development.md)
+```bash
+npm run dev:api
+npm run dev:worker
+npm run dev:web
+```
+
+打开 http://localhost:3000，注册、创建项目、与成员聊天。系统默认不向外部模型发送内容；要启用 AI 需在服务端设置 `OPENAI_API_KEY` 并由项目负责人在设置页面明确开启。催办需任务负责人/期限及完整工作时间和冷却策略。
+
+检查命令：`npm run typecheck`、`npm test`、`npm run build:web`、`npm run check:docs`。更新代码需执行 [docs-sync](../../../.agents/skills/docs-sync/SKILL.md)。
+
+未完成的功能和安全验收见 [实施状态](../../design/implementation-status.md)。[English](../en/development.md)。

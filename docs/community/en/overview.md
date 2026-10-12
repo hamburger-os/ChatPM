@@ -1,6 +1,6 @@
 # ChatPM Overview
 
-**Status: design phase; no runnable product exists yet.**
+**Status: experimental v0.1 MVP; not production-ready.**
 
 ChatPM aims to be a chat-centered AI project management platform. Team members discuss work naturally, while a scoped AI assistant extracts items for confirmation, surfaces risks, follows up on open work, and drafts project reports with traceable sources.
 
@@ -13,4 +13,4 @@ ChatPM aims to be a chat-centered AI project management platform. Team members d
 ## Navigation
 [Chinese design](../../design/README.md) · [Architecture](architecture.md) · [Development](development.md) · [Contributing](contributing.md) · [中文](../zh/overview.md)
 
-There are no installation, demo, or deployment commands yet. See the roadmap for planned milestones.
+Local development instructions are available in the [development guide](development.md). Files, push-based chat and enterprise integrations remain unimplemented.
