@@ -1,0 +1,17 @@
+[Unit]
+Description=ChatPM PostgreSQL encrypted-storage backup job
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=chatpm
+Group=chatpm
+WorkingDirectory=/opt/chatpm
+EnvironmentFile=/opt/chatpm/.env
+ExecStart=/usr/bin/node /opt/chatpm/tools/ops/backup.mjs --dir=/var/lib/chatpm/backups --keep=14
+NoNewPrivileges=true
+ProtectSystem=strict
+ReadWritePaths=/var/lib/chatpm/backups
+ProtectHome=true
+PrivateTmp=true
