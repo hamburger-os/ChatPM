@@ -51,7 +51,7 @@ Worker 只在项目时区符合计划时创建本期周/月报一次；不会每
 2. 在 PowerShell 根目录执行 `Copy-Item .env.example .env`，设置数据库连接、随机 SESSION_SECRET 和部署对外 WEB_ORIGIN。
 3. 执行 `npm run setup:local`（会检查模板密码和环境），确认构建和迁移无错误。
 4. 执行 `npm start` 直接在一个 PowerShell 终端运行三个进程；浏览器打开 http://localhost:3000。仅适合前台试运行。
-5. 开机自启需取得并验证官方 WinSW，以管理员身份执行 `./infra/windows/install-services.ps1 -WinSWPath <WinSW路径> -StartNow`。三个服务注册为 Automatic，并立即启动；可用 `Get-Service chatpm-*` 检查、`Restart-Service chatpm-api,chatpm-worker,chatpm-web` 重启。脚本显式安装为内置低权限 LocalService，授权运行目录读取、Next 缓存及日志写入，限制 `.env` 文件继承权限；管理员仍需审查所有显式 ACL 项与安装目录可写主体，确保普通账户不能替换程序文件，并演练重启及恢复。
+5. 开机自启应先将仓库安装到用户个人目录之外（如 `C:\\ChatPM`），使用系统级 Node.js，取得并验证官方 WinSW，以管理员身份执行 `./infra/windows/install-services.ps1 -WinSWPath <WinSW路径> -StartNow`。三个服务注册为 Automatic，并立即启动；可用 `Get-Service chatpm-*` 检查、`Restart-Service chatpm-api,chatpm-worker,chatpm-web` 重启。脚本显式安装为内置低权限 LocalService，授权运行目录读取、Next 缓存及日志写入，限制 `.env` 文件继承权限；管理员仍需审查所有显式 ACL 项与安装目录可写主体，确保普通账户不能替换程序文件，并演练重启及恢复。
 
 ### 不使用 Docker 的 Linux 安装
 
@@ -83,7 +83,7 @@ npm run deploy:docker
 - 原生备份：`npm run backup -- --dir=./backups --keep=14`；Docker 备份：`npm run backup:docker -- --dir=./backups --keep=14`。使用 `pg_dump` custom format、独立临时文件、完成后原子更名、失败清理临时文件。仅删除本工具命名的历史备份，默认保留最近 14 份。Linux 备份目录须只有服务用户可访问（权限 0700）；不要把此目录直接暴露给 Web。
 - Linux：先以管理员创建 `sudo install -d -o chatpm -g chatpm -m 700 /var/lib/chatpm/backups`，复制 `infra/linux/chatpm-backup.service`、`chatpm-backup.timer`、`chatpm-doctor.service`、`chatpm-doctor.timer` 到 `/etc/systemd/system/`；之后执行 `sudo systemctl daemon-reload && sudo systemctl enable --now chatpm-backup.timer chatpm-doctor.timer`。检查 `systemctl list-timers` 和 `journalctl -u chatpm-backup.service -u chatpm-doctor.service`，将失败交给现有告警平台。
 - Windows：完成 `install-services.ps1` 的 LocalService 权限配置后，以管理员执行 `./infra/windows/install-backup-task.ps1` 注册使用 LocalService 的每日 02:30 备份任务（可选 `-BackupDirectory`）。通过任务计划程序执行一次并检查产物；绝不能将密码写入任务参数。
-- 升级前：确认最新备份完成且可读取，并持有安全的离机副本；安排维护窗口，停止 Web/API/Worker，安装/构建新版本，执行 `npm run db:migrate:prod`，启动各服务，运行 `doctor` 并确认核心登录、消息及 Worker。数据库 schema 没有通用向下迁移机制，不能因旧版代码能回退就假设数据库可以回滚。
+- 原生升级：停掉全部 Web/API/Worker 后执行 `npm run upgrade:native -- --confirm-services-stopped`（可附 `--dir=/私有备份目录`）。工具拒绝 API 仍然在线的情况，并要求先成功备份，然后才执行新构建及数据库迁移。升级成功后需由管理员启动服务并复核。升级前另外确认最新备份完成且可读取，并持有安全的离机副本；安排维护窗口，停止 Web/API/Worker，安装/构建新版本，执行 `npm run db:migrate:prod`，启动各服务，运行 `doctor` 并确认核心登录、消息及 Worker。数据库 schema 没有通用向下迁移机制，不能因旧版代码能回退就假设数据库可以回滚。
 
 以上是可部署的工具和定时任务模板，而非已经完成目标机器的开机故障恢复、加密离机复制、PITR、定期隔离恢复和集中告警验收。
 
@@ -153,7 +153,7 @@ PRs must pass the `verify` (product and database validation) and `documentation`
 
 Install Node.js 24 and PostgreSQL 17 (including `pg_dump` and `pg_restore`). Create a dedicated database and user. From PowerShell: `Copy-Item .env.example .env`, configure database credentials and a secure SESSION_SECRET, then `npm run setup:local`. Use `npm start` for a one-terminal foreground run.
 
-For Windows services, obtain and verify WinSW independently, then run `./infra/windows/install-services.ps1 -WinSWPath <path> -StartNow` as administrator. It registers automatic-start services and starts them immediately; check with `Get-Service chatpm-*`. The installer explicitly selects built-in low-privilege LocalService instead of WinSW's LocalSystem default. It grants read access to the application tree, write access to log/Next cache paths, and restricts inheritance on `.env`. Administrators must audit remaining explicit ACL entries and prevent untrusted write access to executable files, then test restart/recovery.
+For Windows services, install ChatPM outside your interactive user profile (for example `C:\\ChatPM`) and use a system-wide Node.js installation. Obtain and verify WinSW independently, then run `./infra/windows/install-services.ps1 -WinSWPath <path> -StartNow` as administrator. It registers automatic-start services and starts them immediately; check with `Get-Service chatpm-*`. The installer explicitly selects built-in low-privilege LocalService instead of WinSW's LocalSystem default. It grants read access to the application tree, write access to log/Next cache paths, and restricts inheritance on `.env`. Administrators must audit remaining explicit ACL entries and prevent untrusted write access to executable files, then test restart/recovery.
 
 ### Native Linux (no Docker)
 
@@ -173,7 +173,7 @@ The cross-platform native-build CI uploads Windows and Linux Artifacts containin
 - Use `npm run backup -- --dir=./backups --keep=14` for native PostgreSQL or `npm run backup:docker -- --dir=./backups --keep=14` for Compose. Archives use custom-format `pg_dump`, unique temporary files, no overwrite, and an atomic rename on success. Retention deletes only archives created by this tool, defaulting to the newest 14; private backup storage is mandatory.
 - Linux: `sudo install -d -o chatpm -g chatpm -m 700 /var/lib/chatpm/backups`, install both `chatpm-backup.{service,timer}` and `chatpm-doctor.{service,timer}` from `infra/linux` into `/etc/systemd/system`, then `sudo systemctl daemon-reload && sudo systemctl enable --now chatpm-backup.timer chatpm-doctor.timer`. Inspect timers and `journalctl` and connect failures to an alerting service.
 - Windows: after secure service installation, elevated PowerShell `./infra/windows/install-backup-task.ps1` registers the low-privilege LocalService daily 02:30 job. Test it manually and inspect backups; database secrets must remain in protected `.env`, never task command lines.
-- Upgrades: verify a fresh backup and encrypted off-host copy, schedule downtime, stop all three services, build the new version and migrate once, restart, run `doctor` and functional smoke tests. SQL migrations are not generally reversible; rollback of binaries is not equivalent to restoring database state.
+- Native upgrades: stop all three processes and run `npm run upgrade:native -- --confirm-services-stopped` (optionally `--dir=/private/backups`). The command refuses an API that is still serving, completes a new database archive before applying migrations, and leaves restarting to the administrator. Verify a fresh backup and encrypted off-host copy, schedule downtime, stop all three services, build the new version and migrate once, restart, run `doctor` and functional smoke tests. SQL migrations are not generally reversible; rollback of binaries is not equivalent to restoring database state.
 
 Templates and CI do not prove real machine boot-recovery, end-to-end restore, encryption, PITR, Windows filesystem ACL audit or centralized alert delivery. Do not process sensitive production data until these checks are complete.
 
