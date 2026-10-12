@@ -129,12 +129,12 @@ async function processReports() {
   // Keyset pagination avoids permanently starving projects beyond the first 1000.
   let cursor:string|null=null;
   while(true){
-    const result=await pool.query(
+    const page:{rows:Array<{id:string;timezone:string}>}=await pool.query(
       `SELECT id,timezone FROM projects
        WHERE ($1::uuid IS NULL OR id > $1::uuid)
        ORDER BY id LIMIT 250`,[cursor]);
-    if(!result.rows.length)break;
-    for(const p of result.rows as {id:string;timezone:string}[]){
+    if(!page.rows.length)break;
+    for(const p of page.rows){
       const time=localClock(new Date(),p.timezone);
       if(time.hour!==9)continue;
       const dt=new Date(time.date+'T12:00:00Z');
@@ -146,7 +146,7 @@ async function processReports() {
         if(monthly)await generateScheduledReport(db,p.id,'month');
       });
     }
-    cursor=result.rows[result.rows.length-1].id;
+    cursor=page.rows[page.rows.length-1].id;
   }
 }
 
