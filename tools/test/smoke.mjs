@@ -250,8 +250,17 @@ try{
   const reassigned=await api('/projects/'+pid+'/tasks/'+linked.rows[0].id,{
     method:'PATCH',body:{version:1,assigneeId:uid}});
   assert.equal(reassigned.status,200,'Owner can reassign unfinished work before removing a member');
+  const historical=await api('/projects/'+pid+'/tasks',{method:'POST',body:{
+    title:'保留历史负责人',assigneeId:second.data.user.id,dueAt:null}});
+  assert.equal(historical.status,201);
+  const markDone=await api('/projects/'+pid+'/tasks/'+historical.data.task.id,{
+    method:'PATCH',body:{version:historical.data.task.version,status:'done'}});
+  assert.equal(markDone.status,200);
   const removed=await api('/projects/'+pid+'/members/'+second.data.user.id,{method:'DELETE'});
   assert.equal(removed.status,200);
+  const reopenFormerMember=await api('/projects/'+pid+'/tasks/'+historical.data.task.id,{
+    method:'PATCH',body:{version:markDone.data.task.version,status:'doing'}});
+  assert.equal(reopenFormerMember.status,400,'Reopening must reject a revoked assignee');
   const revokedMember=await api('/projects/'+pid+'/messages',{cookie:cookieB});
   assert.equal(revokedMember.status,404,'Removed member must lose access immediately');
   const loggedOut=await api('/auth/logout',{method:'POST'});

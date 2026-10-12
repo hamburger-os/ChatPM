@@ -319,13 +319,19 @@ app.patch('/projects/:id/tasks/:taskId',async req=>{
     if(!row) fail(404,'任务不存在');
     if(m.role!=='owner' && row.assignee_id!==userId) fail(403,'只有负责人或被指派者可更新状态');
     if(row.version!==v.version) fail(409,'任务版本已更新，请刷新');
-    if(v.assigneeId) await ensureAssignee(db,projectId,v.assigneeId);
+    // Revalidate the acting assignee inside the transaction; a concurrent
+    // membership revocation cannot authorize a late status update.
+    if(m.role!=='owner') await ensureAssignee(db,projectId,userId);
     const next={
       status:v.status??row.status,
       title:v.title??row.title,
       assigneeId:v.assigneeId===undefined?row.assignee_id:v.assigneeId,
       dueAt:v.dueAt===undefined?row.due_at:v.dueAt,
     };
+    // A completed task may retain a former member for history, but reopening
+    // or reassigning active work requires a currently authorized member.
+    if(next.assigneeId && !['done','cancelled'].includes(next.status))
+      await ensureAssignee(db,projectId,next.assigneeId);
     const t=(await db.query(
       `UPDATE tasks SET status=$1,title=$2,assignee_id=$3,due_at=$4,
        version=version+1,updated_at=NOW()
