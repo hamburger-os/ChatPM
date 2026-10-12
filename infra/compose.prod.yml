@@ -62,8 +62,9 @@ services:
     command: ["npm","run","start:worker"]
   web:
     <<: *app
+    # Web is an HTTP proxy only; never inject database, AI or signing secrets.
     environment:
-      <<: *app-env
+      NODE_ENV: production
       API_INTERNAL_URL: http://api:3001
     depends_on:
       api:

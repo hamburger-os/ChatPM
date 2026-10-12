@@ -27,3 +27,16 @@ Restore **destroys or replaces existing database objects**. Test regularly in a 
 ## Production gates still outstanding
 
 External reverse-proxy hardening, penetration testing, operational metrics/alerts, load tests, verified Windows service restart behavior, disaster-recovery exercises and data retention policies remain required before sensitive production use.
+
+### Docker Compose database backups
+
+Production Compose does **not** publish PostgreSQL to the host. Use the database container's client, redirecting binary output on the host:
+
+```bash
+mkdir -p backups
+docker compose -f infra/compose.prod.yml exec -T postgres pg_dump -U chatpm -d chatpm -Fc > backups/chatpm.dump
+# After stopping app/worker/web, restore only into a disposable or explicitly targeted database:
+docker compose -f infra/compose.prod.yml exec -T postgres pg_restore -U chatpm -d chatpm --clean --if-exists --no-owner --no-privileges < backups/chatpm.dump
+```
+
+These commands are examples and do not supply scheduling, encryption, verification or automated disaster recovery. Do not run destructive restore commands against active production data.

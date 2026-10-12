@@ -60,3 +60,14 @@ Set POSTGRES_PASSWORD, SESSION_SECRET and WEB_ORIGIN in root `.env`. Run `docker
 ## Database operations and release status
 
 `node tools/ops/postgres.mjs backup ./backups/chatpm.dump` creates a PostgreSQL custom-format backup. After stopping ChatPM and selecting an isolated target, `node tools/ops/postgres.mjs restore ./backups/chatpm.dump --confirm-replace` **overwrites database objects**. Automated backups, real recovery exercises, TLS, Windows service resilience, operational alerts, and production security certification have not been completed; do not use sensitive production data.
+
+### Compose database backups
+
+Production Compose does not publish port 5432. Back up through the PostgreSQL container instead of the host example DATABASE_URL:
+
+```bash
+mkdir -p backups
+docker compose -f infra/compose.prod.yml exec -T postgres pg_dump -U chatpm -d chatpm -Fc > backups/chatpm.dump
+```
+
+After stopping Web/API/Worker and selecting a disposable restore target, use `docker compose -f infra/compose.prod.yml exec -T postgres pg_restore -U chatpm -d chatpm --clean --if-exists --no-owner --no-privileges < backups/chatpm.dump`. Do not restore into a live production database.

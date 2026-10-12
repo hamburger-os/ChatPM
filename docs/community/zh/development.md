@@ -75,3 +75,14 @@ docker compose -f infra/compose.prod.yml ps
 `node tools/ops/postgres.mjs backup ./backups/chatpm.dump` 需要 PostgreSQL 客户端。恢复到隔离实例前停止服务，执行 `node tools/ops/postgres.mjs restore ./backups/chatpm.dump --confirm-replace`，这会覆盖目标库对象。必须另行建立自动备份、加密和恢复演练。
 
 以上是部署入口及示例，并非 Windows Service、Linux 服务、HTTPS、性能、隐私与生产灾备的已通过实机验收；敏感项目上线仍需完成这些验收。参见 [部署架构](../../design/deployment.md)。
+
+### Compose 数据库备份特别说明
+
+生产 Compose 不向宿主机暴露 5432 端口，因此不能直接使用示例 `.env` 里的本地 `DATABASE_URL` 备份 Compose 数据库。可在宿主机执行：
+
+```bash
+mkdir -p backups
+docker compose -f infra/compose.prod.yml exec -T postgres pg_dump -U chatpm -d chatpm -Fc > backups/chatpm.dump
+```
+
+恢复时先停止 Web/API/Worker，在隔离的目标环境内使用 `docker compose -f infra/compose.prod.yml exec -T postgres pg_restore -U chatpm -d chatpm --clean --if-exists --no-owner --no-privileges < backups/chatpm.dump`，**不要在正在服务的生产数据库直接恢复**。
