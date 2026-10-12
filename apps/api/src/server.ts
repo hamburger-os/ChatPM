@@ -370,7 +370,7 @@ app.post('/projects/:id/outbox/:eventId/retry',async req=>{
   return transaction(async db=>{
     const {rows}=await db.query(
       `UPDATE outbox_events SET attempts=0,dead_at=NULL,last_error_code=NULL,
-       claimed_at=NULL,next_attempt_at=NOW()
+       claimed_at=NULL,claim_token=NULL,next_attempt_at=NOW()
        WHERE id=$1 AND project_id=$2 AND dead_at IS NOT NULL AND processed_at IS NULL
        RETURNING id`,[event,projectId]);
     if(!rows.length)fail(409,'事件未隔离或不属于当前项目');
