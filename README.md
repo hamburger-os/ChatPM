@@ -30,6 +30,18 @@
 
 **尚未实现：** 本地模型与多提供商接入、文档知识库、自动语义关联、完整风险升级、实时推送、完整企业身份管理和正式 SaaS 运营。以上属于 [路线图](docs/design/roadmap-acceptance.md)，不是现有功能。
 
+## 最简安装：Docker 一条命令
+
+已安装并启动 Docker Engine/Compose、Node.js 后，在仓库根目录运行：
+
+```bash
+npm run deploy:docker
+```
+
+命令会在首次运行时创建 `.env`，自动生成独立随机 `POSTGRES_PASSWORD` 与 `SESSION_SECRET`（不覆盖既有非占位配置），并构建、迁移和后台启动全部服务。访问 **http://localhost:3000**。再次执行不会重新生成秘密。使用 `docker compose -f infra/compose.prod.yml ps` 查看状态，`docker compose -f infra/compose.prod.yml down` 停止；不要使用 `down -v`，它会删除数据库卷。
+
+开机自启依赖宿主机 **Docker 引擎也随系统启动**；Compose 的服务已经设置 `restart: unless-stopped`。Windows Docker Desktop 通常需要在登录时启动。默认只允许本机访问；公网部署仍需 HTTPS、备份及安全验收。
+
 ## 在本机直接部署（无需 Docker）
 
 **Windows 11 和 Linux 都可以原生部署。** ChatPM 由 Web、API、Worker 三个 Node.js 进程和一个 PostgreSQL 数据库组成。下面是**本机安装 PostgreSQL + 运行正式构建产物**的步骤；不需要 Docker、WSL 或容器引擎。
@@ -86,31 +98,23 @@ npm run check:distribution
 npm run db:migrate:prod
 ```
 
-### 4. 启动服务
+### 4. 一个终端启动
 
-**打开三个终端**，均切换到 ChatPM 根目录：
+```bash
+npm start
+```
 
-| 终端 | 执行命令 | 用途 |
-|---|---|---|
-| 1 | `npm run start:api` | API（本机 3001 端口） |
-| 2 | `npm run start:worker` | AI 处理、任务跟进和报告调度 |
-| 3 | `npm run start:web` | Web（本机 3000 端口） |
+此命令统一启动 API、Worker、Web 三个独立进程，在同一终端输出日志；任一进程异常退出时停止整组，防止产生不完整的服务。打开 **http://localhost:3000**，使用 **http://127.0.0.1:3001/health** 检查 API。关闭终端会结束服务，这适用于本地演示，不是开机自启模式。
 
-访问 **http://localhost:3000** 注册账号、创建项目。可打开 **http://127.0.0.1:3001/health** 检查 API 数据库连接。关闭终端会停止相应服务；需要后台常驻时使用下方文档中的 Windows Service / Linux systemd 示例。
+**开机自启**：Linux 使用仓库自带的三个 systemd 单元执行 `sudo systemctl enable --now chatpm-api chatpm-worker chatpm-web`；Windows 11 在准备并验证 WinSW 后，以管理员权限运行 `./infra/windows/install-services.ps1 -WinSWPath <路径> -StartNow`，默认注册为 Automatic 服务。Windows 服务安装器默认使用 LocalSystem，因此正式部署前必须设置低权限服务账户及配置文件 ACL。两种平台均需要 PostgreSQL 服务先行可用。
+
+开发调试只需一个终端执行 `npm run dev`（需先 `npm ci`、配置数据库并迁移）。
 
 更详细的原生安装、服务托管、备份与恢复方法：[中文指南](docs/community/development.md#中文) · [English guide](docs/community/development.md#english) · [部署设计](docs/design/deployment.md)。
 
 ## Docker（可选）
 
-Docker 不是必需组件。如果更喜欢容器方式，可在根目录 `.env` 中另外设置 `POSTGRES_PASSWORD`，确认 `SESSION_SECRET` 是随机密钥，再执行：
-
-```bash
-docker compose -f infra/compose.prod.yml up -d --build
-```
-
-该 Compose 提供完整的 Web、API、Worker 和 PostgreSQL，默认只在 `127.0.0.1:3000` 提供访问。**请勿直接把本地测试配置开放到公网。**
-
-如果只是开发代码，可使用 `npm run dev:api`、`npm run dev:worker`、`npm run dev:web`；开发用 `infra/compose.yml` 仅启动 PostgreSQL。
+Docker 不是必需组件。上述 `npm run deploy:docker` 提供第一次安装时的配置与秘密初始化；已有安全配置的环境也可直接执行 `docker compose -f infra/compose.prod.yml up -d --build`。开发用 `infra/compose.yml` 只启动 PostgreSQL。
 
 ## 本地演示路线
 
