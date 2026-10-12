@@ -53,6 +53,8 @@ jobs:
         run: npm test
       - name: Database schema
         run: npm run db:migrate
+      - name: Outbox reliability integration
+        run: node --import tsx packages/core/test/outbox.integration.ts
       - name: API integration smoke test
         run: node tools/test/smoke.mjs
       - name: Build web app
