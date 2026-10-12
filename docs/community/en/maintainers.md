@@ -1,4 +1,4 @@
-# GitHub branch protection and required checks
+# Maintainer guide: GitHub branch protection and required checks
 
 This guide applies to the `hamburger-os/ChatPM` repository's `main` ruleset.
 

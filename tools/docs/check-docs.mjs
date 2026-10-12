@@ -24,6 +24,21 @@ function walk(dir) {
 
 for (const file of required) if (!exists(file)) errors.push('Required file missing: ' + file);
 
+// Enforce the four agreed documentation layers and disallow additional root folders.
+const allowedDocLayers = new Set(['ai', 'community', 'design', 'knowledge']);
+const docsRoot = path.join(root, 'docs');
+if (fs.existsSync(docsRoot)) {
+  for (const entry of fs.readdirSync(docsRoot, {withFileTypes:true})) {
+    if (entry.isDirectory() && !allowedDocLayers.has(entry.name)) {
+      errors.push('Unexpected docs directory outside four layers: docs/' + entry.name);
+    }
+  }
+  for (const layer of allowedDocLayers) {
+    if (!exists('docs/' + layer)) errors.push('Missing documentation layer: docs/' + layer);
+  }
+}
+
+
 const docs = [
   ...walk(path.join(root, 'docs')),
   ...walk(path.join(root, '.agents')),

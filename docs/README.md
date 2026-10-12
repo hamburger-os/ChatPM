@@ -1,6 +1,6 @@
 # ChatPM 文档中心
 
-这里维护**当前有效**的产品设计、工程约束和社区说明。历史版本差异归属 [Changelog](../CHANGELOG.md)、GitHub Releases 与 Git 提交记录；不在设计正文中反复叙述旧版本。
+这里严格保留 **design、ai、community、knowledge 四个文档目录**，分别维护当前有效的产品设计、工程约束、社区说明和项目管理知识。历史版本差异归属 [Changelog](../CHANGELOG.md)、GitHub Releases 与 Git 提交记录；不在设计正文中反复叙述旧版本。
 
 | 文档层 | 内容 |
 |---|---|
@@ -9,7 +9,7 @@
 | [社区中文/英文指南](community/README.md) | 安装、贡献、架构与使用 |
 | [通用项目管理知识](knowledge/README.md) | PMBOK、风险和治理参考 |
 
-- [维护者：GitHub 合并门禁](maintainers/status-checks.md)：必需状态检查配置、代码评审与合并策略。
+维护者的 GitHub 合并门禁与审核配置归入社区指南：[中文](community/zh/maintainers.md) / [English](community/en/maintainers.md)。
 
 **当前状态：** 可运行的实验性应用，尚未具备生产级敏感数据处理能力。[实施状态与限制](design/implementation-status.md) 是当前范围的单一事实入口。
 
