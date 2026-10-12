@@ -1,0 +1,36 @@
+{
+  "name": "chatpm",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "engines": { "node": ">=22.0.0" },
+  "scripts": {
+    "dev:api": "tsx watch apps/api/src/server.ts",
+    "dev:worker": "tsx watch apps/worker/src/worker.ts",
+    "dev:web": "next dev apps/web -p 3000",
+    "db:migrate": "tsx packages/core/src/migrate.ts",
+    "test": "tsx --test packages/core/test/*.test.ts",
+    "typecheck": "tsc --noEmit",
+    "build:web": "next build apps/web",
+    "check:docs": "node tools/docs/check-docs.mjs"
+  },
+  "dependencies": {
+    "@fastify/cookie": "^11.0.0",
+    "@fastify/cors": "^11.0.0",
+    "fastify": "^5.12.5",
+    "jose": "^6.0.0",
+    "next": "^16.1.0",
+    "pg": "^8.16.0",
+    "react": "^19.2.0",
+    "react-dom": "^19.2.0",
+    "zod": "^3.25.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "@types/pg": "^8.15.0",
+    "@types/react": "^19.2.0",
+    "@types/react-dom": "^19.2.0",
+    "tsx": "^4.20.0",
+    "typescript": "^5.9.0"
+  }
+}
