@@ -11,7 +11,7 @@
 
 > 让项目聊天室里的承诺不再被遗忘。AI 提取有证据的候选事项、协助确认责任人与期限、跟进正式任务并生成待审核的项目报告。
 
-**状态：实验性可运行原型；尚未完成生产级安全、性能与隐私验收。** [Apache-2.0](LICENSE) · [中文文档](docs/README.md) · [English](docs/community/en/overview.md)
+**状态：实验性可运行原型；尚未完成生产级安全、性能与隐私验收。** [Apache-2.0](LICENSE) · [中文文档](docs/README.md) · [English](docs/community/overview.md#english)
 
 ## 为什么选择 ChatPM？
 
@@ -98,7 +98,7 @@ npm run db:migrate:prod
 
 访问 **http://localhost:3000** 注册账号、创建项目。可打开 **http://127.0.0.1:3001/health** 检查 API 数据库连接。关闭终端会停止相应服务；需要后台常驻时使用下方文档中的 Windows Service / Linux systemd 示例。
 
-更详细的原生安装、服务托管、备份与恢复方法：[中文指南](docs/community/zh/development.md) · [English guide](docs/community/en/development.md) · [部署设计](docs/design/deployment.md)。
+更详细的原生安装、服务托管、备份与恢复方法：[中文指南](docs/community/development.md#中文) · [English guide](docs/community/development.md#english) · [部署设计](docs/design/deployment.md)。
 
 ## Docker（可选）
 
@@ -147,6 +147,6 @@ npm run check:docs
 
 - [参与贡献](CONTRIBUTING.md) · [社区行为准则](CODE_OF_CONDUCT.md) · [漏洞报告](SECURITY.md) · [支持渠道](SUPPORT.md)
 - [治理与维护](GOVERNANCE.md) · [架构和设计](docs/design/README.md) · [当前能力与限制](docs/design/implementation-status.md)
-- [维护与状态检查设置](docs/community/zh/maintainers.md) · [Issues](https://github.com/hamburger-os/ChatPM/issues) · [Discussions（启用后）](https://github.com/hamburger-os/ChatPM/discussions)
+- [维护与状态检查设置](docs/community/maintainers.md#中文) · [Issues](https://github.com/hamburger-os/ChatPM/issues) · [Discussions（启用后）](https://github.com/hamburger-os/ChatPM/discussions)
 
-**English:** ChatPM is an experimental, chat-centered AI project management tool. It keeps evidence-linked proposals separate from approved project facts. Cloud and self-hosted deployment with cloud/local model options are product goals; they are not all shipped today. See the [English guide](docs/community/en/development.md).
+**English:** ChatPM is an experimental, chat-centered AI project management tool. It keeps evidence-linked proposals separate from approved project facts. Cloud and self-hosted deployment with cloud/local model options are product goals; they are not all shipped today. See the [English guide](docs/community/development.md#english).

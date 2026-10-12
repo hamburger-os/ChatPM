@@ -31,13 +31,6 @@ if (productCode) {
   }
 }
 
-for (const name of changed) {
-  const match = name.match(/^docs\/community\/(zh|en)\/(.+\.md)$/);
-  if (!match) continue;
-  const other = 'docs/community/' + (match[1] === 'zh' ? 'en' : 'zh') + '/' + match[2];
-  if (!set.has(other)) errors.push('Community translation must change in the same PR: ' + other);
-}
-
 if (errors.length) {
   for (const error of errors) console.error('ERROR: ' + error);
   process.exit(1);

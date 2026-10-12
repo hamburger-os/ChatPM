@@ -61,16 +61,26 @@ for (const file of docs) {
   }
 }
 
+// Community docs: one Markdown per topic, with both languages in that file.
 const community = path.join(root, 'docs/community');
-const communityNames = (lang) => new Set(
-  walk(path.join(community, lang))
-    .filter((file) => file.endsWith('.md'))
-    .map((file) => path.relative(path.join(community, lang), file).replaceAll(path.sep, '/')),
-);
-const zh = communityNames('zh');
-const en = communityNames('en');
-for (const name of zh) if (!en.has(name)) errors.push('Missing English community counterpart: ' + name);
-for (const name of en) if (!zh.has(name)) errors.push('Missing Chinese community counterpart: ' + name);
+const topicFiles = [];
+for (const entry of fs.readdirSync(community, {withFileTypes:true})) {
+  if (entry.isDirectory()) {
+    errors.push('Community topics must be flat bilingual Markdown files: docs/community/' + entry.name);
+    continue;
+  }
+  if (entry.isFile() && entry.name.endsWith('.md') && entry.name !== 'README.md') {
+    topicFiles.push(entry.name);
+    const body = fs.readFileSync(path.join(community, entry.name), 'utf8');
+    const zh = /^## 中文\s*$/m.exec(body);
+    const en = /^## English\s*$/m.exec(body);
+    if (!zh || !en || zh.index >= en.index ||
+        !body.slice(zh.index + zh[0].length, en.index).trim() ||
+        !body.slice(en.index + en[0].length).trim()) {
+      errors.push('Missing or empty bilingual sections in docs/community/' + entry.name);
+    }
+  }
+}
 
 const skillsRoot = path.join(root, '.agents/skills');
 if (fs.existsSync(skillsRoot)) {
@@ -95,4 +105,4 @@ if (errors.length) {
   process.exit(1);
 }
 console.log('Documentation checks passed: ' + docs.length + ' Markdown files, '
-  + zh.size + ' bilingual community pairs.');
+  + topicFiles.length + ' single-file bilingual community topics.');
