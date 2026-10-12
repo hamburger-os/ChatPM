@@ -41,3 +41,20 @@ export function periodKey(date: Date, timezone: string, kind: 'week'|'month') {
   const week = Math.ceil(((d.getTime()-yearStart.getTime())/86400000+1)/7);
   return year + '-W' + String(week).padStart(2,'0');
 }
+
+/**
+ * Compute the earliest permitted reminder instant. A skipped evening/weekend
+ * check is NOT a delivered reminder and must not consume the cooldown.
+ * Quarter-hour UTC candidates also support half-hour and 45-minute timezones.
+ */
+export function nextReminderAt(earliest: Date, policy: WorkingPolicy): Date {
+  if (!hasReminderPolicy(policy)) throw new Error('Reminder policy is not configured');
+  if (canSendReminder(earliest, policy)) return earliest;
+  const quantum = 15 * 60 * 1000;
+  const start = Math.ceil(earliest.getTime() / quantum) * quantum;
+  for (let n = 0; n < 15 * 24 * 4; n++) {
+    const candidate = new Date(start + n * quantum);
+    if (canSendReminder(candidate, policy)) return candidate;
+  }
+  throw new Error('No eligible reminder time within 15 days');
+}

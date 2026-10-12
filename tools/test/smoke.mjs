@@ -41,7 +41,12 @@ try{
   assert.equal(signup.status,200,JSON.stringify(signup.data));
   cookieA=signup.cookie;assert.ok(cookieA);
   const uid=signup.data.user.id;
-  const created=await api('/projects',{method:'POST',body:{name:'集成测试项目',timezone:'Asia/Shanghai'}});
+  const teams=await api('/tenants');
+  assert.equal(teams.status,200);
+  const tenantId=teams.data.tenants.find(t=>t.role==='admin')?.id;
+  assert.ok(tenantId,'Registrant must own a team');
+  const created=await api('/projects',{method:'POST',body:{
+    name:'集成测试项目',tenantId,timezone:'Asia/Shanghai'}});
   assert.equal(created.status,201,JSON.stringify(created.data));
   const pid=created.data.project.id;
   assert.equal(created.data.project.ai_enabled,false);
@@ -56,6 +61,9 @@ try{
   const denied=await api('/projects/'+pid+'/tasks',{method:'POST',cookie:cookieB,
     body:{title:'越权任务',assigneeId:null,dueAt:null}});
   assert.equal(denied.status,404,'Cross-project write must not be allowed');
+  const unauthorizedTenant=await api('/projects',{method:'POST',cookie:cookieB,body:{
+    name:'不能创建的项目',tenantId,timezone:'Asia/Shanghai'}});
+  assert.equal(unauthorizedTenant.status,403,'Cannot create projects in another tenant');
   const invited=await api('/projects/'+pid+'/members',{method:'POST',body:{
     email:'second+'+suffix2+'@example.com',
   }});
@@ -76,6 +84,16 @@ try{
   assert.equal(posted.data.message.id,duplicate.data.message.id,'Message retry must be idempotent');
   const messages=await api('/projects/'+pid+'/messages');
   assert.equal(messages.data.messages.length,1);
+  const secondProject=await api('/projects',{method:'POST',body:{
+    name:'外键隔离测试项目',tenantId,timezone:'Asia/Shanghai'}});
+  assert.equal(secondProject.status,201);
+  await assert.rejects(
+    db.query(`INSERT INTO proposed_changes(project_id,source_message_id,kind,title)
+      VALUES($1,$2,'task','跨项目非法证据')`,
+      [secondProject.data.project.id,posted.data.message.id]),
+    (err)=>err.code==='23503',
+    'Database must reject source messages from another project',
+  );
   // Holding the project message lock simulates a message transaction that commits late.
   // A later request must not allocate/commit a higher cursor before this one commits.
   await db.query('BEGIN');
@@ -224,7 +242,32 @@ try{
   const immutable=await api('/projects/'+pid+'/reports',{method:'POST',body:{kind:'week'}});
   assert.equal(immutable.data.report.content,refreshed.data.report.content,
     'Published reports must remain immutable');
-  console.log('API smoke tests passed: authorization, ordering, idempotency, clarification approval, dead-letter replay and reports.');
+  const removeDenied=await api('/projects/'+pid+'/members/'+second.data.user.id,{
+    method:'DELETE',cookie:cookieB});
+  assert.equal(removeDenied.status,403);
+  const blockedRemoval=await api('/projects/'+pid+'/members/'+second.data.user.id,{method:'DELETE'});
+  assert.equal(blockedRemoval.status,409,'Members with unfinished assigned tasks must be reassigned first');
+  const reassigned=await api('/projects/'+pid+'/tasks/'+linked.rows[0].id,{
+    method:'PATCH',body:{version:1,assigneeId:uid}});
+  assert.equal(reassigned.status,200,'Owner can reassign unfinished work before removing a member');
+  const historical=await api('/projects/'+pid+'/tasks',{method:'POST',body:{
+    title:'保留历史负责人',assigneeId:second.data.user.id,dueAt:null}});
+  assert.equal(historical.status,201);
+  const markDone=await api('/projects/'+pid+'/tasks/'+historical.data.task.id,{
+    method:'PATCH',body:{version:historical.data.task.version,status:'done'}});
+  assert.equal(markDone.status,200);
+  const removed=await api('/projects/'+pid+'/members/'+second.data.user.id,{method:'DELETE'});
+  assert.equal(removed.status,200);
+  const reopenFormerMember=await api('/projects/'+pid+'/tasks/'+historical.data.task.id,{
+    method:'PATCH',body:{version:markDone.data.task.version,status:'doing'}});
+  assert.equal(reopenFormerMember.status,400,'Reopening must reject a revoked assignee');
+  const revokedMember=await api('/projects/'+pid+'/messages',{cookie:cookieB});
+  assert.equal(revokedMember.status,404,'Removed member must lose access immediately');
+  const loggedOut=await api('/auth/logout',{method:'POST'});
+  assert.equal(loggedOut.status,200);
+  const revokedSession=await api('/me');
+  assert.equal(revokedSession.status,401,'Logout must revoke the server-side session');
+  console.log('API smoke tests passed: tenant selection, revocable sessions, membership, ordering, idempotency, AI review, outbox and reports.');
 }finally{
   await db.end();
   server.kill('SIGTERM');

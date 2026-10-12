@@ -1,0 +1,24 @@
+name: Feature request / 功能建议
+description: Describe the user problem and expected outcome.
+title: "feat: "
+body:
+  - type: textarea
+    id: scenario
+    attributes:
+      label: 使用场景 / User scenario
+    validations:
+      required: true
+  - type: textarea
+    id: outcome
+    attributes:
+      label: 期望结果与验收 / Expected outcome and acceptance
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: 当前替代方案 / Alternatives
+  - type: textarea
+    id: security
+    attributes:
+      label: 权限、隐私和模型影响 / Security and privacy considerations

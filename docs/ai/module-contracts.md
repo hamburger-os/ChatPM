@@ -1,60 +1,59 @@
-# 模块契约（供 AI）
+# 模块契约与实现边界（供编码 Agent）
 
-| 模块 | 数据所有权 | 公开能力 |
+## 领域所有权
+
+| 领域 | 当前正式对象 | 后续扩展概念 |
 |---|---|---|
-| Identity/Tenancy | Tenant、User、Membership、Role | 身份、租户及项目权限 |
-| Projects | Project、ProjectSettings、Milestone | 项目设置、项目时区、阶段 |
-| Conversations | Room、Message、AttachmentRef | 消息持久化、引用、读取 |
-| Work | Task、TaskDependency、TaskHistory | 任务命令、状态机、并发校验 |
-| Risk/Decision | Risk、Decision、Approval | 风险确认、决策审批 |
-| AI Orchestration | AnalysisRun、Evidence、ProposedChange | 读取上下文、产生候选、申请确认 |
-| Automation | FollowUpPolicy、FollowUpPlan、DeliveryAttempt | 持久调度、通知、退避和取消 |
-| Knowledge | Document、DocumentVersion、IndexRecord | 解析、版本化、授权检索 |
-| Reporting | Report、ReportSnapshot | 按截止时点生成报告草稿 |
-| Integrations | ProviderConnection、ChannelMapping | 大模型、IM、通知、对象存储适配 |
-| Audit/Events | AuditEntry、OutboxEvent、InboxReceipt | 事件可靠交付、幂等、追溯 |
+| Identity / Tenancy | User、Tenant、TenantMember、Session | 企业身份提供商、组织级策略 |
+| Projects | Project、ProjectMember、Settings | Milestone、项目模板 |
+| Messaging | Message | Room、Attachment、引用与编辑版本 |
+| Work | Task、Task version | Dependency、Commitment、状态历史 |
+| Risk / Approval | Risk、ProposedChange | Decision、Approval 工作流 |
+| AI | ClarificationThread/Response、来源证据、项目请求配额 | AnalysisRun、长期记忆和质量评价 |
+| Automation | FollowUpPlan、OutboxEvent | 复杂干预、外部投递记录 |
+| Reporting | Report | 历史基线、周期快照、可编辑草稿 |
+| Integrations | OpenAIProvider | 本地模型、更多 Provider、通知与对象存储 |
+| Audit | AuditEntry | 完整组织级审计查询 |
 
-## 受控流程
-- `PostMessage`：后端授权；数据库事务写 Message + Outbox；成功入库后响应，广播异步完成。
-- `AnalyzeMessages`：按权限获取消息/相关任务；模型给出受 Schema 限制的 ProposedChange 和 Evidence；**不能直接更新 Task**。
-- `ApproveProposedChange`：确认人、项目作用域、版本及策略校验通过后，以领域命令写正式状态与 Audit/Outbox。
-- `RunFollowUp`：以计划幂等键执行；再次读取最新任务版本与静默规则，发送或重排，记录结果。
-- `GenerateReport`：按项目时区计算报告时间段，使用结构化快照 + 引用材料生成草稿，发布受权限控制。
+目标设计不能伪装成当前已经存在的数据库表或 API。
 
-## 稳定扩展接口
-`LLMProvider`、`ChannelAdapter`、`Notifier`、`DocumentParser`、`ObjectStore`。第一版各接口可只接一个提供商；不得让模型 SDK 泄漏进领域层。
+## 目前可执行入口
 
-跨模块写入用命令/服务边界，不直接更改其他模块表；DTO 与领域对象分离。
+- `apps/api/src/server.ts`：Fastify HTTP、身份与租户、项目、成员、消息、任务、候选、风险、报告。后续按领域拆路由/应用服务。
+- `apps/worker/src/worker.ts`：消费消息事件、AI 单消息候选提取和显式澄清、站内提醒、报告定时创建。
+- `apps/web/app/page.tsx`：Next.js 单页客户端；消息短轮询；完整历史分页和实时推送尚未实现。
+- `packages/core/src/`：PostgreSQL 事务、会话、消息序号、模型、澄清、跟进策略、Outbox、报告和迁移。
 
-## 当前可执行模块（v0.1）
-- `apps/api/src/server.ts`：Fastify HTTP 接入、身份、项目权限、消息、任务、候选、报告；后续继续拆成领域路由/服务。
-- `apps/worker/src/worker.ts`：扫描 Outbox、仅在项目开启 AI 时分析、持久化候选、工作时段催办及生成报告草稿。
-- `packages/core/src/messages.ts`：项目内串行化消息插入，确保提交序与增量游标一致；`packages/core/src/db.ts`：PostgreSQL 事务；`security.ts`：会话与密码；`followup.ts`：计划更新；`policy.ts`：时间策略；`reports.ts`：报告生成。
-- `apps/web/app/`：Next.js 客户端，当前消息 5 秒刷新。
-- 已采用 PostgreSQL Outbox 处理幂等、退避及隔离，暂无独立 InboxReceipt、Redis/BullMQ、附件/知识库或多个模型供应商。设计中的其他模块尚未全部落地。
+## 核心命令与权限
 
-## AI 主动追问（v0.1）
-对明确缺少负责人或日期的候选事项，Worker 最多在一次反馈中提出两个简短的澄清问题；同一项目在 10 分钟内不重复发布同类自动提取提示。候选本身仍持久化并等待人工确认，不因限频丢弃。当前为轻量群聊交互，不是多轮自主决策引擎。
+- `PostMessage`：每次必须验证项目成员与团队成员资格；事务内统一插入 Message 和 Outbox；项目级锁保证 seq 提交顺序、nonce 保证幂等。
+- `AnalyzeMessage`：仅在项目 Owner 启用模型时触发；模型输出需 Schema + Zod 校验，只存带来源的候选，不直接写正式 Task/Risk。
+- `ClarifyProposal`：成员消息含明确 `【候选:UUID】` 才关联现有线程；重复回复幂等，仅更新待确认线索。
+- `ApproveProposal`：只有 Owner 可以确认/拒绝；创建正式记录并审计，候选不可被重复确认。
+- `UpdateTask`：版本乐观锁；Owner 可以调整计划，指派成员仅能修改自己的任务状态。
+- `RunFollowUp`：检查最新状态、工作时段与冷却；静默不能视为已发送；事件重复不导致重复提醒。
+- `GenerateReport`：SQL 单次快照，完整聚合但有界明细；人工只覆盖草稿，已发布内容不可变；定时报告每项目/类型/周期至多创建一次。
+- `ReplayOutbox`：项目 Owner 授权、事务审计；事件是至少一次交付，旧 claim token 不允许回写新租约状态。
 
-## 已实现的并发契约（2026-10-12）
-- `insertMessage(db, input)` 只允许在调用方事务中执行；API/Worker 不得直接跳过项目消息锁。项目内消息序号与提交顺序一致，不同项目独立并发。
-- 任务重排不得突破 `last_sent_at + cooldown_hours`；重复 nonce 的提醒不记录第二份发送审计。
-- `generateReport` 以单条 SQL 快照获取全量聚合指标，仅截断明细；重复生成只刷新 `draft`，不得覆盖 `published`。
-- 冒烟测试需覆盖并发消息、冷却恢复、超过 200 任务的统计以及发布不可变性。
+## 身份、租户和关系不变量
 
-## v0.2 新增模块契约
-- `packages/core/src/outbox.ts`：`claimEvents` / `finishEvent` / `failEvent` / `deadEvents`；五分钟租约、最多八次处理、延迟重试、临界崩溃隔离和脱敏错误；消费者仍需业务幂等。
-- `packages/core/src/ai-provider.ts`：`LLMProvider` 抽取候选、明确关联回复；内部受控模型调用、Zod、按项目原子每日请求配额。
-- `packages/core/src/clarification.ts`：严格 `【候选:UUID】` 引用，回复只写持久澄清与来源，不修改正式 Task。仅 owner 的 `ApproveProposedChange` 可以将候选及澄清结果写正式状态。
-- `packages/core/src/migrate.ts`：以事务 + advisory lock + checksum 按文件序号应用变更；禁止修改已应用的 SQL。
-- 负责人 Outbox GET / 重试命令作用域由 API RBAC 强制，重放写 Audit，不能通过 Prompt 或模型工具跳过。
+- `GET /tenants` 只返回当前用户团队；创建项目 `POST /projects` 必须显式 `tenantId` 且用户是对应租户管理员。
+- 项目访问必须同时验证 `project_members` 与 `tenant_members`。
+- `DELETE /projects/:id/members/:memberId` 只有 Owner 可以移除普通成员；撤销后项目访问立刻失效。
+- `POST /auth/logout` 撤销带 JTI 的服务端 Session；Cookie 清除不等于独立的鉴权保障。
+- 消息、候选、风险、任务、澄清和 Outbox 的关联依赖组合外键保护同一项目作用域。
+- 数据库迁移有事务锁与校验和，已发布的迁移文件不可直接编辑。
 
-## v0.2 新增模块及入口
-- `core/outbox.ts`：领取、完成、失败、死信查询，带租约、退避和安全错误码；owner 通过后端 RBAC 进行隔离事件重放，事务审计。
-- `core/ai-provider.ts`：LLMProvider、结构化候选与回复提取、项目每日调用预算（UTC），不允许模型直接写正式任务。
-- `core/clarification.ts`：解析 `【候选:UUID】`，只保存候选的多轮证据回复；owner 审批后才转成正式任务，线程关闭。
-- `core/migrate.ts`：校验和、事务、数据库锁及顺序版本迁移。
+## AI 与扩展原则
 
-- Outbox 诊断命令 `outboxSummary(projectId)` 返回待处理、隔离、模型错误计数和最老等待时间，API 只向有权限的 owner 暴露。每次领取使用 UUID `claim_token`，旧 Worker 不能在租约过期后覆盖新 Worker 的完成状态。
-## 定时报告不变量（合并后 /review）
-`generateScheduledReport(db,projectId,kind)` 在已有数据库事务内执行，持有项目/类型/周期 advisory lock，若本期报告存在则不再执行。它与人工 `generateReport` 分离：定时计划不得覆盖已生成草稿，人工可重算草稿，已发布内容保持不可变。Worker 按项目 ID 键集分页，每分钟扫描一次；并发副本由数据库锁保证本周期至多创建一次。CI 的 `reports.integration.ts` 覆盖这组并发不变量。
+`LLMProvider` 是模型抽象；目前只有 `OpenAIProvider`，不得声称支持本地或多供应商。观察、正式业务变更、通知与外部工具必须经过确定性服务端权限边界。其他目标适配器和领域概念按实际用例渐进实施，不创建没有实现者的空抽象。
+
+## 验收要求
+
+所有业务变更需带有对应设计说明和自动化回归。重点覆盖跨租户、跨项目数据、会话撤销、失效成员、任务乐观锁、模型超额、消息乱序、未知事件、租约过期、重复发送、工作窗口、草稿不可覆盖和多 Worker 并发。真实外部模型质量、隐私、生产部署和备份恢复仍需独立验收。
+
+## 任务指派与成员撤销的串行化
+
+对 `project_members` 的授权指派检查必须持有 `FOR KEY SHARE`，且在创建或更新任务的同一事务中执行。删除成员时先 `FOR UPDATE` 锁住成员关系，再检查该成员是否承担未完成任务；存在时返回 409 并要求人工重新指派。不能先移除成员再让 Worker 继续催办失效负责人。
+
+- 任务状态更新同事务内再核验操作成员，不能依赖事务外的历史授权；从完成态重新开启并保留既有负责人时，必须验证负责人当前仍属于项目，否则拒绝并要求重新指派。

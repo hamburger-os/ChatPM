@@ -1,7 +1,5 @@
 # Development Guide
 
-**Status: experimental v0.2 MVP for local use, not production-ready.**
-
 Requires Node.js 22+ and Docker. From the repository root:
 
 ```bash
@@ -29,8 +27,12 @@ See [implementation gaps (Chinese)](../../design/implementation-status.md) for u
 ## Reliability notes
 The per-project message cursor follows transaction commit order to prevent missing chat messages. Replanning a task preserves the cooldown of its last reminder. Weekly/monthly counts cover all project tasks while detail lists are bounded; drafts can be regenerated, but published reports remain immutable. Verify these behaviors with `node tools/test/smoke.mjs` against a migrated PostgreSQL instance.
 
-## v0.2 clarification and recovery
+## clarification and recovery
 For opted-in AI, tasks with missing details get a `【候选:UUID】` reference. Team members may reply with the exact reference and an explicit assignee or timezone-aware deadline. Suggestions remain pending until the project owner approves them. Owners may inspect and retry quarantined background events in Settings. AI_DAILY_REQUEST_LIMIT limits each project's daily model calls (default 50); external AI remains disabled by default. Database regression: `node --import tsx packages/core/test/outbox.integration.ts`.
 
 ## Scheduled reporting
 The Worker creates a scheduled weekly/monthly report only once per project and reporting period. Polling does not overwrite drafts; owners can manually regenerate an unpublished draft, while published reports remain unchanged. Database regression: `node --import tsx packages/core/test/reports.integration.ts`.
+
+## Tenant and project API
+
+Call `GET /tenants` to list the user's teams and roles. `POST /projects` requires explicit `tenantId`, `name`, and `timezone`; the authenticated user must be an administrator of that team. There is no implicit default tenant selection. A project owner may remove a regular member, but the API returns 409 while that member owns unfinished tasks; reassign or cancel those tasks first to avoid orphaned reminders. Logout revokes the server-side session.

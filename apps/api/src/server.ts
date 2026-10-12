@@ -7,7 +7,7 @@ import helmet from '@fastify/helmet';
 import rateLimit from '@fastify/rate-limit';
 import { z, ZodError } from 'zod';
 import { pool, transaction, audit, type DbClient } from '../../../packages/core/src/db.ts';
-import { createSession, hashPassword, readSession, verifyPassword } from '../../../packages/core/src/security.ts';
+import { createSession, hashPassword, readSession, revokeSession, verifyPassword } from '../../../packages/core/src/security.ts';
 import { isValidTimezone } from '../../../packages/core/src/policy.ts';
 import { syncFollowup } from '../../../packages/core/src/followup.ts';
 import { insertMessage } from '../../../packages/core/src/messages.ts';
@@ -55,6 +55,7 @@ async function member(userId:string, projectId:string) {
   const {rows}=await pool.query(
     `SELECT pm.role,p.tenant_id,p.ai_enabled,p.timezone,p.work_start,p.work_end,p.cooldown_hours
      FROM project_members pm JOIN projects p ON p.id=pm.project_id
+     JOIN tenant_members tm ON tm.tenant_id=p.tenant_id AND tm.user_id=pm.user_id
      WHERE pm.project_id=$1 AND pm.user_id=$2`,[projectId,userId]);
   if (!rows[0]) fail(404,'项目不存在或无权限');
   return rows[0] as {role:'owner'|'member',tenant_id:string,ai_enabled:boolean,
@@ -99,7 +100,9 @@ app.post('/auth/login', {config:{rateLimit:{max:8,timeWindow:'1 minute'}}}, asyn
   await issueSession(reply,user.id);
   return {user:{id:user.id,email:user.email,display_name:user.display_name}};
 });
-app.post('/auth/logout',async(_req,reply)=>{
+app.post('/auth/logout',async(req,reply)=>{
+  const token=req.cookies.chatpm_session ?? req.headers.authorization?.replace(/^Bearer\s+/i,'');
+  if(token) await revokeSession(token);
   reply.clearCookie('chatpm_session',{path:'/'});
   return {ok:true};
 });
@@ -109,23 +112,31 @@ app.get('/me',async req=>{
   return {user:rows[0]};
 });
 
+app.get('/tenants',async req=>{
+  const userId=await authenticated(req);
+  const {rows}=await pool.query(`SELECT t.id,t.name,tm.role FROM tenants t
+    JOIN tenant_members tm ON tm.tenant_id=t.id WHERE tm.user_id=$1
+    ORDER BY t.name,t.id`,[userId]);
+  return {tenants:rows};
+});
 app.get('/projects',async req=>{
   const userId=await authenticated(req);
   const {rows}=await pool.query(
     `SELECT p.id,p.name,p.timezone,p.ai_enabled,pm.role
      FROM projects p JOIN project_members pm ON pm.project_id=p.id
+     JOIN tenant_members tm ON tm.tenant_id=p.tenant_id AND tm.user_id=pm.user_id
      WHERE pm.user_id=$1 ORDER BY p.created_at DESC`,[userId]);
   return {projects:rows};
 });
 app.post('/projects',async(req,reply)=>{
   const userId=await authenticated(req);
   const input=z.object({name:z.string().trim().min(1).max(140),
-    timezone:z.string().default('Asia/Shanghai')}).parse(req.body);
+    tenantId:uuid,timezone:z.string().default('Asia/Shanghai')}).parse(req.body);
   if (!isValidTimezone(input.timezone)) fail(400,'不支持的时区');
   const project=await transaction(async db=>{
     const ten=(await db.query(
-      `SELECT tenant_id FROM tenant_members WHERE user_id=$1 AND role='admin' ORDER BY tenant_id LIMIT 1`,
-      [userId])).rows[0];
+      `SELECT tenant_id FROM tenant_members WHERE tenant_id=$1 AND user_id=$2 AND role='admin'`,
+      [input.tenantId,userId])).rows[0];
     if(!ten) fail(403,'没有创建项目权限');
     const row=(await db.query(
       'INSERT INTO projects(tenant_id,name,owner_id,timezone) VALUES($1,$2,$3,$4) RETURNING *',
@@ -171,6 +182,28 @@ app.post('/projects/:id/members',async req=>{
       `INSERT INTO project_members(project_id,user_id,role) VALUES($1,$2,'member')
        ON CONFLICT DO NOTHING`,[projectId,person.id]);
     await audit(db,projectId,userId,'project.member_added',person.id);
+    return {ok:true};
+  });
+});
+app.delete('/projects/:id/members/:memberId',async req=>{
+  const {id,memberId}=req.params as {id:string;memberId:string};
+  const projectId=uuid.parse(id),target=uuid.parse(memberId);
+  const actor=await authenticated(req);
+  owner(await member(actor,projectId));
+  if(actor===target) fail(400,'不能通过此接口移除项目负责人');
+  return transaction(async db=>{
+    // Serialize revocation with task creation/assignment using the member row lock.
+    const found=await db.query(`SELECT 1 FROM project_members
+      WHERE project_id=$1 AND user_id=$2 AND role='member' FOR UPDATE`,
+      [projectId,target]);
+    if(!found.rowCount) fail(404,'项目成员不存在');
+    const assigned=await db.query(`SELECT 1 FROM tasks
+      WHERE project_id=$1 AND assignee_id=$2 AND status NOT IN ('done','cancelled')
+      LIMIT 1`,[projectId,target]);
+    if(assigned.rowCount) fail(409,'该成员仍有未完成任务，请先重新指派或取消任务');
+    await db.query(`DELETE FROM project_members
+      WHERE project_id=$1 AND user_id=$2 AND role='member'`,[projectId,target]);
+    await audit(db,projectId,actor,'project.member_removed',target);
     return {ok:true};
   });
 });
@@ -260,7 +293,8 @@ app.post('/projects/:id/tasks',async(req,reply)=>{
   return reply.code(201).send({task:row});
 });
 async function ensureAssignee(db: DbClient, projectId:string,userId:string) {
-  const r=await db.query('SELECT 1 FROM project_members WHERE project_id=$1 AND user_id=$2',
+  const r=await db.query(
+    'SELECT 1 FROM project_members WHERE project_id=$1 AND user_id=$2 FOR KEY SHARE',
     [projectId,userId]);
   if (!r.rowCount) fail(400,'负责人不属于本项目');
 }
@@ -285,13 +319,19 @@ app.patch('/projects/:id/tasks/:taskId',async req=>{
     if(!row) fail(404,'任务不存在');
     if(m.role!=='owner' && row.assignee_id!==userId) fail(403,'只有负责人或被指派者可更新状态');
     if(row.version!==v.version) fail(409,'任务版本已更新，请刷新');
-    if(v.assigneeId) await ensureAssignee(db,projectId,v.assigneeId);
+    // Revalidate the acting assignee inside the transaction; a concurrent
+    // membership revocation cannot authorize a late status update.
+    if(m.role!=='owner') await ensureAssignee(db,projectId,userId);
     const next={
       status:v.status??row.status,
       title:v.title??row.title,
       assigneeId:v.assigneeId===undefined?row.assignee_id:v.assigneeId,
       dueAt:v.dueAt===undefined?row.due_at:v.dueAt,
     };
+    // A completed task may retain a former member for history, but reopening
+    // or reassigning active work requires a currently authorized member.
+    if(next.assigneeId && !['done','cancelled'].includes(next.status))
+      await ensureAssignee(db,projectId,next.assigneeId);
     const t=(await db.query(
       `UPDATE tasks SET status=$1,title=$2,assignee_id=$3,due_at=$4,
        version=version+1,updated_at=NOW()

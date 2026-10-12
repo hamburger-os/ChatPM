@@ -5,6 +5,7 @@ type User={id:string,email:string,display_name:string};
 type Project={id:string,name:string,role:'owner'|'member',ai_enabled:boolean,
   timezone:string,work_start:number|null,work_end:number|null,cooldown_hours:number|null};
 type Member={id:string,email:string,display_name:string,role:string};
+type Tenant={id:string,name:string,role:'admin'|'member'};
 type Message={id:string,seq:number,kind:string,content:string,author:string|null,created_at:string};
 type Task={id:string,title:string,status:string,version:number,assignee_id:string|null,
   assignee:string|null,due_at:string|null};
@@ -41,6 +42,7 @@ export default function Home(){
   const [email,setEmail]=useState(''),[password,setPassword]=useState(''),
     [displayName,setDisplayName]=useState('');
   const [projects,setProjects]=useState<Project[]>([]),[selected,setSelected]=useState<string|null>(null);
+  const [tenants,setTenants]=useState<Tenant[]>([]),[tenantId,setTenantId]=useState('');
   const [members,setMembers]=useState<Member[]>([]),[messages,setMessages]=useState<Message[]>([]);
   const [tasks,setTasks]=useState<Task[]>([]),[proposals,setProposals]=useState<Proposal[]>([]);
   const [reports,setReports]=useState<Report[]>([]),[risks,setRisks]=useState<Risk[]>([]);
@@ -65,10 +67,17 @@ export default function Home(){
     setProjects(data.projects);
     setSelected(s=>s && data.projects.some(p=>p.id===s)?s:data.projects[0]?.id||null);
   },[]);
+  const loadTenants=useCallback(async()=>{
+    const data=await request<{tenants:Tenant[]}>('/tenants');
+    setTenants(data.tenants);
+    setTenantId(id=>data.tenants.some(t=>t.id===id&&t.role==='admin')?id:
+      data.tenants.find(t=>t.role==='admin')?.id??'');
+  },[]);
   useEffect(()=>{
-    request<{user:User}>('/me').then(x=>{setUser(x.user);return loadProjects();})
+    request<{user:User}>('/me').then(x=>{setUser(x.user);
+      return Promise.all([loadProjects(),loadTenants()]);})
       .catch(()=>setUser(null));
-  },[loadProjects]);
+  },[loadProjects,loadTenants]);
 
   const refresh=useCallback(async(id:string)=>{
     const base='/projects/'+id;
@@ -119,14 +128,16 @@ export default function Home(){
       const path=mode==='login'?'/auth/login':'/auth/register';
       const data=await request<{user:User}>(path,{
         method:'POST',body:JSON.stringify({email,password,displayName})});
-      setUser(data.user);setPassword('');await loadProjects();
+      setUser(data.user);setPassword('');
+      await Promise.all([loadProjects(),loadTenants()]);
     });
   }
   async function createProject(e:FormEvent) {
     e.preventDefault();
+    if(!tenantId)return;
     await action(async()=>{
       const p=await request<{project:Project}>('/projects',{
-        method:'POST',body:JSON.stringify({name:newProject,timezone:'Asia/Shanghai'})});
+        method:'POST',body:JSON.stringify({name:newProject,tenantId,timezone:'Asia/Shanghai'})});
       setNewProject('');await loadProjects();setSelected(p.project.id);
     });
   }
@@ -228,7 +239,7 @@ export default function Home(){
   }
   async function logout(){
     await request('/auth/logout',{method:'POST'});
-    setUser(null);setProjects([]);setSelected(null);
+    setUser(null);setProjects([]);setTenants([]);setTenantId('');setSelected(null);
   }
 
   if(!user)return <main className="auth-shell">
@@ -262,9 +273,15 @@ export default function Home(){
         onClick={()=>{setSelected(p.id);setTab('tasks');}}>
         <span>◉</span> {p.name}</button>)}</nav>
       <form className="stack new-project" onSubmit={createProject}>
+        <label>所属团队
+          <select aria-label="所属团队" value={tenantId} onChange={e=>setTenantId(e.target.value)}>
+            {tenants.filter(t=>t.role==='admin').map(t=>
+              <option key={t.id} value={t.id}>{t.name}</option>)}
+          </select>
+        </label>
         <label>创建项目<input placeholder="例如：支付系统上线" value={newProject} required
           onChange={e=>setNewProject(e.target.value)}/></label>
-        <button disabled={working}>＋ 新项目</button>
+        <button disabled={working||!tenantId}>＋ 新项目</button>
       </form>
       <div className="sidebar-footer">
         <strong>{user.display_name}</strong><small>{user.email}</small>

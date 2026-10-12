@@ -1,16 +1,14 @@
-# 04 · Community / 社区文档
+# 社区文档 / Community
 
-本层按**模块一一对应维护中文和英文**，供社区贡献者理解和参与；不取代 [面向负责人的中文设计](../design/README.md)。
+ChatPM 是可运行的实验性 AI 项目经理应用，尚未完成生产验收。欢迎参与测试、文档、部署、设计与代码改进。
 
-| 模块 | 中文 | English |
+| 内容 | 中文 | English |
 |---|---|---|
-| 项目概述 | [概述](zh/overview.md) | [Overview](en/overview.md) |
-| 架构简介 | [架构](zh/architecture.md) | [Architecture](en/architecture.md) |
-| 开发指引 | [开发](zh/development.md) | [Development](en/development.md) |
-| 贡献流程 | [贡献](zh/contributing.md) | [Contributing](en/contributing.md) |
+| 产品概述 | [概述](zh/overview.md) | [Overview](en/overview.md) |
+| 架构 | [架构](zh/architecture.md) | [Architecture](en/architecture.md) |
+| 开发 | [开发](zh/development.md) | [Development](en/development.md) |
+| 贡献 | [贡献](zh/contributing.md) | [Contributing](en/contributing.md) |
 
-## 双语维护约定
-相同文件名应有 `zh/` 与 `en/` 两份文档。修改公开功能、部署方法或贡献流程时必须成对更新，文档检查会检查文件对等及 PR 修改对等，人工审查需确认语义没有偏差。
+[Apache-2.0](../../LICENSE) · [行为准则](../../CODE_OF_CONDUCT.md) · [安全](../../SECURITY.md) · [支持](../../SUPPORT.md) · [治理](../../GOVERNANCE.md)
 
-## Current status
-The repository contains **design documents and documentation tooling only**. There is no runnable application yet.
+公开行为和部署文档必须中英同步；不要把未来功能描述为已完成。

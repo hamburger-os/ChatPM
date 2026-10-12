@@ -7,6 +7,7 @@ on:
       - 'packages/**'
       - 'infra/**'
       - 'package.json'
+      - 'package-lock.json'
       - 'tsconfig.json'
       - '.github/workflows/app-quality.yml'
   push:
@@ -16,6 +17,7 @@ on:
       - 'packages/**'
       - 'infra/**'
       - 'package.json'
+      - 'package-lock.json'
       - 'tsconfig.json'
 
 permissions:
