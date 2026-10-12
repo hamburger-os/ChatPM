@@ -222,7 +222,7 @@ app.post('/projects/:id/messages',async(req,reply)=>{
     if(!row) {
       row=(await db.query('SELECT * FROM messages WHERE project_id=$1 AND client_nonce=$2',
         [projectId,nonce])).rows[0];
-      if(row.author_id!==userId || row.content!==content) fail(409,'消息幂等键冲突');
+      if(!row || row.author_id!==userId || row.content!==content) fail(409,'消息幂等键冲突');
     } else {
       await db.query(
         `INSERT INTO outbox_events(project_id,kind,message_id) VALUES($1,'message.created',$2)`,
