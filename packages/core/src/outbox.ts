@@ -58,7 +58,7 @@ export async function failEvent(event:EventRow,error:unknown){
   }
   // Error class only: no chat, model output, credentials or stack in persisted state.
   await pool.query(`UPDATE outbox_events
-    SET claimed_at=NULL,
+    SET claimed_at=NULL,claim_token=NULL,
       last_error_code=$3,
       dead_at=CASE WHEN attempts >= $4 THEN NOW() ELSE NULL END,
       next_attempt_at=NOW()+(
