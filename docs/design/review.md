@@ -42,3 +42,8 @@ Web 仅承担界面与固定上游 HTTP 代理，生产 Compose 不再向 Web �
 **未关闭、需要实机独立验收的事项：** Windows 11 WinSW LocalService 实际权限与重启、Linux 断电/开机恢复、任务调度故障告警接入、数据库 PITR、离机加密备份、异机还原演练、生产 HTTPS/Cookie 端到端测试、压力与安全测评。以上均不能由 PR CI 通过直接宣布完成。
 
 **合并判定规则**：新增迁移经 PostgreSQL CI、应用回归与 Docker Compose 冒烟、Windows/Linux 构建、安装脚本语法/运维单元测试及文档检查全部通过，并确认 PR 可合并后，代码可作为实验性运维功能进入 main；生产级承诺仍不得发布。
+
+
+### 本次复审追加：发行与升级
+
+原生初装新增 `setup:local` 的模板密钥生成与数据库默认密码阻止；升级新增 `upgrade:native` 的人工停服确认、HTTP 运行态检查与备份先行顺序。CI 可上传便携构建包，但目标机仍需自行安装 Node/PostgreSQL、验证密钥和服务账户，不能标记为已完成正式 MSI/DEB/RPM。
