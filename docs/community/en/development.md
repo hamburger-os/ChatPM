@@ -25,3 +25,6 @@ Open http://localhost:3000, register and create a project. External AI is disabl
 Checks: `npm run typecheck`, `npm test`, `npm run build:web`, `npm run check:docs`. Changes must follow [docs-sync](../../../.agents/skills/docs-sync/SKILL.md).
 
 See [implementation gaps (Chinese)](../../design/implementation-status.md) for unimplemented features and security limitations. [中文](../zh/development.md).
+
+## Reliability notes
+The per-project message cursor follows transaction commit order to prevent missing chat messages. Replanning a task preserves the cooldown of its last reminder. Weekly/monthly counts cover all project tasks while detail lists are bounded; drafts can be regenerated, but published reports remain immutable. Verify these behaviors with `node tools/test/smoke.mjs` against a migrated PostgreSQL instance.
