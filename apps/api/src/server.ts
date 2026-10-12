@@ -266,20 +266,37 @@ app.patch('/projects/:id/tasks/:taskId',async req=>{
   const userId=await authenticated(req);
   const m=await member(userId,projectId);
   const v=z.object({version:z.number().int().positive(),
-    status:z.enum(['todo','doing','blocked','done','cancelled'])}).parse(req.body);
+    status:z.enum(['todo','doing','blocked','done','cancelled']).optional(),
+    title:z.string().trim().min(1).max(250).optional(),
+    assigneeId:uuid.nullable().optional(),
+    dueAt:z.string().datetime({offset:true}).nullable().optional(),
+  }).refine(x=>x.status!==undefined||x.title!==undefined||
+    x.assigneeId!==undefined||x.dueAt!==undefined,
+    '至少修改一个字段').parse(req.body);
+  const changesMetadata=v.title!==undefined||v.assigneeId!==undefined||v.dueAt!==undefined;
+  if(changesMetadata && m.role!=='owner') fail(403,'只有项目负责人能调整任务计划');
   return transaction(async db=>{
     const row=(await db.query('SELECT * FROM tasks WHERE id=$1 AND project_id=$2 FOR UPDATE',
       [taskId,projectId])).rows[0];
     if(!row) fail(404,'任务不存在');
     if(m.role!=='owner' && row.assignee_id!==userId) fail(403,'只有负责人或被指派者可更新状态');
     if(row.version!==v.version) fail(409,'任务版本已更新，请刷新');
+    if(v.assigneeId) await ensureAssignee(db,projectId,v.assigneeId);
+    const next={
+      status:v.status??row.status,
+      title:v.title??row.title,
+      assigneeId:v.assigneeId===undefined?row.assignee_id:v.assigneeId,
+      dueAt:v.dueAt===undefined?row.due_at:v.dueAt,
+    };
     const t=(await db.query(
-      `UPDATE tasks SET status=$1,version=version+1,updated_at=NOW()
-       WHERE id=$2 AND project_id=$3 RETURNING *`,
-      [v.status,taskId,projectId])).rows[0];
+      `UPDATE tasks SET status=$1,title=$2,assignee_id=$3,due_at=$4,
+       version=version+1,updated_at=NOW()
+       WHERE id=$5 AND project_id=$6 RETURNING *`,
+      [next.status,next.title,next.assigneeId,next.dueAt,taskId,projectId])).rows[0];
     await syncFollowup(db,projectId,taskId);
-    await audit(db,projectId,userId,'task.status_changed',taskId,
-      {from:row.status,to:v.status,version:t.version});
+    await audit(db,projectId,userId,'task.updated',taskId,
+      {before:{status:row.status,title:row.title,assigneeId:row.assignee_id,dueAt:row.due_at},
+       after:next,version:t.version});
     return {task:t};
   });
 });
