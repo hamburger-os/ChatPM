@@ -25,6 +25,19 @@ CREATE TABLE clarification_threads (
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+CREATE TABLE clarification_responses (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  project_id UUID NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+  proposal_id UUID NOT NULL REFERENCES proposed_changes(id) ON DELETE CASCADE,
+  message_id UUID NOT NULL REFERENCES messages(id),
+  model_name TEXT NOT NULL,
+  prompt_version TEXT NOT NULL,
+  assignee_hint TEXT,
+  due_at TIMESTAMPTZ,
+  confidence NUMERIC(4,3) NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  UNIQUE(proposal_id,message_id)
+);
 CREATE INDEX idx_clarification_project ON clarification_threads(project_id,status,updated_at DESC);
 
 CREATE TABLE ai_daily_usage (
