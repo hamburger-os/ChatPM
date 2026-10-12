@@ -63,7 +63,7 @@ export function main() {
   if (!existsSync(envPath)) {
     writeFileSync(envPath, text, { flag: 'wx', mode: 0o600 });
     console.log('Created .env with private local settings.');
-  } else if (source !== text) {
+  } else if (generated.length > 0) {
     writeFileSync(envPath, text, { mode: 0o600 });
     console.log('Added missing/placeholder Docker secrets to .env; other settings preserved.');
   }
