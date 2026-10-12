@@ -72,3 +72,13 @@ export async function deadEvents(projectId:string){
     FROM outbox_events WHERE project_id=$1 AND dead_at IS NOT NULL AND processed_at IS NULL
     ORDER BY dead_at DESC LIMIT 100`,[projectId])).rows;
 }
+
+export async function outboxSummary(projectId:string){
+  const {rows}=await pool.query(`SELECT
+    COUNT(*) FILTER (WHERE processed_at IS NULL AND dead_at IS NULL)::int AS pending,
+    COUNT(*) FILTER (WHERE processed_at IS NULL AND dead_at IS NOT NULL)::int AS dead,
+    COUNT(*) FILTER (WHERE last_error_code LIKE 'MODEL_%')::int AS model_errors,
+    MIN(created_at) FILTER (WHERE processed_at IS NULL AND dead_at IS NULL) AS oldest_pending_at
+    FROM outbox_events WHERE project_id=$1`,[projectId]);
+  return rows[0] as {pending:number;dead:number;model_errors:number;oldest_pending_at:Date|null};
+}
