@@ -2,9 +2,9 @@
 
 感谢参与 ChatPM。我们欢迎真实使用场景、缺陷复现、测试、文档、翻译及代码贡献。
 
-- [中文贡献指南](docs/community/zh/contributing.md)
-- [English contributor guide](docs/community/en/contributing.md)
-- [开发与验证](docs/community/zh/development.md)
+- [中文贡献指南](docs/community/contributing.md#中文)
+- [English contributor guide](docs/community/contributing.md#english)
+- [开发与验证](docs/community/development.md#中文)
 - [项目范围](docs/design/product-scope.md)
 - [行为准则](CODE_OF_CONDUCT.md)
 - [安全漏洞处理](SECURITY.md)

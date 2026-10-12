@@ -29,8 +29,8 @@ Windows PowerShell 前台启动脚本与 WinSW 服务包装示例；Linux system
 
 本设计文件用于记录跨平台部署的架构约束；详细安装步骤统一放在既有社区层，不另外新建 `installation` 层：
 
-- [Windows 11 / Linux 本机原生安装及 Docker 使用（中文）](../community/zh/development.md)
-- [Native Windows / Linux / Docker installation (English)](../community/en/development.md)
+- [Windows 11 / Linux 本机原生安装及 Docker 使用（中文）](../community/development.md#中文)
+- [Native Windows / Linux / Docker installation (English)](../community/development.md#english)
 - [仓库根目录 README 本机快速启动](../../README.md)
 
 部署在目标平台时执行 `npm ci && npm run build && npm run check:distribution`，正式数据库迁移使用 `npm run db:migrate:prod`。PostgreSQL 客户端工具须在 PATH，且生产必须使用单独生成的随机会话密钥。

@@ -1,6 +1,6 @@
 ---
 name: docs-sync
-description: 当 ChatPM 代码、接口、Schema、架构、部署配置或用户可见行为更新时，同一变更中同步四层文档，检查索引及中英配对，并完成审查记录。
+description: 当 ChatPM 代码、接口、Schema、架构、部署配置或用户可见行为更新时，同一变更中同步四层文档，检查索引及同文件双语章节，并完成审查记录。
 ---
 
 # Docs Sync
@@ -13,10 +13,10 @@ description: 当 ChatPM 代码、接口、Schema、架构、部署配置或用�
 2. 判断改动是否偏离已选架构。**偏离则先更新中文设计及 ADR 并请负责人审查**，不得倒过来以代码覆盖设计。
 3. 更新 `docs/design/<module>.md`：职责、边界、方案、失败处理、扩展影响、验收（不过度写实现）。
 4. 更新 `docs/ai/`：模块契约、事件/命令、状态不变量、测试约束及实现状态。
-5. 公共行为、接口、部署或贡献方式变化：同时修改 `docs/community/zh/<module>.md` 与 `docs/community/en/<module>.md`；必要时修改根 README。
+5. 公共行为、接口、部署或贡献方式变化：修改 `docs/community/<module>.md` 中的中文与 English 两个章节；必要时修改根 README。
 6. 新建或重命名模块时修订 `docs/README.md` 和各层 README 索引。`docs/knowledge/` 只记录通用知识。
 7. 运行 `node tools/docs/check-docs.mjs`。产品代码 PR 还运行 `node tools/docs/check-sync.mjs <base> <head>`。
-8. 在 PR 描述中注明代码文件 → 对应中文设计 → AI 文档 → 中英文档、检查结果及尚待确认的设计。
+8. 在 PR 描述中注明代码文件 → 对应中文设计 → AI 文档 → 单文件双语社区说明、检查结果及尚待确认的设计。
 
 ## 完成标准
 - 任何变更都可以从中文设计找到架构理由和验收依据。
