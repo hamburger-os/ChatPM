@@ -29,9 +29,15 @@
 ## 当前可执行模块（v0.1）
 - `apps/api/src/server.ts`：Fastify HTTP 接入、身份、项目权限、消息、任务、候选、报告；后续继续拆成领域路由/服务。
 - `apps/worker/src/worker.ts`：扫描 Outbox、仅在项目开启 AI 时分析、持久化候选、工作时段催办及生成报告草稿。
-- `packages/core/src/db.ts`：PostgreSQL 事务；`security.ts`：会话与密码；`followup.ts`：计划更新；`policy.ts`：时间策略；`reports.ts`：报告生成。
+- `packages/core/src/messages.ts`：项目内串行化消息插入，确保提交序与增量游标一致；`packages/core/src/db.ts`：PostgreSQL 事务；`security.ts`：会话与密码；`followup.ts`：计划更新；`policy.ts`：时间策略；`reports.ts`：报告生成。
 - `apps/web/app/`：Next.js 客户端，当前消息 5 秒刷新。
 - 现阶段无独立 InboxReceipt、Redis/BullMQ、附件/知识库与多模型适配器，不能将设计中的全部模块称为已实现。
 
 ## AI 主动追问（v0.1）
 对明确缺少负责人或日期的候选事项，Worker 最多在一次反馈中提出两个简短的澄清问题；同一项目在 10 分钟内不重复发布同类自动提取提示。候选本身仍持久化并等待人工确认，不因限频丢弃。当前为轻量群聊交互，不是多轮自主决策引擎。
+
+## 已实现的并发契约（2026-10-12）
+- `insertMessage(db, input)` 只允许在调用方事务中执行；API/Worker 不得直接跳过项目消息锁。项目内消息序号与提交顺序一致，不同项目独立并发。
+- 任务重排不得突破 `last_sent_at + cooldown_hours`；重复 nonce 的提醒不记录第二份发送审计。
+- `generateReport` 以单条 SQL 快照获取全量聚合指标，仅截断明细；重复生成只刷新 `draft`，不得覆盖 `published`。
+- 冒烟测试需覆盖并发消息、冷却恢复、超过 200 任务的统计以及发布不可变性。
