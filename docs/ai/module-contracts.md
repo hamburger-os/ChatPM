@@ -90,3 +90,9 @@ Web 端从 `GET /projects` 初始化项目列表和设置面板。该接口返�
 - `npm run setup:local` 调用无外部依赖的 `bootstrap-native.mjs` 创建缺失 `.env` 的随机 SESSION_SECRET，拒绝开发样例数据库密码及不安全公共源，然后调用 `setup:native`。绝不静默创建操作系统 PostgreSQL 用户或修改已有数据库密码。
 - `npm run upgrade:native -- --confirm-services-stopped` 由操作者声明停止全部服务，要求 API 无法接受本机健康请求，先完成可验证文件备份才运行构建与迁移；此入口不能证明独立 Worker 已停止，仍须运维人员核验。
 - GitHub Actions 可上传临时 Windows/Linux portable Artifacts；它们需要 Node/npm 和 PostgreSQL，在目标环境安装运行依赖，不代表已有签名安装包或更新/卸载器。
+
+
+## /review 运行时补充
+
+- `deploy.mjs` 固定 Compose 项目名并使用 `--env-file`，在替换任何占位秘密前先检查已有名为 `chatpm_postgres_data` 的数据卷；原密码遗失需人工恢复。
+- `run.mjs` 将根环境变量交给 API、Worker 和 Next 子应用；Worker 接收 `{type:'chatpm:shutdown'}` IPC 消息，在完成 tick/关闭连接池后断开 IPC 退出。这是受限时间内的进程级排空，不是持久消息事务回滚。
