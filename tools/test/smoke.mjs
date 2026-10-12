@@ -157,8 +157,6 @@ try{
   await db.query(
     "INSERT INTO tasks(project_id,title) SELECT $1,'批量任务-'||n FROM generate_series(1,205) AS n",
     [pid]);
-  const beforeCount=Number((await db.query(
-    'SELECT COUNT(*) AS total FROM tasks WHERE project_id=$1',[pid])).rows[0].total);
   // Model-derived clarification is only a suggestion; the owner confirms final facts.
   const candidate2=(await db.query(
     `INSERT INTO proposed_changes(project_id,source_message_id,kind,title)
@@ -201,6 +199,9 @@ try{
   assert.equal(queued.rows[0].attempts,0);
   assert.equal(queued.rows[0].dead_at,null);
 
+  // Count after accepting the clarified task, not before it.
+  const beforeCount=Number((await db.query(
+    'SELECT COUNT(*) AS total FROM tasks WHERE project_id=$1',[pid])).rows[0].total);
   const report=await api('/projects/'+pid+'/reports',{method:'POST',body:{kind:'week'}});
   assert.equal(report.status,200,JSON.stringify(report.data));
   assert.equal(report.data.report.state,'draft');
