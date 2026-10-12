@@ -25,7 +25,8 @@
     "check:distribution": "node tools/test/distribution.mjs",
     "start": "node tools/ops/run.mjs prod",
     "deploy:docker": "node tools/ops/deploy.mjs",
-    "test:ops": "node --test tools/test/ops.test.mjs"
+    "test:ops": "node --test tools/test/ops.test.mjs",
+    "setup:native": "npm ci && npm run build && npm run check:distribution && npm run db:migrate:prod"
   },
   "dependencies": {
     "@fastify/cookie": "^11.0.0",
