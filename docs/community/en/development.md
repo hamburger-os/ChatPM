@@ -8,7 +8,7 @@ Requires Node.js 22+ and Docker. From the repository root:
 cp .env.example .env
 # Replace SESSION_SECRET with a random string at least 32 characters long
 docker compose -f infra/compose.yml up -d
-npm install
+npm ci
 npm run db:migrate
 ```
 
