@@ -44,6 +44,8 @@ jobs:
         run: npm run typecheck
       - name: Unit tests
         run: npm test
+      - name: Deployment bootstrap tests
+        run: npm run test:ops
       - name: Database schema
         run: npm run db:migrate
       - name: Verify migrations are repeatable
