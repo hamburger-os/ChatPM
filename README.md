@@ -76,7 +76,7 @@ node -e "console.log(require('node:crypto').randomBytes(32).toString('hex'))"
 打开根目录的 `.env`，至少修改以下配置：
 
 ```dotenv
-NODE_ENV=development
+NODE_ENV=production
 DATABASE_URL=postgres://chatpm:<数据库密码的URL编码值>@127.0.0.1:5432/chatpm
 SESSION_SECRET=<粘贴上面生成的随机密钥>
 WEB_ORIGIN=http://localhost:3000
@@ -92,10 +92,7 @@ API_INTERNAL_URL=http://127.0.0.1:3001
 在仓库根目录运行（Windows PowerShell / Linux Bash 命令相同）：
 
 ```bash
-npm ci
-npm run build
-npm run check:distribution
-npm run db:migrate:prod
+npm run setup:native
 ```
 
 ### 4. 一个终端启动
@@ -106,7 +103,7 @@ npm start
 
 此命令统一启动 API、Worker、Web 三个独立进程，在同一终端输出日志；任一进程异常退出时停止整组，防止产生不完整的服务。打开 **http://localhost:3000**，使用 **http://127.0.0.1:3001/health** 检查 API。关闭终端会结束服务，这适用于本地演示，不是开机自启模式。
 
-**开机自启**：Linux 使用仓库自带的三个 systemd 单元执行 `sudo systemctl enable --now chatpm-api chatpm-worker chatpm-web`；Windows 11 在准备并验证 WinSW 后，以管理员权限运行 `./infra/windows/install-services.ps1 -WinSWPath <路径> -StartNow`，默认注册为 Automatic 服务。Windows 服务安装器默认使用 LocalSystem，因此正式部署前必须设置低权限服务账户及配置文件 ACL。两种平台均需要 PostgreSQL 服务先行可用。
+**开机自启**：Linux 使用仓库自带的三个 systemd 单元执行 `sudo systemctl enable --now chatpm-api chatpm-worker chatpm-web`；Windows 11 在准备并验证 WinSW 后，以管理员权限运行 `./infra/windows/install-services.ps1 -WinSWPath <路径> -StartNow`，默认注册为 Automatic 服务。Windows 服务安装器使用内置低权限 LocalService 并设置运行目录和密钥文件 ACL。运行前仍须由管理员验证目录继承权限、数据库连接、服务启停和重启。两种平台均需要 PostgreSQL 服务先行可用。
 
 开发调试只需一个终端执行 `npm run dev`（需先 `npm ci`、配置数据库并迁移）。
 
@@ -115,6 +112,17 @@ npm start
 ## Docker（可选）
 
 Docker 不是必需组件。上述 `npm run deploy:docker` 提供第一次安装时的配置与秘密初始化；已有安全配置的环境也可直接执行 `docker compose -f infra/compose.prod.yml up -d --build`。开发用 `infra/compose.yml` 只启动 PostgreSQL。
+
+## 运维诊断、备份与升级
+
+原生部署可执行 `npm run doctor` 检查 API、数据库、Worker 心跳和积压事件；Docker 可执行 `docker compose -f infra/compose.prod.yml exec -T api node tools/ops/doctor.mjs`。检测异常时返回非零退出码，可由外部监控系统采集。启动后的首个 Worker tick 及迁移完成前不应直接判定为健康。
+
+- 原生：`npm run backup -- --dir=./backups --keep=14`
+- Docker：`npm run backup:docker -- --dir=./backups --keep=14`
+- Linux：安装 `infra/linux/chatpm-backup.{service,timer}`、`chatpm-doctor.{service,timer}`，启用对应 timer 后获得定期执行。
+- Windows：管理员在完成服务账户 ACL 验收后运行 `infra/windows/install-backup-task.ps1`，注册定时备份任务。
+
+备份只保留本工具生成的最近 N 个本地文件；**本地保留不等于备份安全**，必须将备份复制到加密的离机位置并定期在隔离数据库进行恢复演练。部署升级前先确认备份完成、停止服务、构建并迁移、启动、运行 `doctor`；数据库迁移不承诺自动回滚。操作细节见 [开发与部署指南](docs/community/development.md#中文)。
 
 ## 本地演示路线
 
