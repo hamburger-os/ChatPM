@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Docker-only bootstrap. No database replacement, no global installation, no elevated access.
+// Docker bootstrap: never overwrite configured credentials or replace an existing database.
 import { randomBytes } from 'node:crypto';
 import { existsSync, readFileSync, writeFileSync, chmodSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
@@ -13,7 +13,6 @@ function generateSecret() {
   return randomBytes(32).toString('hex');
 }
 
-// Pure function for reproducible tests; returns newly generated keys, not their values.
 export function prepareDockerEnv(source) {
   const newline = source.includes('\r\n') ? '\r\n' : '\n';
   const lines = source.split(/\r?\n/);
@@ -30,11 +29,8 @@ export function prepareDockerEnv(source) {
     }
     if (!raw || placeholder) {
       const value = generateSecret();
-      if (index === undefined) {
-        lines.push(key + '=' + value);
-      } else {
-        lines[index] = key + '=' + value;
-      }
+      if (index === undefined) lines.push(key + '=' + value);
+      else lines[index] = key + '=' + value;
       generated.push(key);
     }
   }
@@ -47,8 +43,14 @@ export function assertSafeDockerBootstrap(generated, volumeExists) {
 }
 
 function existingPostgresVolume() {
-  const result = spawnSync('docker',
-    ['volume','ls','--quiet','--filter','name=^chatpm_postgres_data
+  const result = spawnSync('docker', ['volume', 'ls', '--quiet', '--filter',
+    'name=^chatpm_postgres_data$'], { cwd: root, encoding: 'utf8' });
+  if (result.error || result.status !== 0)
+    throw new Error('Cannot inspect the ChatPM PostgreSQL data volume. Start Docker Engine first.');
+  return result.stdout.split(/\r?\n/).includes('chatpm_postgres_data');
+}
+
+function runDocker(args, silent = false) {
   const result = spawnSync('docker', args, {
     cwd: root, stdio: silent ? 'pipe' : 'inherit', encoding: silent ? 'utf8' : undefined,
   });
@@ -80,54 +82,6 @@ export function main() {
   const compose = ['compose', '-p', 'chatpm', '--env-file', envPath, '-f', 'infra/compose.prod.yml'];
   runDocker([...compose, 'up', '-d', '--build']);
   runDocker([...compose, 'ps']);
-  console.log('ChatPM is available at http://localhost:3000 when its health checks pass.');
-  console.log('Docker daemon startup is required for automatic restart after a host reboot.');
-}
-
-if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
-  try { main(); }
-  catch (error) {
-    console.error(error instanceof Error ? error.message : error);
-    process.exitCode = 1;
-  }
-}
-],
-    { cwd: root, encoding: 'utf8' });
-  if (result.error || result.status !== 0)
-    throw new Error('Cannot determine whether the ChatPM PostgreSQL volume exists. Docker Engine must be running.');
-  return result.stdout.split(/\r?\n/).includes('chatpm_postgres_data');
-}
-
-function runDocker(args, silent = false) {
-  const result = spawnSync('docker', args, {
-    cwd: root, stdio: silent ? 'pipe' : 'inherit', encoding: silent ? 'utf8' : undefined,
-  });
-  if (result.error) throw new Error('Docker is unavailable: ' + result.error.message);
-  if (result.status !== 0) {
-    throw new Error(silent
-      ? 'Docker Compose is unavailable. Install/start Docker Engine with the Compose plugin first.'
-      : 'docker compose ' + args.join(' ') + ' failed with code ' + result.status);
-  }
-}
-
-export function main() {
-  runDocker(['compose', 'version'], true);
-  const envPath = resolve(root, '.env');
-  const source = existsSync(envPath)
-    ? readFileSync(envPath, 'utf8')
-    : readFileSync(resolve(root, '.env.example'), 'utf8');
-  const { text, generated } = prepareDockerEnv(source);
-  if (!existsSync(envPath)) {
-    writeFileSync(envPath, text, { flag: 'wx', mode: 0o600 });
-    console.log('Created .env with private local settings.');
-  } else if (generated.length > 0) {
-    writeFileSync(envPath, text, { mode: 0o600 });
-    console.log('Added missing/placeholder Docker secrets to .env; other settings preserved.');
-  }
-  if (process.platform !== 'win32') chmodSync(envPath, 0o600);
-  if (generated.length) console.log('Generated strong random values for ' + generated.join(', ') + '.');
-  runDocker(['compose', '-f', 'infra/compose.prod.yml', 'up', '-d', '--build']);
-  runDocker(['compose', '-f', 'infra/compose.prod.yml', 'ps']);
   console.log('ChatPM is available at http://localhost:3000 when its health checks pass.');
   console.log('Docker daemon startup is required for automatic restart after a host reboot.');
 }
