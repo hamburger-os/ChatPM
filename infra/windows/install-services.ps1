@@ -1,5 +1,6 @@
 param(
-  [Parameter(Mandatory=$true)][string]$WinSWPath
+  [Parameter(Mandatory=$true)][string]$WinSWPath,
+  [switch]$StartNow
 )
 $ErrorActionPreference = 'Stop'
 # WinSW is an external Windows service wrapper. Obtain and verify a signed release yourself.
@@ -23,6 +24,7 @@ foreach ($Component in @('api','worker','web')) {
   <id>$Id</id>
   <name>ChatPM $Component</name>
   <description>ChatPM $Component process</description>
+  <startmode>Automatic</startmode>
   <executable>$([System.Security.SecurityElement]::Escape($Node))</executable>
   <arguments>$([System.Security.SecurityElement]::Escape($Arguments))</arguments>
   <workingdirectory>$([System.Security.SecurityElement]::Escape($Root))</workingdirectory>
@@ -34,5 +36,10 @@ foreach ($Component in @('api','worker','web')) {
   Set-Content -Path (Join-Path $Root "$Id.xml") -Value $Xml -Encoding utf8
   & $Wrapper install
   if ($LASTEXITCODE -ne 0) { throw "Failed to register $Id" }
-  Write-Host "Registered $Id; set a dedicated low-privilege service account before production use."
+  Write-Host "Registered $Id for automatic start; configure a least-privilege account before production use."
+  if ($StartNow) {
+    & $Wrapper start
+    if ($LASTEXITCODE -ne 0) { throw "Failed to start $Id" }
+    Write-Host "Started $Id"
+  }
 }
