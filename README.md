@@ -2,9 +2,9 @@
 
 > 群聊驱动的项目管理：AI 协助提取候选任务、跟进进度并起草报告，正式项目状态仍由人确认。
 
-**状态：v0.1 MVP（本地试验版），不是生产就绪产品。** 已审查的设计和 [实施差距](docs/design/implementation-status.md) 请从 [文档中心](docs/README.md) 阅读。
+**状态：v0.2 MVP（本地试验版），不是生产就绪产品。** 已审查的设计和 [实施差距](docs/design/implementation-status.md) 请从 [文档中心](docs/README.md) 阅读。
 
-## v0.1 能做什么
+## v0.2 能做什么
 - 注册、创建项目、邀请已注册成员、项目群聊及消息持久化。
 - 项目负责人显式启用外部 AI 后，异步提取候选任务和风险；默认**不向外部模型发送项目聊天**。
 - 负责人确认/拒绝候选；任务状态具备并发版本校验，AI 无权直接修改正式任务。
@@ -38,11 +38,15 @@ npm run dev:web
 npm run typecheck
 npm test
 npm run build:web
+node --import tsx packages/core/test/outbox.integration.ts
+node --import tsx packages/core/test/ai.integration.ts
 npm run check:docs
 ```
 
 ## 文档
 [中文架构方案](docs/design/README.md) · [实施状态和差距](docs/design/implementation-status.md) · [AGENTS.md](AGENTS.md) · [docs-sync](.agents/skills/docs-sync/SKILL.md) · [社区中文](docs/community/zh/overview.md) · [English](docs/community/en/overview.md)。
+
+v0.2 新增项目级模型调用上限、带引用的多轮候选澄清、Outbox 失败隔离/安全重放与版本化数据库迁移。项目负责人可在设置中查看隔离事件，成员可在聊天室通过「【候选:UUID】」补充工作信息，正式任务仍需人工批准。
 
 尚未实现文件知识库、WebSocket 推送、风险升级、SSO、多模型等高级功能；也未完成生产安全与可靠性验收。项目尚未选定开源许可证，请勿假定可自由再分发或商用。
 
