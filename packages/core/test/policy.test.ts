@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { canSendReminder, periodKey, isValidTimezone } from '../src/policy.ts';
+import { canSendReminder, nextReminderAt, periodKey, isValidTimezone } from '../src/policy.ts';
 import { hashPassword, verifyPassword } from '../src/security.ts';
 
 test('time zone validation and silent-by-default reminder', () => {
@@ -25,4 +25,20 @@ test('password hashing uses random salt and resists bad passwords', () => {
   assert.notEqual(a,b);
   assert.equal(verifyPassword('test-safe-password',a),true);
   assert.equal(verifyPassword('wrong',a),false);
+});
+
+test('off-hours check resumes at next working window instead of consuming cooldown', () => {
+  const p={timezone:'Asia/Shanghai',work_start:9,work_end:18,cooldown_hours:24};
+  assert.equal(nextReminderAt(new Date('2026-10-12T12:00:00Z'),p).toISOString(),
+    '2026-10-13T01:00:00.000Z');
+  assert.equal(nextReminderAt(new Date('2026-10-16T12:00:00Z'),p).toISOString(),
+    '2026-10-19T01:00:00.000Z');
+});
+test('next window respects daylight saving and fractional UTC offsets', () => {
+  const ny={timezone:'America/New_York',work_start:9,work_end:18,cooldown_hours:1};
+  assert.equal(nextReminderAt(new Date('2026-03-06T23:00:00Z'),ny).toISOString(),
+    '2026-03-09T13:00:00.000Z');
+  const nepal={timezone:'Asia/Kathmandu',work_start:9,work_end:18,cooldown_hours:1};
+  assert.equal(nextReminderAt(new Date('2026-10-12T02:00:00Z'),nepal).toISOString(),
+    '2026-10-12T03:15:00.000Z');
 });

@@ -41,7 +41,12 @@ try{
   assert.equal(signup.status,200,JSON.stringify(signup.data));
   cookieA=signup.cookie;assert.ok(cookieA);
   const uid=signup.data.user.id;
-  const created=await api('/projects',{method:'POST',body:{name:'集成测试项目',timezone:'Asia/Shanghai'}});
+  const teams=await api('/tenants');
+  assert.equal(teams.status,200);
+  const tenantId=teams.data.tenants.find(t=>t.role==='admin')?.id;
+  assert.ok(tenantId,'Registrant must own a team');
+  const created=await api('/projects',{method:'POST',body:{
+    name:'集成测试项目',tenantId,timezone:'Asia/Shanghai'}});
   assert.equal(created.status,201,JSON.stringify(created.data));
   const pid=created.data.project.id;
   assert.equal(created.data.project.ai_enabled,false);
@@ -224,7 +229,18 @@ try{
   const immutable=await api('/projects/'+pid+'/reports',{method:'POST',body:{kind:'week'}});
   assert.equal(immutable.data.report.content,refreshed.data.report.content,
     'Published reports must remain immutable');
-  console.log('API smoke tests passed: authorization, ordering, idempotency, clarification approval, dead-letter replay and reports.');
+  const removeDenied=await api('/projects/'+pid+'/members/'+second.data.user.id,{
+    method:'DELETE',cookie:cookieB});
+  assert.equal(removeDenied.status,403);
+  const removed=await api('/projects/'+pid+'/members/'+second.data.user.id,{method:'DELETE'});
+  assert.equal(removed.status,200);
+  const revokedMember=await api('/projects/'+pid+'/messages',{cookie:cookieB});
+  assert.equal(revokedMember.status,404,'Removed member must lose access immediately');
+  const loggedOut=await api('/auth/logout',{method:'POST'});
+  assert.equal(loggedOut.status,200);
+  const revokedSession=await api('/me');
+  assert.equal(revokedSession.status,401,'Logout must revoke the server-side session');
+  console.log('API smoke tests passed: tenant selection, revocable sessions, membership, ordering, idempotency, AI review, outbox and reports.');
 }finally{
   await db.end();
   server.kill('SIGTERM');

@@ -1,6 +1,6 @@
 import 'dotenv/config';
 import { pool, transaction, audit } from '../../../packages/core/src/db.ts';
-import { canSendReminder, localClock } from '../../../packages/core/src/policy.ts';
+import { canSendReminder, localClock, nextReminderAt } from '../../../packages/core/src/policy.ts';
 import { generateScheduledReport } from '../../../packages/core/src/reports.ts';
 import { insertMessage } from '../../../packages/core/src/messages.ts';
 import { OpenAIProvider } from '../../../packages/core/src/ai-provider.ts';
@@ -8,7 +8,8 @@ import { processClarification } from '../../../packages/core/src/clarification.t
 import { claimEvents, finishEvent, failEvent, type EventRow } from '../../../packages/core/src/outbox.ts';
 
 async function runAnalysis(event:EventRow) {
-  if(event.kind!=='message.created'||!event.message_id) return;
+  if(event.kind!=='message.created') throw new Error('UNSUPPORTED_EVENT_KIND');
+  if(!event.message_id) throw new Error('EVENT_MISSING_MESSAGE');
   const lookup=await pool.query(
     `SELECT m.kind,m.content,p.name,p.ai_enabled FROM messages m
      JOIN projects p ON p.id=m.project_id WHERE m.id=$1 AND m.project_id=$2`,
@@ -104,7 +105,9 @@ async function processReminders() {
         await db.query('UPDATE followup_plans SET active=FALSE WHERE id=$1',[p.id]);
         continue;
       }
-      if(canSendReminder(new Date(),p)) {
+      const now=new Date();
+      const eligible=canSendReminder(now,p);
+      if(eligible) {
         const content='@'+p.display_name+'，任务「'+p.title+
           '」尚未标记完成。请确认当前进度、阻塞与预计完成时间。';
         const key='followup:'+p.task_id+':v'+p.version+':'+
@@ -118,10 +121,12 @@ async function processReminders() {
             {version:p.version,nonce:key});
         }
       }
-      await db.query(
-        `UPDATE followup_plans SET next_at=NOW()+
-        (COALESCE($2::integer,24)*INTERVAL '1 hour') WHERE id=$1`,
-        [p.id,p.cooldown_hours]);
+      // Quiet time is not a sent reminder: resume at the next allowed instant.
+      const earliest=eligible
+        ? new Date(now.getTime() + (p.cooldown_hours ?? 24)*3600000)
+        : new Date(now.getTime()+60000);
+      await db.query('UPDATE followup_plans SET next_at=$2 WHERE id=$1',
+        [p.id,nextReminderAt(earliest,p)]);
     }
   });
 }
