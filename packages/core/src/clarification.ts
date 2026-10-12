@@ -16,6 +16,10 @@ export async function processClarification(reply:Reply):Promise<boolean>{
     WHERE p.id=$1 AND p.project_id=$2 AND p.status='pending' AND t.status IN ('open','answered')`,
     [proposalId,reply.projectId]);
   if(!rows.length)return true; // Explicit reference: never create an unrelated proposal.
+  const processed=await pool.query(
+    'SELECT 1 FROM clarification_responses WHERE proposal_id=$1 AND message_id=$2',
+    [proposalId,reply.id]);
+  if(processed.rowCount)return true; // A redelivered event never spends budget twice.
   const result=await new OpenAIProvider(reply.projectId).clarify(reply.projectName,rows[0].title,reply.content);
   const suggestion=result.value;
   if(!suggestion.assignee_hint&&!suggestion.due_at)return true;
