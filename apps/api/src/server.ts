@@ -10,6 +10,7 @@ import { pool, transaction, audit, type DbClient } from '../../../packages/core/
 import { createSession, hashPassword, readSession, verifyPassword } from '../../../packages/core/src/security.ts';
 import { isValidTimezone } from '../../../packages/core/src/policy.ts';
 import { syncFollowup } from '../../../packages/core/src/followup.ts';
+import { insertMessage } from '../../../packages/core/src/messages.ts';
 import { generateReport } from '../../../packages/core/src/reports.ts';
 
 const port = Number(process.env.API_PORT ?? '3001');
@@ -215,11 +216,9 @@ app.post('/projects/:id/messages',async(req,reply)=>{
   await member(userId,projectId);
   const {content,nonce}=z.object({content:text,nonce:z.string().uuid()}).parse(req.body);
   const message=await transaction(async db=>{
-    const result=await db.query(
-      `INSERT INTO messages(project_id,author_id,kind,content,client_nonce)
-       VALUES($1,$2,'user',$3,$4) ON CONFLICT(project_id,client_nonce) DO NOTHING RETURNING *`,
-      [projectId,userId,content,nonce]);
-    let row=result.rows[0];
+    let row=await insertMessage(db,{
+      projectId,authorId:userId,kind:'user',content,nonce,
+    });
     if(!row) {
       row=(await db.query('SELECT * FROM messages WHERE project_id=$1 AND client_nonce=$2',
         [projectId,nonce])).rows[0];
