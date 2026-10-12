@@ -54,3 +54,5 @@
 - `core/ai-provider.ts`：LLMProvider、结构化候选与回复提取、项目每日调用预算（UTC），不允许模型直接写正式任务。
 - `core/clarification.ts`：解析 `【候选:UUID】`，只保存候选的多轮证据回复；owner 审批后才转成正式任务，线程关闭。
 - `core/migrate.ts`：校验和、事务、数据库锁及顺序版本迁移。
+
+- Outbox 诊断命令 `outboxSummary(projectId)` 返回待处理、隔离、模型错误计数和最老等待时间，API 只向有权限的 owner 暴露。每次领取使用 UUID `claim_token`，旧 Worker 不能在租约过期后覆盖新 Worker 的完成状态。
