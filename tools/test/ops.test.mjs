@@ -48,3 +48,28 @@ test('CRLF input remains CRLF', () => {
   const result = prepareDockerEnv(template.replaceAll('\n', '\r\n'));
   assert.equal(result.text.replaceAll('\r\n', '').includes('\n'), false);
 });
+
+
+import { backupName, listBackups } from '../ops/backup.mjs';
+import { evaluateHealth } from '../ops/doctor.mjs';
+
+test('private backup naming is sorted and retention never includes unrelated files', () => {
+  const name = backupName(new Date('2026-10-13T02:30:00.000Z'), 'abcdef01');
+  assert.equal(name, 'chatpm-20261013T023000Z-abcdef01.dump');
+  assert.deepEqual(listBackups([
+    'README.md', 'chatpm-20261012T023000Z-abcdef02.dump',
+    name, 'chatpm-20261011T023000Z-abcdef02.partial',
+  ]), [name, 'chatpm-20261012T023000Z-abcdef02.dump']);
+});
+
+test('health assessment fails closed for stale Worker and overdue outbox', () => {
+  const input = {
+    apiOk: true, heartbeatAgeSec: 20, successAgeSec: 25,
+    overdue: 0, dead: 0, migrations: ['004_worker_health.sql'],
+  };
+  assert.deepEqual(evaluateHealth(input), { ok: true, issues: [] });
+  assert.deepEqual(evaluateHealth({ ...input, heartbeatAgeSec: 300, overdue: 1 }).issues,
+    ['WORKER_HEARTBEAT_STALE', 'OUTBOX_OVERDUE']);
+  assert.deepEqual(evaluateHealth({ ...input, successAgeSec: null }).issues,
+    ['WORKER_TICK_NOT_SUCCESSFUL']);
+});
