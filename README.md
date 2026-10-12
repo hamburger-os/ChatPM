@@ -1,8 +1,24 @@
 # ChatPM — 开源 AI 项目经理
 
+<p align="center">
+  <img src="assets/brand/banner.svg" alt="ChatPM — Turn conversations into accountable progress" width="100%" />
+</p>
+
+
+[![Product verification](https://github.com/hamburger-os/ChatPM/actions/workflows/app-quality.yml/badge.svg)](https://github.com/hamburger-os/ChatPM/actions/workflows/app-quality.yml)
+[![Documentation](https://github.com/hamburger-os/ChatPM/actions/workflows/docs-quality.yml/badge.svg)](https://github.com/hamburger-os/ChatPM/actions/workflows/docs-quality.yml)
+[![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
+
 > 让项目聊天室里的承诺不再被遗忘。AI 提取有证据的候选事项、协助确认责任人与期限、跟进正式任务并生成待审核的项目报告。
 
 **状态：实验性可运行原型；尚未完成生产级安全、性能与隐私验收。** [Apache-2.0](LICENSE) · [中文文档](docs/README.md) · [English](docs/community/en/overview.md)
+
+## 为什么选择 ChatPM？
+
+讨论发生在聊天室，但项目状态不应该只依赖记忆。ChatPM 将聊天中的事实与**待确认候选**分开，记录来源，由项目负责人确认后进入正式任务，再按明确规则催办和汇报。它不会把模型生成的内容直接当作已批准的计划。
+
+> [!IMPORTANT]
+> ChatPM 当前仍是**实验性可运行原型**，并非已验收的生产级服务。README 以下仅介绍已实现的能力。
 
 ## 已实现的能力
 
@@ -30,6 +46,16 @@ npm run dev:api
 
 默认不开启模型；如需向外部模型发送项目聊天，需先配置服务端 `OPENAI_API_KEY`，再由项目负责人显式启用。请先确认组织的数据处理要求。未启用时仍可手动创建任务、发送聊天和生成报告。
 
+## 本地演示路线
+
+1. 注册账号并创建团队/项目，邀请已注册的成员。
+2. 在项目聊天室中讨论可交付事项；未配置模型时可以手动创建任务。
+3. 可选择配置服务端 API Key 并由项目负责人显式开启外部 AI，将讨论转为有依据的**候选任务/风险**。
+4. 由负责人审批候选、确认任务负责人和期限，配置工作时间与提醒冷却。
+5. 在「报告」中生成并审核当前项目状态的周/月报草稿。
+
+此演示需要真实的本地运行环境；尚无公开在线 Demo 或完整生产镜像。
+
 ## 验证
 
 ```bash
@@ -46,10 +72,14 @@ npm run check:docs
 
 集成测试需要可用的 PostgreSQL；CI 会自动执行。
 
+## 安全与隐私
+
+默认不开启第三方模型传输；成员身份、项目权限与候选审批由服务端控制。请阅读 [安全政策](SECURITY.md)、[隐私与数据边界](PRIVACY.md) 和 [当前限制](docs/design/implementation-status.md)。敏感业务数据请勿直接用于未经生产验收的实例。
+
 ## 参与开源
 
 - [参与贡献](CONTRIBUTING.md) · [社区行为准则](CODE_OF_CONDUCT.md) · [漏洞报告](SECURITY.md) · [支持渠道](SUPPORT.md)
 - [治理与维护](GOVERNANCE.md) · [架构和设计](docs/design/README.md) · [当前能力与限制](docs/design/implementation-status.md)
-- [Issues](https://github.com/hamburger-os/ChatPM/issues) · [Discussions（启用后）](https://github.com/hamburger-os/ChatPM/discussions)
+- [维护与状态检查设置](docs/maintainers/status-checks.md) · [Issues](https://github.com/hamburger-os/ChatPM/issues) · [Discussions（启用后）](https://github.com/hamburger-os/ChatPM/discussions)
 
 **English:** ChatPM is an experimental, chat-centered AI project management tool. It keeps evidence-linked proposals separate from approved project facts. Cloud and self-hosted deployment with cloud/local model options are product goals; they are not all shipped today. See the [English guide](docs/community/en/development.md).

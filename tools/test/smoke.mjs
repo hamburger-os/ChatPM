@@ -50,6 +50,13 @@ try{
   assert.equal(created.status,201,JSON.stringify(created.data));
   const pid=created.data.project.id;
   assert.equal(created.data.project.ai_enabled,false);
+  const listedInitial=await api('/projects');
+  assert.equal(listedInitial.status,200);
+  const initialProject=listedInitial.data.projects.find(p=>p.id===pid);
+  assert.ok(initialProject,'New project must be returned in the project list');
+  assert.equal(initialProject.work_start,null,'Unset work start must be explicit null');
+  assert.equal(initialProject.work_end,null,'Unset work end must be explicit null');
+  assert.equal(initialProject.cooldown_hours,null,'Unset cooldown must be explicit null');
   const suffix2=randomUUID().slice(0,8);
   const second=await api('/auth/register',{method:'POST',cookie:'',body:{
     email:'second+'+suffix2+'@example.com',password:'Passw0rd-Strong-123',displayName:'李工',
@@ -140,6 +147,12 @@ try{
     aiEnabled:false,workStart:9,workEnd:18,cooldownHours:24,
   }});
   assert.equal(configured.status,200);
+  const listedConfigured=await api('/projects');
+  assert.equal(listedConfigured.status,200);
+  const configuredProject=listedConfigured.data.projects.find(p=>p.id===pid);
+  assert.equal(configuredProject.work_start,9);
+  assert.equal(configuredProject.work_end,18);
+  assert.equal(configuredProject.cooldown_hours,24);
   const followup=await db.query(
     'SELECT active FROM followup_plans WHERE task_id=$1',[tid]);
   assert.equal(followup.rows[0]?.active,true,'Task follow-up must be durable');

@@ -122,7 +122,7 @@ app.get('/tenants',async req=>{
 app.get('/projects',async req=>{
   const userId=await authenticated(req);
   const {rows}=await pool.query(
-    `SELECT p.id,p.name,p.timezone,p.ai_enabled,pm.role
+    `SELECT p.id,p.name,p.timezone,p.ai_enabled,p.work_start,p.work_end,p.cooldown_hours,pm.role
      FROM projects p JOIN project_members pm ON pm.project_id=p.id
      JOIN tenant_members tm ON tm.tenant_id=p.tenant_id AND tm.user_id=pm.user_id
      WHERE pm.user_id=$1 ORDER BY p.created_at DESC`,[userId]);
