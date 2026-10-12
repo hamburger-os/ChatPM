@@ -30,7 +30,8 @@
     "doctor": "node tools/ops/doctor.mjs",
     "backup": "node tools/ops/backup.mjs",
     "backup:docker": "node tools/ops/backup.mjs --docker",
-    "setup:local": "node tools/ops/bootstrap-native.mjs"
+    "setup:local": "node tools/ops/bootstrap-native.mjs",
+    "upgrade:native": "node tools/ops/upgrade.mjs"
   },
   "dependencies": {
     "@fastify/cookie": "^11.0.0",
