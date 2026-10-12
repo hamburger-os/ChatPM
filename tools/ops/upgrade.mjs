@@ -20,13 +20,13 @@ export function parseUpgradeArgs(argv) {
 
 export async function main(argv = process.argv.slice(2)) {
   const backupArgs = parseUpgradeArgs(argv);
+  let apiResponded = false;
   try {
-    const result = await fetch('http://127.0.0.1:' + (process.env.API_PORT || '3001') + '/health',
+    await fetch('http://127.0.0.1:' + (process.env.API_PORT || '3001') + '/health',
       { signal: AbortSignal.timeout(2500) });
-    if (result.ok) throw new Error('API is still running. Stop all ChatPM services before upgrading.');
-  } catch (error) {
-    if (error instanceof Error && error.message.includes('still running')) throw error;
-  }
+    apiResponded = true;
+  } catch { /* no HTTP response */ }
+  if (apiResponded) throw new Error('API is still running. Stop all ChatPM services before upgrading.');
   // Backup must succeed before installing a new build or applying any SQL migration.
   createBackup(backupArgs);
   const result = spawnSync(process.platform === 'win32' ? 'npm.cmd' : 'npm',
