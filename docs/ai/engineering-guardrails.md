@@ -42,3 +42,12 @@
 - Windows / Linux 原生服务、Docker Compose 必须运行相同数据库迁移及业务代码。升级先备份、迁移后启动。
 - Worker 只补偿本周和本月当前状态报告，不虚构停机期间已过的周期快照；停止信号等待当前 tick 结束。
 - 跨平台编译和测试不等于 Windows Service、TLS 或数据库恢复的实际验收。
+
+
+## 一键部署与进程管理不变量
+
+- `tools/ops/run.mjs` 只负责本机**前台**三个子进程的统一运行；意外退出时组内故障显式可见，并向其他进程发出终止信号。不得用于声称已具备后台守护、滚动更新、故障隔离或开机自启。
+- `tools/ops/deploy.mjs` 依赖已安装的 Docker Compose；首次安装生成独立随机 SESSION_SECRET 与 POSTGRES_PASSWORD，不输出密钥，不重写用户已设置的秘密，重复运行保持幂等。
+- 原生迁移与编译通过 `npm run setup:native` 统一执行；PostgreSQL 配置必须预先有效，不能在失败后静默创建或删除已有数据库。
+- Linux systemd 三服务统一读取 `/opt/chatpm/.env`，Windows WinSW 使用根目录 `.env`。秘密文件只授权服务运行账户读取；Windows 当前 WinSW 默认 LocalSystem 仍是需要人工加固的风险。
+- CI 覆盖 Docker 配置的秘密生成、重复执行、已有设置保护以及 Windows/Linux Node 入口语法；Docker 服务自启和原生服务实际故障恢复需要另外在目标系统验证。
