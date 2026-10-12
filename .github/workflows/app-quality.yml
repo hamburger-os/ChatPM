@@ -53,5 +53,7 @@ jobs:
         run: npm test
       - name: Database schema
         run: npm run db:migrate
+      - name: API integration smoke test
+        run: node tools/test/smoke.mjs
       - name: Build web app
         run: npm run build:web
