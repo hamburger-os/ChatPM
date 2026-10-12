@@ -30,25 +30,87 @@
 
 **尚未实现：** 本地模型与多提供商接入、文档知识库、自动语义关联、完整风险升级、实时推送、完整企业身份管理和正式 SaaS 运营。以上属于 [路线图](docs/design/roadmap-acceptance.md)，不是现有功能。
 
-## 本地开发
+## 在本机直接部署（无需 Docker）
 
-推荐 Node.js 24 LTS；Docker 仅用于以下开发数据库示例，不是运行应用的前提。复制环境配置，并设置高强度随机 `SESSION_SECRET`。
+**Windows 11 和 Linux 都可以原生部署。** ChatPM 由 Web、API、Worker 三个 Node.js 进程和一个 PostgreSQL 数据库组成。下面是**本机安装 PostgreSQL + 运行正式构建产物**的步骤；不需要 Docker、WSL 或容器引擎。
 
-```bash
-cp .env.example .env
-docker compose -f infra/compose.yml up -d
-npm ci
-npm run db:migrate
-npm run dev:api
+### 1. 准备 Node.js 和 PostgreSQL
+
+- 安装 **Node.js 24 LTS**、**PostgreSQL 17**（包括 `psql` 客户端）和 Git。
+- 下载源码：`git clone https://github.com/hamburger-os/ChatPM.git`，然后进入 `ChatPM` 目录。
+- 打开 PostgreSQL 的 `psql`：Windows 可使用随 PostgreSQL 安装的 SQL Shell (psql)，Linux 可执行 `sudo -u postgres psql`。创建专用角色和数据库：
+
+```sql
+CREATE ROLE chatpm LOGIN PASSWORD '请替换为自己生成的数据库强密码';
+CREATE DATABASE chatpm OWNER chatpm;
 ```
 
-另开两个终端分别运行 `npm run dev:worker` 和 `npm run dev:web`；访问 http://localhost:3000。健康检查：http://localhost:3001/health 。
+此处密码只是标记，不可直接用于真实部署。数据库已存在时不要重复创建；若 PostgreSQL 不在本机，请改用目标数据库的主机、端口和账号。
 
-默认不开启模型；如需向外部模型发送项目聊天，需先配置服务端 `OPENAI_API_KEY`，再由项目负责人显式启用。请先确认组织的数据处理要求。未启用时仍可手动创建任务、发送聊天和生成报告。
+### 2. 配置运行环境
 
-## 跨平台构建与部署
+在仓库根目录复制环境变量模板：
 
-支持同一份源码分别构建 Windows/Linux 原生 Node.js 服务及完整 Docker Compose 示例：`npm run build`、`npm run db:migrate:prod`、`npm run start:api`、`npm run start:worker`、`npm run start:web`。Windows/Linux 可直接安装 PostgreSQL，无需 Docker；浏览器统一请求同源 `/api`。详见 [部署指南](docs/installation/README.md) 与 [中文安装步骤](docs/community/zh/development.md)。**目前仅提供部署入口和 CI 构建验证，未完成生产实机安全验收。**
+| Windows 11 · PowerShell | Linux · Bash |
+|---|---|
+| `Copy-Item .env.example .env` | `cp .env.example .env` |
+
+生成随机会话密钥（两种系统均可）：
+
+```bash
+node -e "console.log(require('node:crypto').randomBytes(32).toString('hex'))"
+```
+
+打开根目录的 `.env`，至少修改以下配置：
+
+```dotenv
+NODE_ENV=development
+DATABASE_URL=postgres://chatpm:<数据库密码的URL编码值>@127.0.0.1:5432/chatpm
+SESSION_SECRET=<粘贴上面生成的随机密钥>
+WEB_ORIGIN=http://localhost:3000
+API_HOST=127.0.0.1
+API_PORT=3001
+API_INTERNAL_URL=http://127.0.0.1:3001
+```
+
+数据库密码包含 `@`、`#`、`:` 等特殊字符时，须将密码部分按 URL 编码。上面的尖括号内容必须替换为实际值；本机 HTTP 仅用于可信的本地访问，不是公网生产配置。第三方 AI 默认关闭，可暂时不填 `OPENAI_API_KEY`。
+
+### 3. 安装、构建并初始化
+
+在仓库根目录运行（Windows PowerShell / Linux Bash 命令相同）：
+
+```bash
+npm ci
+npm run build
+npm run check:distribution
+npm run db:migrate:prod
+```
+
+### 4. 启动服务
+
+**打开三个终端**，均切换到 ChatPM 根目录：
+
+| 终端 | 执行命令 | 用途 |
+|---|---|---|
+| 1 | `npm run start:api` | API（本机 3001 端口） |
+| 2 | `npm run start:worker` | AI 处理、任务跟进和报告调度 |
+| 3 | `npm run start:web` | Web（本机 3000 端口） |
+
+访问 **http://localhost:3000** 注册账号、创建项目。可打开 **http://127.0.0.1:3001/health** 检查 API 数据库连接。关闭终端会停止相应服务；需要后台常驻时使用下方文档中的 Windows Service / Linux systemd 示例。
+
+更详细的原生安装、服务托管、备份与恢复方法：[中文指南](docs/community/zh/development.md) · [English guide](docs/community/en/development.md) · [部署设计](docs/design/deployment.md)。
+
+## Docker（可选）
+
+Docker 不是必需组件。如果更喜欢容器方式，可在根目录 `.env` 中另外设置 `POSTGRES_PASSWORD`，确认 `SESSION_SECRET` 是随机密钥，再执行：
+
+```bash
+docker compose -f infra/compose.prod.yml up -d --build
+```
+
+该 Compose 提供完整的 Web、API、Worker 和 PostgreSQL，默认只在 `127.0.0.1:3000` 提供访问。**请勿直接把本地测试配置开放到公网。**
+
+如果只是开发代码，可使用 `npm run dev:api`、`npm run dev:worker`、`npm run dev:web`；开发用 `infra/compose.yml` 仅启动 PostgreSQL。
 
 ## 本地演示路线
 
@@ -70,7 +132,8 @@ node --import tsx packages/core/test/outbox.integration.ts
 node --import tsx packages/core/test/ai.integration.ts
 node --import tsx packages/core/test/reports.integration.ts
 node tools/test/smoke.mjs
-npm run build:web
+npm run build
+npm run check:distribution
 npm run check:docs
 ```
 
@@ -84,6 +147,6 @@ npm run check:docs
 
 - [参与贡献](CONTRIBUTING.md) · [社区行为准则](CODE_OF_CONDUCT.md) · [漏洞报告](SECURITY.md) · [支持渠道](SUPPORT.md)
 - [治理与维护](GOVERNANCE.md) · [架构和设计](docs/design/README.md) · [当前能力与限制](docs/design/implementation-status.md)
-- [维护与状态检查设置](docs/maintainers/status-checks.md) · [Issues](https://github.com/hamburger-os/ChatPM/issues) · [Discussions（启用后）](https://github.com/hamburger-os/ChatPM/discussions)
+- [维护与状态检查设置](docs/community/zh/maintainers.md) · [Issues](https://github.com/hamburger-os/ChatPM/issues) · [Discussions（启用后）](https://github.com/hamburger-os/ChatPM/discussions)
 
 **English:** ChatPM is an experimental, chat-centered AI project management tool. It keeps evidence-linked proposals separate from approved project facts. Cloud and self-hosted deployment with cloud/local model options are product goals; they are not all shipped today. See the [English guide](docs/community/en/development.md).

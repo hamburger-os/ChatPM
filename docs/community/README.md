@@ -8,6 +8,7 @@ ChatPM 是可运行的实验性 AI 项目经理应用，尚未完成生产验收
 | 架构 | [架构](zh/architecture.md) | [Architecture](en/architecture.md) |
 | 开发 | [开发](zh/development.md) | [Development](en/development.md) |
 | 贡献 | [贡献](zh/contributing.md) | [Contributing](en/contributing.md) |
+| 维护者与合并检查 | [维护指引](zh/maintainers.md) | [Maintainer guide](en/maintainers.md) |
 
 [Apache-2.0](../../LICENSE) · [行为准则](../../CODE_OF_CONDUCT.md) · [安全](../../SECURITY.md) · [支持](../../SUPPORT.md) · [治理](../../GOVERNANCE.md)
 
