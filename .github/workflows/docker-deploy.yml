@@ -1,0 +1,32 @@
+name: Docker deployment smoke
+on:
+  pull_request:
+  push:
+    branches: [main]
+permissions:
+  contents: read
+jobs:
+  compose:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      POSTGRES_PASSWORD: compose-ci-only-password
+      SESSION_SECRET: compose-ci-only-secret-must-be-at-least-32-characters
+      WEB_ORIGIN: http://127.0.0.1:3000
+      CHATPM_PORT: '3000'
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate compose
+        run: docker compose -f infra/compose.prod.yml config --quiet
+      - name: Build production image
+        run: docker compose -f infra/compose.prod.yml build
+      - name: Start full stack
+        run: docker compose -f infra/compose.prod.yml up -d --wait --no-build
+      - name: Exercise web and API authentication
+        run: node tools/test/proxy-smoke.mjs
+      - name: Logs on failure
+        if: failure()
+        run: docker compose -f infra/compose.prod.yml logs --no-color --tail=150
+      - name: Clean up
+        if: always()
+        run: docker compose -f infra/compose.prod.yml down -v --remove-orphans
