@@ -6,7 +6,7 @@
 1. 阅读 [文档中心](docs/README.md) 与 [中文设计目录](docs/design/README.md)，以批准后的设计为依据。
 2. 阅读 [AI 上下文](docs/ai/README.md)、[架构边界](.agents/rules/architecture.md)、[安全质量](.agents/rules/security-quality.md) 与 [文档规则](.agents/rules/documentation.md)。
 3. **变更任何产品代码、Schema 或配置时**运行 [docs-sync Skill](.agents/skills/docs-sync/SKILL.md)；涉及重大设计调整时先运行 [architecture-review](.agents/skills/architecture-review/SKILL.md)。
-4. 当前已有 **v0.1 实验性 MVP**（Fastify API、Next.js Web、PostgreSQL、Worker），**不是生产就绪**；启动和测试状态只能按实际执行结果报告。
+4. 当前已有 **v0.2 实验性 MVP**（Fastify API、Next.js Web、PostgreSQL、Worker），**不是生产就绪**；启动和测试状态只能按实际执行结果报告。
 
 ## 不可突破的约束
 - 采用**模块化单体 + 可独立部署的 Worker 进程**；业务模块独立拥有数据写入权，跨模块通过公开命令/查询。
