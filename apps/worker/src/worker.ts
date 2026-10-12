@@ -2,6 +2,7 @@ import 'dotenv/config';
 import { pool, transaction, audit } from '../../../packages/core/src/db.ts';
 import { canSendReminder, localClock } from '../../../packages/core/src/policy.ts';
 import { generateReport } from '../../../packages/core/src/reports.ts';
+import { insertMessage } from '../../../packages/core/src/messages.ts';
 import { z } from 'zod';
 
 const proposal=z.object({
@@ -102,10 +103,10 @@ async function runAnalysis(event:EventRow) {
         const content='我从刚才的讨论中提取了 '+added+
           ' 项待确认的任务或风险，负责人可在「AI 待确认」中审核。'+
           (questions.length?'\n'+questions.join('\n'):'');
-        await db.query(
-          `INSERT INTO messages(project_id,kind,content,client_nonce)
-           VALUES($1,'ai',$2,$3) ON CONFLICT(project_id,client_nonce) DO NOTHING`,
-          [event.project_id,content,'analysis:'+event.id]);
+        await insertMessage(db,{
+          projectId:event.project_id,authorId:null,kind:'ai',
+          content,nonce:'analysis:'+event.id,
+        });
       }
       await audit(db,event.project_id,null,'ai.proposals_created',event.id,
         {sourceMessageId:event.message_id,count:added});
@@ -164,13 +165,14 @@ async function processReminders() {
           '」尚未标记完成。请确认当前进度、阻塞与预计完成时间。';
         const key='followup:'+p.task_id+':v'+p.version+':'+
           new Date().toISOString().slice(0,13);
-        await db.query(
-          `INSERT INTO messages(project_id,kind,content,client_nonce)
-           VALUES($1,'ai',$2,$3) ON CONFLICT(project_id,client_nonce) DO NOTHING`,
-          [p.project_id,content,key]);
-        await db.query('UPDATE followup_plans SET last_sent_at=NOW() WHERE id=$1',[p.id]);
-        await audit(db,p.project_id,null,'ai.followup_sent',p.task_id,
-          {version:p.version,nonce:key});
+        const inserted=await insertMessage(db,{
+          projectId:p.project_id,authorId:null,kind:'ai',content,nonce:key,
+        });
+        if(inserted) {
+          await db.query('UPDATE followup_plans SET last_sent_at=NOW() WHERE id=$1',[p.id]);
+          await audit(db,p.project_id,null,'ai.followup_sent',p.task_id,
+            {version:p.version,nonce:key});
+        }
       }
       await db.query(
         `UPDATE followup_plans SET next_at=NOW()+
