@@ -69,7 +69,7 @@ Docker/Compose 与 Node 已安装后，在仓库根目录执行：
 npm run deploy:docker
 ```
 
-首次自动创建 `.env` 并生成缺失/模板中的随机 SESSION_SECRET 与 POSTGRES_PASSWORD；不覆盖已有非占位符秘密，重复执行幂等。该命令不安装 Docker，不自动创建公网 TLS，也不覆盖已存在数据库。已有配置可继续直接执行 `docker compose -f infra/compose.prod.yml up -d --build`。查看运行状态：`docker compose -f infra/compose.prod.yml ps`；停服务：`docker compose -f infra/compose.prod.yml down`（不要添加 `-v`）。
+首次自动创建 `.env` 并生成缺失/模板中的随机 SESSION_SECRET 与 POSTGRES_PASSWORD；不覆盖已有非占位符秘密，重复执行幂等。该命令不安装 Docker，不自动创建公网 TLS，也不覆盖已存在数据库。已有配置可继续直接执行 `docker compose --env-file .env -f infra/compose.prod.yml up -d --build`。查看运行状态：`docker compose --env-file .env -f infra/compose.prod.yml ps`；停服务：`docker compose --env-file .env -f infra/compose.prod.yml down`（不要添加 `-v`）。
 
 默认仅监听本机 `127.0.0.1:3000`。已配置 `restart: unless-stopped`，但主机重启自动恢复仍需要 Docker 引擎随系统启动（Windows Docker Desktop 通常在用户登录后启动）。公网访问应由 HTTPS 反向代理接入；数据库持久化为命名卷。开发用 `infra/compose.yml` 仍只有 PostgreSQL。
 
@@ -79,7 +79,7 @@ npm run deploy:docker
 
 ### 运维诊断、自动备份与升级
 
-- `npm run doctor` 检查 API、PostgreSQL、Worker 心跳与 Outbox 延迟/隔离数，返回 0 表示当前检查通过，否则返回非零状态；正式监控应由外部系统读取该结果并报警。Docker 中使用 `docker compose -f infra/compose.prod.yml exec -T api node tools/ops/doctor.mjs`。部署完数据库迁移并启动 Worker 后，等待首个完整 tick 再检查。
+- `npm run doctor` 检查 API、PostgreSQL、Worker 心跳与 Outbox 延迟/隔离数，返回 0 表示当前检查通过，否则返回非零状态；正式监控应由外部系统读取该结果并报警。Docker 中使用 `docker compose --env-file .env -f infra/compose.prod.yml exec -T api node tools/ops/doctor.mjs`。部署完数据库迁移并启动 Worker 后，等待首个完整 tick 再检查。
 - 原生备份：`npm run backup -- --dir=./backups --keep=14`；Docker 备份：`npm run backup:docker -- --dir=./backups --keep=14`。使用 `pg_dump` custom format、独立临时文件、完成后原子更名、失败清理临时文件。仅删除本工具命名的历史备份，默认保留最近 14 份。Linux 备份目录须只有服务用户可访问（权限 0700）；不要把此目录直接暴露给 Web。
 - Linux：先以管理员创建 `sudo install -d -o chatpm -g chatpm -m 700 /var/lib/chatpm/backups`，复制 `infra/linux/chatpm-backup.service`、`chatpm-backup.timer`、`chatpm-doctor.service`、`chatpm-doctor.timer` 到 `/etc/systemd/system/`；之后执行 `sudo systemctl daemon-reload && sudo systemctl enable --now chatpm-backup.timer chatpm-doctor.timer`。检查 `systemctl list-timers` 和 `journalctl -u chatpm-backup.service -u chatpm-doctor.service`，将失败交给现有告警平台。
 - Windows：完成 `install-services.ps1` 的 LocalService 权限配置后，以管理员执行 `./infra/windows/install-backup-task.ps1` 注册使用 LocalService 的每日 02:30 备份任务（可选 `-BackupDirectory`）。通过任务计划程序执行一次并检查产物；绝不能将密码写入任务参数。
@@ -99,10 +99,10 @@ npm run deploy:docker
 
 ```bash
 mkdir -p backups
-docker compose -f infra/compose.prod.yml exec -T postgres pg_dump -U chatpm -d chatpm -Fc > backups/chatpm.dump
+docker compose --env-file .env -f infra/compose.prod.yml exec -T postgres pg_dump -U chatpm -d chatpm -Fc > backups/chatpm.dump
 ```
 
-恢复时先停止 Web/API/Worker，在隔离的目标环境内使用 `docker compose -f infra/compose.prod.yml exec -T postgres pg_restore -U chatpm -d chatpm --clean --if-exists --no-owner --no-privileges < backups/chatpm.dump`，**不要在正在服务的生产数据库直接恢复**。
+恢复时先停止 Web/API/Worker，在隔离的目标环境内使用 `docker compose --env-file .env -f infra/compose.prod.yml exec -T postgres pg_restore -U chatpm -d chatpm --clean --if-exists --no-owner --no-privileges < backups/chatpm.dump`，**不要在正在服务的生产数据库直接恢复**。
 
 ---
 
@@ -161,7 +161,7 @@ Install Node.js 24 and PostgreSQL 17/client tools; create a database, database r
 
 ### Complete Docker Compose
 
-With Docker/Compose and Node installed, run `npm run deploy:docker`. It initializes missing/placeholder SESSION_SECRET and POSTGRES_PASSWORD in `.env`, then builds and starts the stack in the background without replacing configured secrets or databases. Repeat runs preserve secrets. To check use `docker compose -f infra/compose.prod.yml ps`, and to stop use `docker compose -f infra/compose.prod.yml down` (never add `-v` unless deleting data is intended). `restart: unless-stopped` works after a host reboot only if Docker itself starts; Docker Desktop commonly starts after user sign-in. Only `127.0.0.1:3000` is published; add a secure external HTTPS proxy to expose it. `infra/compose.yml` remains the database-only development Compose.
+With Docker/Compose and Node installed, run `npm run deploy:docker`. It initializes missing/placeholder SESSION_SECRET and POSTGRES_PASSWORD in `.env`, then builds and starts the stack in the background without replacing configured secrets or databases. Repeat runs preserve secrets. To check use `docker compose --env-file .env -f infra/compose.prod.yml ps`, and to stop use `docker compose --env-file .env -f infra/compose.prod.yml down` (never add `-v` unless deleting data is intended). `restart: unless-stopped` works after a host reboot only if Docker itself starts; Docker Desktop commonly starts after user sign-in. Only `127.0.0.1:3000` is published; add a secure external HTTPS proxy to expose it. `infra/compose.yml` remains the database-only development Compose.
 
 ### Experimental portable distributions
 
@@ -169,7 +169,7 @@ The cross-platform native-build CI uploads Windows and Linux Artifacts containin
 
 ### Diagnostics, scheduled backups, and controlled upgrades
 
-- `npm run doctor` tests local API reachability, PostgreSQL, Worker heartbeat/success, and overdue/dead Outbox events. Exit code is nonzero on failure, suitable for an external monitoring collector; the command itself does not send alerts. Inside Docker run `docker compose -f infra/compose.prod.yml exec -T api node tools/ops/doctor.mjs`. Let Worker complete a tick after migration/startup.
+- `npm run doctor` tests local API reachability, PostgreSQL, Worker heartbeat/success, and overdue/dead Outbox events. Exit code is nonzero on failure, suitable for an external monitoring collector; the command itself does not send alerts. Inside Docker run `docker compose --env-file .env -f infra/compose.prod.yml exec -T api node tools/ops/doctor.mjs`. Let Worker complete a tick after migration/startup.
 - Use `npm run backup -- --dir=./backups --keep=14` for native PostgreSQL or `npm run backup:docker -- --dir=./backups --keep=14` for Compose. Archives use custom-format `pg_dump`, unique temporary files, no overwrite, and an atomic rename on success. Retention deletes only archives created by this tool, defaulting to the newest 14; private backup storage is mandatory.
 - Linux: `sudo install -d -o chatpm -g chatpm -m 700 /var/lib/chatpm/backups`, install both `chatpm-backup.{service,timer}` and `chatpm-doctor.{service,timer}` from `infra/linux` into `/etc/systemd/system`, then `sudo systemctl daemon-reload && sudo systemctl enable --now chatpm-backup.timer chatpm-doctor.timer`. Inspect timers and `journalctl` and connect failures to an alerting service.
 - Windows: after secure service installation, elevated PowerShell `./infra/windows/install-backup-task.ps1` registers the low-privilege LocalService daily 02:30 job. Test it manually and inspect backups; database secrets must remain in protected `.env`, never task command lines.
@@ -187,7 +187,7 @@ Production Compose does not publish port 5432. Back up through the PostgreSQL co
 
 ```bash
 mkdir -p backups
-docker compose -f infra/compose.prod.yml exec -T postgres pg_dump -U chatpm -d chatpm -Fc > backups/chatpm.dump
+docker compose --env-file .env -f infra/compose.prod.yml exec -T postgres pg_dump -U chatpm -d chatpm -Fc > backups/chatpm.dump
 ```
 
-After stopping Web/API/Worker and selecting a disposable restore target, use `docker compose -f infra/compose.prod.yml exec -T postgres pg_restore -U chatpm -d chatpm --clean --if-exists --no-owner --no-privileges < backups/chatpm.dump`. Do not restore into a live production database.
+After stopping Web/API/Worker and selecting a disposable restore target, use `docker compose --env-file .env -f infra/compose.prod.yml exec -T postgres pg_restore -U chatpm -d chatpm --clean --if-exists --no-owner --no-privileges < backups/chatpm.dump`. Do not restore into a live production database.
