@@ -39,7 +39,7 @@ Windows PowerShell 前台启动脚本与 WinSW 服务包装示例；Linux system
 
 原生环境可执行 `node tools/ops/postgres.mjs backup ./backups/chatpm-YYYYMMDD.dump`，在**停止 API/Worker/Web 且确认隔离目标库后**显式执行 `node tools/ops/postgres.mjs restore ./backups/chatpm-YYYYMMDD.dump --confirm-replace`，随后运行数据库迁移。恢复操作会覆盖已有数据库对象，不允许对仍在提供业务服务的生产库直接恢复。备份必须限制访问、加密并定期在隔离环境做恢复演练。
 
-Compose 默认不暴露 PostgreSQL 宿主机端口，使用 `docker compose -f infra/compose.prod.yml exec -T postgres pg_dump -U chatpm -d chatpm -Fc > backups/chatpm.dump` 等容器内客户端备份方式，操作前保证目标目录存在。
+Compose 默认不暴露 PostgreSQL 宿主机端口，使用 `docker compose --env-file .env -f infra/compose.prod.yml exec -T postgres pg_dump -U chatpm -d chatpm -Fc > backups/chatpm.dump` 等容器内客户端备份方式，操作前保证目标目录存在。
 
 上述仅提供操作路径，不等同于自动备份计划、数据完整性验收、PITR、生产灾备认证；生产级逆向代理、权限、安全、监控与恢复演练仍是未完成的发布门槛。
 
@@ -66,3 +66,10 @@ Compose 默认不暴露 PostgreSQL 宿主机端口，使用 `docker compose -f i
 - `npm run setup:local` 可在本机创建缺失的带随机会话密钥的配置，遇到默认数据库密码时拒绝继续；操作系统级 PostgreSQL 的创建与密码管理仍由安装者执行。
 - `npm run upgrade:native -- --confirm-services-stopped` 在用户明确确认已停止 Web/API/Worker、且 API 回环健康端点不再可达时先运行私有备份，备份成功才执行安装、编译、校验、SQL 迁移。不能可靠推断 Worker 已停止，必须由部署管理员确认；失败后保持服务停止并人工处置。
 - 跨平台 CI 上传实验性可携式构建产物（Node 编译包 + Next 构建 + SQL + 运维脚本），不包含数据库或密钥。不自动声明为签名 MSI、DEB、RPM 或 production-ready。安装向导不应静默申请系统级提升权限。
+
+
+## /review 四项故障修正（PR #17）
+
+- 生产 Compose 入口固定项目名并显式读取仓库根 `.env`；`--env-file .env` 应用于 Docker 原生运维命令，而不是依赖 `-f infra/...` 的工作目录推断。
+- 首次初始化新秘密之前先检查受管的 `chatpm_postgres_data` 卷；数据库卷已存在但密码或会话密钥遗失时，拒绝自动轮换，提示恢复原凭证，防止新数据库密码与旧卷不一致。
+- 单终端运行器显式解析根配置再传入 Web，避免 Next.js 子应用根目录无法读取服务内部 URL；Windows 终止 Worker 使用 IPC 请求 graceful shutdown，而非依赖无法保证的 SIGTERM 事件。超时后仍可强制停止，因此不得声称绝对零中断。
