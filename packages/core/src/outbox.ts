@@ -1,4 +1,5 @@
 import { pool, transaction } from './db.ts';
+import { DailyAIBudgetExceeded } from './ai-provider.ts';
 
 export const MAX_EVENT_ATTEMPTS=8;
 export type EventRow={
@@ -36,6 +37,7 @@ export async function finishEvent(event:EventRow){
 
 export function failureCode(error:unknown){
   if(error instanceof Error){
+    if(error.message==='MODEL_NOT_CONFIGURED')return 'MODEL_NOT_CONFIGURED';
     const m=/^Model request failed: HTTP (\d{3})$/.exec(error.message);
     if(m)return 'MODEL_HTTP_'+m[1];
     if(error.name==='AbortError')return 'MODEL_TIMEOUT';
@@ -45,6 +47,15 @@ export function failureCode(error:unknown){
 }
 
 export async function failEvent(event:EventRow,error:unknown){
+  if(error instanceof DailyAIBudgetExceeded){
+    await pool.query(`UPDATE outbox_events SET claimed_at=NULL,
+      last_error_code='AI_DAILY_BUDGET',attempts=GREATEST(0,attempts-1),
+      next_attempt_at=date_trunc('day',NOW() AT TIME ZONE 'UTC') AT TIME ZONE 'UTC'
+        +INTERVAL '1 day 5 minutes'
+      WHERE id=$1 AND claimed_at=$2 AND processed_at IS NULL AND dead_at IS NULL`,
+      [event.id,event.claimed_at]);
+    return;
+  }
   // Error class only: no chat, model output, credentials or stack in persisted state.
   await pool.query(`UPDATE outbox_events
     SET claimed_at=NULL,
