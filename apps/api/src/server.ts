@@ -12,6 +12,7 @@ import { isValidTimezone } from '../../../packages/core/src/policy.ts';
 import { syncFollowup } from '../../../packages/core/src/followup.ts';
 import { insertMessage } from '../../../packages/core/src/messages.ts';
 import { generateReport } from '../../../packages/core/src/reports.ts';
+import { deadEvents, outboxSummary } from '../../../packages/core/src/outbox.ts';
 
 const port = Number(process.env.API_PORT ?? '3001');
 const origin = process.env.WEB_ORIGIN ?? 'http://localhost:3000';
@@ -307,7 +308,11 @@ app.get('/projects/:id/proposals',async req=>{
   const projectId=uuid.parse((req.params as {id:string}).id);
   await member(await authenticated(req),projectId);
   const {rows}=await pool.query(
-    `SELECT * FROM proposed_changes WHERE project_id=$1 ORDER BY created_at DESC LIMIT 200`,
+    `SELECT pc.*, ct.assignee_hint AS clarified_assignee_hint,
+       ct.due_at AS clarified_due_at,ct.status AS clarification_status,
+       ct.response_message_id AS clarification_message_id
+     FROM proposed_changes pc LEFT JOIN clarification_threads ct ON ct.proposal_id=pc.id
+     WHERE pc.project_id=$1 ORDER BY pc.created_at DESC LIMIT 200`,
     [projectId]);
   return {proposals:rows};
 });
@@ -317,10 +322,13 @@ app.post('/projects/:id/proposals/:proposalId/decision',async req=>{
   const userId=await authenticated(req);
   owner(await member(userId,projectId));
   const v=z.object({decision:z.enum(['accepted','rejected']),
-    assigneeId:uuid.nullable().default(null)}).parse(req.body);
+    assigneeId:uuid.nullable().default(null),
+    dueAt:z.string().datetime({offset:true}).nullable().optional()}).parse(req.body);
   return transaction(async db=>{
     const p=(await db.query(
-      `SELECT * FROM proposed_changes WHERE id=$1 AND project_id=$2 FOR UPDATE`,
+      `SELECT pc.*,ct.due_at AS clarified_due_at FROM proposed_changes pc
+       LEFT JOIN clarification_threads ct ON ct.proposal_id=pc.id
+       WHERE pc.id=$1 AND pc.project_id=$2 FOR UPDATE OF pc`,
       [candidate,projectId])).rows[0];
     if(!p) fail(404,'待确认事项不存在');
     if(p.status!=='pending') fail(409,'该事项已经处理');
@@ -330,7 +338,7 @@ app.post('/projects/:id/proposals/:proposalId/decision',async req=>{
         const t=(await db.query(
           `INSERT INTO tasks(project_id,title,detail,assignee_id,due_at,source_proposal_id)
            VALUES($1,$2,$3,$4,$5,$6) RETURNING id`,
-          [projectId,p.title,p.detail,v.assigneeId,p.due_at,p.id])).rows[0];
+          [projectId,p.title,p.detail,v.assigneeId,v.dueAt===undefined?(p.clarified_due_at??p.due_at):v.dueAt,p.id])).rows[0];
         await syncFollowup(db,projectId,t.id);
       } else {
         await db.query(
@@ -341,7 +349,38 @@ app.post('/projects/:id/proposals/:proposalId/decision',async req=>{
     await db.query(
       'UPDATE proposed_changes SET status=$1,approved_by=$2 WHERE id=$3',
       [v.decision,userId,candidate]);
+    await db.query(
+      "UPDATE clarification_threads SET status='closed',updated_at=NOW() WHERE proposal_id=$1",
+      [candidate]);
     await audit(db,projectId,userId,'proposal.'+v.decision,candidate);
+    return {ok:true};
+  });
+});
+
+app.get('/projects/:id/outbox/summary',async req=>{
+  const projectId=uuid.parse((req.params as {id:string}).id);
+  owner(await member(await authenticated(req),projectId));
+  return {summary:await outboxSummary(projectId)};
+});
+app.get('/projects/:id/outbox/dead',async req=>{
+  const projectId=uuid.parse((req.params as {id:string}).id);
+  const userId=await authenticated(req);
+  owner(await member(userId,projectId));
+  return {events:await deadEvents(projectId)};
+});
+app.post('/projects/:id/outbox/:eventId/retry',async req=>{
+  const {id,eventId}=req.params as {id:string,eventId:string};
+  const projectId=uuid.parse(id),event=uuid.parse(eventId);
+  const userId=await authenticated(req);
+  owner(await member(userId,projectId));
+  return transaction(async db=>{
+    const {rows}=await db.query(
+      `UPDATE outbox_events SET attempts=0,dead_at=NULL,last_error_code=NULL,
+       claimed_at=NULL,claim_token=NULL,next_attempt_at=NOW()
+       WHERE id=$1 AND project_id=$2 AND dead_at IS NOT NULL AND processed_at IS NULL
+       RETURNING id`,[event,projectId]);
+    if(!rows.length)fail(409,'事件未隔离或不属于当前项目');
+    await audit(db,projectId,userId,'outbox.retried',event);
     return {ok:true};
   });
 });

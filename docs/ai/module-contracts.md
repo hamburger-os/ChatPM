@@ -31,7 +31,7 @@
 - `apps/worker/src/worker.ts`：扫描 Outbox、仅在项目开启 AI 时分析、持久化候选、工作时段催办及生成报告草稿。
 - `packages/core/src/messages.ts`：项目内串行化消息插入，确保提交序与增量游标一致；`packages/core/src/db.ts`：PostgreSQL 事务；`security.ts`：会话与密码；`followup.ts`：计划更新；`policy.ts`：时间策略；`reports.ts`：报告生成。
 - `apps/web/app/`：Next.js 客户端，当前消息 5 秒刷新。
-- 现阶段无独立 InboxReceipt、Redis/BullMQ、附件/知识库与多模型适配器，不能将设计中的全部模块称为已实现。
+- 已采用 PostgreSQL Outbox 处理幂等、退避及隔离，暂无独立 InboxReceipt、Redis/BullMQ、附件/知识库或多个模型供应商。设计中的其他模块尚未全部落地。
 
 ## AI 主动追问（v0.1）
 对明确缺少负责人或日期的候选事项，Worker 最多在一次反馈中提出两个简短的澄清问题；同一项目在 10 分钟内不重复发布同类自动提取提示。候选本身仍持久化并等待人工确认，不因限频丢弃。当前为轻量群聊交互，不是多轮自主决策引擎。
@@ -41,3 +41,18 @@
 - 任务重排不得突破 `last_sent_at + cooldown_hours`；重复 nonce 的提醒不记录第二份发送审计。
 - `generateReport` 以单条 SQL 快照获取全量聚合指标，仅截断明细；重复生成只刷新 `draft`，不得覆盖 `published`。
 - 冒烟测试需覆盖并发消息、冷却恢复、超过 200 任务的统计以及发布不可变性。
+
+## v0.2 新增模块契约
+- `packages/core/src/outbox.ts`：`claimEvents` / `finishEvent` / `failEvent` / `deadEvents`；五分钟租约、最多八次处理、延迟重试、临界崩溃隔离和脱敏错误；消费者仍需业务幂等。
+- `packages/core/src/ai-provider.ts`：`LLMProvider` 抽取候选、明确关联回复；内部受控模型调用、Zod、按项目原子每日请求配额。
+- `packages/core/src/clarification.ts`：严格 `【候选:UUID】` 引用，回复只写持久澄清与来源，不修改正式 Task。仅 owner 的 `ApproveProposedChange` 可以将候选及澄清结果写正式状态。
+- `packages/core/src/migrate.ts`：以事务 + advisory lock + checksum 按文件序号应用变更；禁止修改已应用的 SQL。
+- 负责人 Outbox GET / 重试命令作用域由 API RBAC 强制，重放写 Audit，不能通过 Prompt 或模型工具跳过。
+
+## v0.2 新增模块及入口
+- `core/outbox.ts`：领取、完成、失败、死信查询，带租约、退避和安全错误码；owner 通过后端 RBAC 进行隔离事件重放，事务审计。
+- `core/ai-provider.ts`：LLMProvider、结构化候选与回复提取、项目每日调用预算（UTC），不允许模型直接写正式任务。
+- `core/clarification.ts`：解析 `【候选:UUID】`，只保存候选的多轮证据回复；owner 审批后才转成正式任务，线程关闭。
+- `core/migrate.ts`：校验和、事务、数据库锁及顺序版本迁移。
+
+- Outbox 诊断命令 `outboxSummary(projectId)` 返回待处理、隔离、模型错误计数和最老等待时间，API 只向有权限的 owner 暴露。每次领取使用 UUID `claim_token`，旧 Worker 不能在租约过期后覆盖新 Worker 的完成状态。

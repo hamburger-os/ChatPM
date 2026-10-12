@@ -46,13 +46,19 @@ jobs:
         with:
           node-version: '22'
       - name: Install dependencies
-        run: npm install --no-audit --no-fund
+        run: npm ci --no-audit --no-fund
       - name: Strict TypeScript
         run: npm run typecheck
       - name: Unit tests
         run: npm test
       - name: Database schema
         run: npm run db:migrate
+      - name: Verify migrations are repeatable
+        run: npm run db:migrate
+      - name: Outbox reliability integration
+        run: node --import tsx packages/core/test/outbox.integration.ts
+      - name: Mock AI conversation integration
+        run: node --import tsx packages/core/test/ai.integration.ts
       - name: API integration smoke test
         run: node tools/test/smoke.mjs
       - name: Build web app

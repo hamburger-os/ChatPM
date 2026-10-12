@@ -157,6 +157,54 @@ try{
   await db.query(
     "INSERT INTO tasks(project_id,title) SELECT $1,'批量任务-'||n FROM generate_series(1,205) AS n",
     [pid]);
+  // Model-derived clarification is only a suggestion; the owner confirms final facts.
+  const candidate2=(await db.query(
+    `INSERT INTO proposed_changes(project_id,source_message_id,kind,title)
+     VALUES($1,$2,'task','待澄清交付') RETURNING id`,
+    [pid,posted.data.message.id])).rows[0];
+  await db.query(
+    `INSERT INTO clarification_threads(proposal_id,project_id,status,
+       assignee_hint,due_at,response_message_id)
+     VALUES($1,$2,'answered','张工',$3,$4)`,
+    [candidate2.id,pid,new Date(Date.now()+2*86400000).toISOString(),posted.data.message.id]);
+  const suggested=await api('/projects/'+pid+'/proposals');
+  assert.equal(suggested.status,200);
+  assert.equal(suggested.data.proposals.find(x=>x.id===candidate2.id)?.clarification_status,'answered');
+  const approved2=await api('/projects/'+pid+'/proposals/'+candidate2.id+'/decision',{
+    method:'POST',body:{decision:'accepted',assigneeId:uid}});
+  assert.equal(approved2.status,200);
+  const saved2=await db.query(
+    'SELECT due_at,assignee_id FROM tasks WHERE source_proposal_id=$1',[candidate2.id]);
+  assert.equal(saved2.rows[0].assignee_id,uid);
+  assert.ok(saved2.rows[0].due_at,'Approved clarification should supply the confirmed date');
+  const closed=await db.query('SELECT status FROM clarification_threads WHERE proposal_id=$1',[candidate2.id]);
+  assert.equal(closed.rows[0].status,'closed');
+
+  const dead=(await db.query(
+    `INSERT INTO outbox_events(project_id,kind,attempts,dead_at,last_error_code)
+     VALUES($1,'message.created',8,NOW(),'MODEL_HTTP_429') RETURNING id`,
+    [pid])).rows[0];
+  const memberDead=await api('/projects/'+pid+'/outbox/dead',{cookie:cookieB});
+  assert.equal(memberDead.status,403,'Only owner can read dead-letter details');
+  const memberSummary=await api('/projects/'+pid+'/outbox/summary',{cookie:cookieB});
+  assert.equal(memberSummary.status,403);
+  const ownerSummary=await api('/projects/'+pid+'/outbox/summary');
+  assert.equal(ownerSummary.status,200);
+  assert.ok(ownerSummary.data.summary.dead>=1);
+  const ownerDead=await api('/projects/'+pid+'/outbox/dead');
+  assert.ok(ownerDead.data.events.some(x=>x.id===dead.id));
+  const memberRetry=await api('/projects/'+pid+'/outbox/'+dead.id+'/retry',{
+    method:'POST',cookie:cookieB});
+  assert.equal(memberRetry.status,403,'Members cannot replay events');
+  const ownerRetry=await api('/projects/'+pid+'/outbox/'+dead.id+'/retry',{method:'POST'});
+  assert.equal(ownerRetry.status,200);
+  const repeatedRetry=await api('/projects/'+pid+'/outbox/'+dead.id+'/retry',{method:'POST'});
+  assert.equal(repeatedRetry.status,409,'Already queued events may not be replayed twice');
+  const queued=await db.query('SELECT attempts,dead_at FROM outbox_events WHERE id=$1',[dead.id]);
+  assert.equal(queued.rows[0].attempts,0);
+  assert.equal(queued.rows[0].dead_at,null);
+
+  // Count after accepting the clarified task, not before it.
   const beforeCount=Number((await db.query(
     'SELECT COUNT(*) AS total FROM tasks WHERE project_id=$1',[pid])).rows[0].total);
   const report=await api('/projects/'+pid+'/reports',{method:'POST',body:{kind:'week'}});
@@ -176,7 +224,7 @@ try{
   const immutable=await api('/projects/'+pid+'/reports',{method:'POST',body:{kind:'week'}});
   assert.equal(immutable.data.report.content,refreshed.data.report.content,
     'Published reports must remain immutable');
-  console.log('API smoke tests passed: access control, ordered chat, idempotency, cooldown, full report counts and immutable publication.');
+  console.log('API smoke tests passed: authorization, ordering, idempotency, clarification approval, dead-letter replay and reports.');
 }finally{
   await db.end();
   server.kill('SIGTERM');
