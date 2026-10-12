@@ -4,8 +4,11 @@ import { spawn } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { resolve } from 'node:path';
+import { config as loadEnv } from 'dotenv';
 
 const root = fileURLToPath(new URL('../../', import.meta.url));
+// Next.js runs in apps/web; it does not discover the monorepo root .env by itself.
+loadEnv({ path: resolve(root, '.env') });
 const mode = process.argv[2];
 if (!['dev', 'prod'].includes(mode)) {
   console.error('Usage: node tools/ops/run.mjs <dev|prod>');
@@ -43,15 +46,21 @@ function stopAll(signal, failed = false) {
   if (stopping) return;
   stopping = true;
   exitCode = failed ? (exitCode || 1) : (signal === 'SIGINT' ? 130 : 143);
-  for (const child of children.keys()) {
-    if (child.exitCode === null && child.signalCode === null) child.kill(signal);
+  for (const [child, name] of children) {
+    if (child.exitCode !== null || child.signalCode !== null) continue;
+    if (process.platform === 'win32' && name === 'worker' && child.connected) {
+      try { child.send({ type: 'chatpm:shutdown' }); }
+      catch { child.kill(signal); }
+    } else {
+      child.kill(signal);
+    }
   }
   if (children.size) {
     forceTimer = setTimeout(() => {
       for (const child of children.keys()) {
         if (child.exitCode === null && child.signalCode === null) child.kill('SIGKILL');
       }
-    }, 15_000);
+    }, 60_000);
     forceTimer.unref();
   }
 }
@@ -62,7 +71,7 @@ for (const [name, file, args] of entry) {
   const child = spawn(process.execPath, [path(file), ...args], {
     cwd: root,
     env: { ...process.env, NODE_ENV: mode === 'dev' ? 'development' : 'production' },
-    stdio: 'inherit',
+    stdio: name === 'worker' ? ['inherit', 'inherit', 'inherit', 'ipc'] : 'inherit',
     windowsHide: true,
   });
   children.set(child, name);
