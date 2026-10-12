@@ -59,6 +59,8 @@ jobs:
         run: node --import tsx packages/core/test/outbox.integration.ts
       - name: Mock AI conversation integration
         run: node --import tsx packages/core/test/ai.integration.ts
+      - name: Scheduled reporting integration
+        run: node --import tsx packages/core/test/reports.integration.ts
       - name: API integration smoke test
         run: node tools/test/smoke.mjs
       - name: Build web app
