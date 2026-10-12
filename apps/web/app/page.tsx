@@ -41,6 +41,8 @@ export default function Home(){
   const [notice,setNotice]=useState(''),[working,setWorking]=useState(false);
   const [tab,setTab]=useState<'tasks'|'proposals'|'reports'|'settings'>('tasks');
   const bottom=useRef<HTMLDivElement>(null);
+  const cursor=useRef(0);
+  const activeProject=useRef<string|null>(null);
   const current=projects.find(p=>p.id===selected);
 
   const loadProjects=useCallback(async()=>{
@@ -56,19 +58,29 @@ export default function Home(){
   const refresh=useCallback(async(id:string)=>{
     const base='/projects/'+id;
     const [ms,ts,ps,rs,people,risk]=await Promise.all([
-      request<{messages:Message[]}>(base+'/messages'),
+      request<{messages:Message[]}>(base+'/messages?after='+cursor.current),
       request<{tasks:Task[]}>(base+'/tasks'),
       request<{proposals:Proposal[]}>(base+'/proposals'),
       request<{reports:Report[]}>(base+'/reports'),
       request<{members:Member[]}>(base+'/members'),
       request<{risks:Risk[]}>(base+'/risks'),
     ]);
-    setMessages(ms.messages);setTasks(ts.tasks);setProposals(ps.proposals);
+    if(activeProject.current!==id)return;
+    if(ms.messages.length){
+      cursor.current=Math.max(cursor.current,...ms.messages.map(m=>Number(m.seq)));
+      setMessages(old=>{
+        const known=new Set(old.map(m=>m.id));
+        const incoming=ms.messages.filter(m=>!known.has(m.id));
+        return [...old,...incoming].slice(-1500);
+      });
+    }
+    setTasks(ts.tasks);setProposals(ps.proposals);
     setReports(rs.reports);setMembers(people.members);setRisks(risk.risks);
   },[]);
   useEffect(()=>{
     if(!selected)return;
     const id=selected;
+    activeProject.current=id;cursor.current=0;
     setMessages([]);setTasks([]);setProposals([]);setReports([]);
     const update=()=>void refresh(id).catch(e=>setNotice(e.message));
     update();

@@ -198,11 +198,15 @@ app.get('/projects/:id/messages',async req=>{
   const projectId=uuid.parse((req.params as {id:string}).id);
   await member(await authenticated(req),projectId);
   const query=z.object({after:z.coerce.number().int().min(0).default(0)}).parse(req.query);
-  const {rows}=await pool.query(
-    `SELECT m.id,m.seq,m.kind,m.content,m.created_at,m.author_id,u.display_name AS author
-     FROM messages m LEFT JOIN users u ON u.id=m.author_id
-     WHERE m.project_id=$1 AND m.seq>$2 ORDER BY m.seq ASC LIMIT 200`,
-    [projectId,query.after]);
+  const recent=query.after===0;
+  const sql=recent
+    ? `SELECT * FROM (SELECT m.id,m.seq,m.kind,m.content,m.created_at,m.author_id,
+       u.display_name AS author FROM messages m LEFT JOIN users u ON u.id=m.author_id
+       WHERE m.project_id=$1 ORDER BY m.seq DESC LIMIT 200) recent ORDER BY recent.seq ASC`
+    : `SELECT m.id,m.seq,m.kind,m.content,m.created_at,m.author_id,u.display_name AS author
+       FROM messages m LEFT JOIN users u ON u.id=m.author_id
+       WHERE m.project_id=$1 AND m.seq>$2 ORDER BY m.seq ASC LIMIT 200`;
+  const {rows}=await pool.query(sql,recent?[projectId]:[projectId,query.after]);
   return {messages:rows};
 });
 app.post('/projects/:id/messages',async(req,reply)=>{
