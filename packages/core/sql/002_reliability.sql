@@ -6,6 +6,7 @@ ALTER TABLE outbox_events
   ADD COLUMN last_error_code TEXT;
 CREATE INDEX idx_outbox_due ON outbox_events(next_attempt_at,created_at)
   WHERE processed_at IS NULL AND dead_at IS NULL;
+CREATE INDEX idx_outbox_project_created ON outbox_events(project_id,created_at);
 CREATE INDEX idx_outbox_dead ON outbox_events(project_id,dead_at DESC)
   WHERE dead_at IS NOT NULL;
 
