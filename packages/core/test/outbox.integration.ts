@@ -61,6 +61,25 @@ try {
   assert.equal(quotaState.last_error_code,'AI_DAILY_BUDGET');
   assert.ok(new Date(quotaState.next_attempt_at)>new Date());
 
+  // A stale worker must not acknowledge work after its lease is reassigned.
+  const leaseEvent=(await pool.query(
+    "INSERT INTO outbox_events(project_id,kind) VALUES($1,'message.created') RETURNING id",
+    [project.id])).rows[0];
+  const oldLease=(await claimEvents(1))[0];
+  assert.equal(oldLease.id,leaseEvent.id);
+  await pool.query("UPDATE outbox_events SET claimed_at=NOW()-INTERVAL '7 minutes' WHERE id=$1",
+    [leaseEvent.id]);
+  const newLease=(await claimEvents(1))[0];
+  assert.equal(newLease.id,leaseEvent.id);
+  assert.notEqual(newLease.claim_token,oldLease.claim_token);
+  await finishEvent(oldLease);
+  const stillPending=(await pool.query(
+    'SELECT processed_at FROM outbox_events WHERE id=$1',[leaseEvent.id])).rows[0];
+  assert.equal(stillPending.processed_at,null);
+  await finishEvent(newLease);
+  assert.ok((await pool.query(
+    'SELECT processed_at FROM outbox_events WHERE id=$1',[leaseEvent.id])).rows[0].processed_at);
+
   const crashed=(await pool.query(
     `INSERT INTO outbox_events(project_id,kind,attempts,claimed_at)
      VALUES($1,'message.created',8,NOW()-INTERVAL '10 minutes') RETURNING id`,
