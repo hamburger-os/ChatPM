@@ -1,6 +1,5 @@
 # ChatPM Overview
 
-**Status: experimental v0.1 MVP; not production-ready.**
 
 ChatPM aims to be a chat-centered AI project management platform. Team members discuss work naturally, while a scoped AI assistant extracts items for confirmation, surfaces risks, follows up on open work, and drafts project reports with traceable sources.
 
