@@ -9,3 +9,6 @@ coverage/
 /chatpm-*.exe
 /chatpm-*.xml
 /chatpm-*.wrapper.log
+backups/
+logs/
+*.partial
