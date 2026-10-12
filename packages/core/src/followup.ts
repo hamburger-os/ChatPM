@@ -23,7 +23,9 @@ export async function syncFollowup(db: DbClient, projectId: string, taskId: stri
     `INSERT INTO followup_plans(project_id,task_id,task_version,next_at,active)
      VALUES($1,$2,$3,$4,TRUE)
      ON CONFLICT(task_id) DO UPDATE SET task_version=EXCLUDED.task_version,
-     next_at=EXCLUDED.next_at,active=TRUE`,
-    [projectId,taskId,row.version,next],
+     next_at=GREATEST(EXCLUDED.next_at,
+       COALESCE(followup_plans.last_sent_at + ($5::integer * INTERVAL '1 hour'),
+                EXCLUDED.next_at)),active=TRUE`,
+    [projectId,taskId,row.version,next,row.cooldown_hours],
   );
 }
