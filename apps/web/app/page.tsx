@@ -34,6 +34,8 @@ export default function Home(){
   const [reports,setReports]=useState<Report[]>([]),[risks,setRisks]=useState<Risk[]>([]);
   const [chat,setChat]=useState(''),[newProject,setNewProject]=useState(''),
     [newTask,setNewTask]=useState(''),[invite,setInvite]=useState('');
+  const [newTaskOwner,setNewTaskOwner]=useState(''),[newTaskDue,setNewTaskDue]=useState('');
+  const [proposalOwners,setProposalOwners]=useState<Record<string,string>>({});
   const [settings,setSettings]=useState({aiEnabled:false,workStart:null as number|null,
     workEnd:null as number|null,cooldownHours:null as number|null});
   const [notice,setNotice]=useState(''),[working,setWorking]=useState(false);
@@ -115,8 +117,10 @@ export default function Home(){
     e.preventDefault();if(!selected||!newTask.trim())return;
     await action(async()=>{
       await request('/projects/'+selected+'/tasks',{method:'POST',
-        body:JSON.stringify({title:newTask,detail:'',dueAt:null,assigneeId:null})});
-      setNewTask('');await refresh(selected);
+        body:JSON.stringify({title:newTask,detail:'',
+          dueAt:newTaskDue?new Date(newTaskDue).toISOString():null,
+          assigneeId:newTaskOwner||null})});
+      setNewTask('');setNewTaskDue('');setNewTaskOwner('');await refresh(selected);
     });
   }
   async function changeStatus(task:Task,status:string){
@@ -127,11 +131,18 @@ export default function Home(){
       await refresh(selected);
     });
   }
+  async function changePlan(task:Task,change:Record<string,unknown>){
+    if(!selected)return;
+    await action(async()=>{
+      await request('/projects/'+selected+'/tasks/'+task.id,{method:'PATCH',
+        body:JSON.stringify({version:task.version,...change})});
+      await refresh(selected);
+    });
+  }
   async function decision(p:Proposal,accepted:boolean){
     if(!selected)return;
     await action(async()=>{
-      const assigneeId=accepted&&p.kind==='task'
-        ?window.prompt('负责人 ID（可留空；在“成员”区域查看 ID）','')||null:null;
+      const assigneeId=accepted&&p.kind==='task'?proposalOwners[p.id]||null:null;
       await request('/projects/'+selected+'/proposals/'+p.id+'/decision',{
         method:'POST',body:JSON.stringify({decision:accepted?'accepted':'rejected',assigneeId})});
       await refresh(selected);
@@ -243,10 +254,19 @@ export default function Home(){
       {!selected?<div className="empty">暂无项目内容</div>:<div className="detail-content">
         {tab==='tasks'&&<>
           <h3>任务列表 <span className="count">{tasks.length}</span></h3>
-          {current?.role==='owner'&&<form className="row-form" onSubmit={createTask}>
-            <input placeholder="手动创建任务" required value={newTask}
+          {current?.role==='owner'&&<form className="stack" onSubmit={createTask}>
+            <input placeholder="任务名称" required value={newTask}
               onChange={e=>setNewTask(e.target.value)}/>
-            <button disabled={working}>新增</button>
+            <div className="row-form">
+              <select aria-label="任务负责人" value={newTaskOwner}
+                onChange={e=>setNewTaskOwner(e.target.value)}>
+                <option value="">负责人待定</option>
+                {members.map(m=><option key={m.id} value={m.id}>{m.display_name}</option>)}
+              </select>
+              <input aria-label="截止日期" type="datetime-local" value={newTaskDue}
+                onChange={e=>setNewTaskDue(e.target.value)}/>
+            </div>
+            <button disabled={working}>＋ 创建任务</button>
           </form>}
           {tasks.map(t=><article className="item" key={t.id}>
             <strong>{t.title}</strong><small>负责人：{t.assignee||'待指定'}</small>
@@ -257,6 +277,24 @@ export default function Home(){
                 <option value="blocked">阻塞</option><option value="done">已完成</option>
                 <option value="cancelled">已取消</option>
               </select></div>
+            {current?.role==='owner'&&<div className="task-options">
+              <label>负责人
+                <select value={t.assignee_id||''} aria-label={'调整负责人：'+t.title}
+                  onChange={e=>void changePlan(t,{assigneeId:e.target.value||null})}>
+                  <option value="">未指定</option>
+                  {members.map(m=><option key={m.id} value={m.id}>{m.display_name}</option>)}
+                </select>
+              </label>
+              <label>截止时间
+                <input key={t.id+':'+t.version} type="datetime-local"
+                  aria-label={'调整截止日期：'+t.title}
+                  defaultValue={t.due_at?new Date(t.due_at).toISOString().slice(0,16):''}
+                  onBlur={e=>{const value=e.target.value;
+                    const next=value?new Date(value).toISOString():null;
+                    if(next!==(t.due_at?new Date(t.due_at).toISOString():null))
+                      void changePlan(t,{dueAt:next});}}/>
+              </label>
+            </div>}
           </article>)}
           {!tasks.length&&<p className="hint">尚无正式任务。AI 提取的事项需要确认后才会出现。</p>}
           <h3>当前风险 <span className="count">{risks.length}</span></h3>
@@ -270,6 +308,12 @@ export default function Home(){
             <small className="pill">{p.kind==='task'?'候选任务':'候选风险'}</small>
             <h4>{p.title}</h4><p>{p.detail}</p>
             <small>{p.assignee_hint||'负责人待确认'} · {p.due_at||'时间待确认'}</small>
+            {current?.role==='owner'&&p.kind==='task'&&
+              <select aria-label={'候选负责人：'+p.title} value={proposalOwners[p.id]||''}
+                onChange={e=>setProposalOwners(x=>({...x,[p.id]:e.target.value}))}>
+                <option value="">负责人待指定</option>
+                {members.map(m=><option key={m.id} value={m.id}>{m.display_name}</option>)}
+              </select>}
             {current?.role==='owner'&&<div className="actions">
               <button onClick={()=>void decision(p,true)} disabled={working}>确认</button>
               <button className="secondary" onClick={()=>void decision(p,false)} disabled={working}>忽略</button>
