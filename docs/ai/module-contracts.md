@@ -56,3 +56,5 @@
 - `core/migrate.ts`：校验和、事务、数据库锁及顺序版本迁移。
 
 - Outbox 诊断命令 `outboxSummary(projectId)` 返回待处理、隔离、模型错误计数和最老等待时间，API 只向有权限的 owner 暴露。每次领取使用 UUID `claim_token`，旧 Worker 不能在租约过期后覆盖新 Worker 的完成状态。
+## 定时报告不变量（合并后 /review）
+`generateScheduledReport(db,projectId,kind)` 在已有数据库事务内执行，持有项目/类型/周期 advisory lock，若本期报告存在则不再执行。它与人工 `generateReport` 分离：定时计划不得覆盖已生成草稿，人工可重算草稿，已发布内容保持不可变。Worker 按项目 ID 键集分页，每分钟扫描一次；并发副本由数据库锁保证本周期至多创建一次。CI 的 `reports.integration.ts` 覆盖这组并发不变量。
