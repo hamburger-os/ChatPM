@@ -11,15 +11,16 @@ const envFile = resolve(root, '.env');
 const placeholder = 'replace-with-a-long-random-secret-at-least-32-characters';
 
 export function prepareNativeEnv(source) {
-  let text = source.replace(/(?:\r?\n)*$/, '\n');
-  const current = text.match(/^SESSION_SECRET=(.*)$/m)?.[1]?.trim();
-  if (!current || current === placeholder) {
-    const value = randomBytes(32).toString('hex');
-    text = /^SESSION_SECRET=/m.test(text)
-      ? text.replace(/^SESSION_SECRET=.*$/m, 'SESSION_SECRET=' + value)
-      : text + 'SESSION_SECRET=' + value + '\n';
-  }
-  return text;
+  const newline = source.includes('\r\n') ? '\r\n' : '\n';
+  const lines = source.split(/\r?\n/);
+  const indices = lines.flatMap((line, index) => line.startsWith('SESSION_SECRET=') ? [index] : []);
+  if (indices.length > 1) throw new Error('Duplicate SESSION_SECRET setting');
+  const current = indices.length ? lines[indices[0]].slice('SESSION_SECRET='.length).trim() : '';
+  if (current && current !== placeholder) return source;
+  const value = 'SESSION_SECRET=' + randomBytes(32).toString('hex');
+  if (indices.length) lines[indices[0]] = value;
+  else lines.splice(lines.at(-1) === '' ? lines.length - 1 : lines.length, 0, value);
+  return lines.join(newline);
 }
 
 export function validateNativeEnv(text) {
