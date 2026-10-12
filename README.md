@@ -92,7 +92,7 @@ API_INTERNAL_URL=http://127.0.0.1:3001
 在仓库根目录运行（Windows PowerShell / Linux Bash 命令相同）：
 
 ```bash
-npm run setup:native
+npm run setup:local
 ```
 
 ### 4. 一个终端启动
@@ -123,6 +123,10 @@ Docker 不是必需组件。上述 `npm run deploy:docker` 提供第一次安装
 - Windows：管理员在完成服务账户 ACL 验收后运行 `infra/windows/install-backup-task.ps1`，注册定时备份任务。
 
 备份只保留本工具生成的最近 N 个本地文件；**本地保留不等于备份安全**，必须将备份复制到加密的离机位置并定期在隔离数据库进行恢复演练。部署升级前先确认备份完成、停止服务、构建并迁移、启动、运行 `doctor`；数据库迁移不承诺自动回滚。操作细节见 [开发与部署指南](docs/community/development.md#中文)。
+
+## 预构建跨平台分发包（实验性）
+
+GitHub Actions 的 `Cross-platform native builds` 工作流会为 Windows 和 Linux 生成包含 `dist/`、Next.js 构建结果、SQL、配置模板与运维工具的实验性 Artifact，不携带数据库或私有密钥。取出与目标系统匹配的 Artifact 后，仍需 Node.js/npm 和 PostgreSQL；执行 `npm ci --omit=dev`、配置本机 `.env`、`npm run db:migrate:prod`，然后 `npm start` 或安装系统服务。它不是经过签名验证的 Windows MSI/Linux DEB/RPM 安装包，也不意味着已完成开机或恢复验收。
 
 ## 本地演示路线
 
