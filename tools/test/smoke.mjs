@@ -61,6 +61,9 @@ try{
   const denied=await api('/projects/'+pid+'/tasks',{method:'POST',cookie:cookieB,
     body:{title:'越权任务',assigneeId:null,dueAt:null}});
   assert.equal(denied.status,404,'Cross-project write must not be allowed');
+  const unauthorizedTenant=await api('/projects',{method:'POST',cookie:cookieB,body:{
+    name:'不能创建的项目',tenantId,timezone:'Asia/Shanghai'}});
+  assert.equal(unauthorizedTenant.status,403,'Cannot create projects in another tenant');
   const invited=await api('/projects/'+pid+'/members',{method:'POST',body:{
     email:'second+'+suffix2+'@example.com',
   }});
@@ -81,6 +84,16 @@ try{
   assert.equal(posted.data.message.id,duplicate.data.message.id,'Message retry must be idempotent');
   const messages=await api('/projects/'+pid+'/messages');
   assert.equal(messages.data.messages.length,1);
+  const secondProject=await api('/projects',{method:'POST',body:{
+    name:'外键隔离测试项目',tenantId,timezone:'Asia/Shanghai'}});
+  assert.equal(secondProject.status,201);
+  await assert.rejects(
+    db.query(`INSERT INTO proposed_changes(project_id,source_message_id,kind,title)
+      VALUES($1,$2,'task','跨项目非法证据')`,
+      [secondProject.data.project.id,posted.data.message.id]),
+    (err)=>err.code==='23503',
+    'Database must reject source messages from another project',
+  );
   // Holding the project message lock simulates a message transaction that commits late.
   // A later request must not allocate/commit a higher cursor before this one commits.
   await db.query('BEGIN');

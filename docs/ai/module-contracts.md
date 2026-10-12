@@ -66,3 +66,5 @@
 - `DELETE /projects/:id/members/:memberId` 仅项目 Owner 可执行，且不可移除 Owner；删除后目标用户立即失去项目访问资格。
 - `POST /auth/logout` 撤销当前令牌的服务端会话记录，清除 Cookie。
 - `messages`、`proposed_changes`、`tasks`、`risks`、`clarification_threads` 等关联必须保持同一 project_id，依赖数据库外键保护。
+
+- 读取项目时同时检查项目成员资格及团队成员资格；不能只依赖项目成员表中的历史记录。

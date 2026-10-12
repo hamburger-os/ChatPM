@@ -55,6 +55,7 @@ async function member(userId:string, projectId:string) {
   const {rows}=await pool.query(
     `SELECT pm.role,p.tenant_id,p.ai_enabled,p.timezone,p.work_start,p.work_end,p.cooldown_hours
      FROM project_members pm JOIN projects p ON p.id=pm.project_id
+     JOIN tenant_members tm ON tm.tenant_id=p.tenant_id AND tm.user_id=pm.user_id
      WHERE pm.project_id=$1 AND pm.user_id=$2`,[projectId,userId]);
   if (!rows[0]) fail(404,'项目不存在或无权限');
   return rows[0] as {role:'owner'|'member',tenant_id:string,ai_enabled:boolean,
@@ -123,6 +124,7 @@ app.get('/projects',async req=>{
   const {rows}=await pool.query(
     `SELECT p.id,p.name,p.timezone,p.ai_enabled,pm.role
      FROM projects p JOIN project_members pm ON pm.project_id=p.id
+     JOIN tenant_members tm ON tm.tenant_id=p.tenant_id AND tm.user_id=pm.user_id
      WHERE pm.user_id=$1 ORDER BY p.created_at DESC`,[userId]);
   return {projects:rows};
 });
