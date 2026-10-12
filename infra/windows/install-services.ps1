@@ -9,6 +9,13 @@ $Root = (Resolve-Path (Join-Path $PSScriptRoot '../..')).Path
 $EnvFile = Join-Path $Root '.env'
 if (-not (Test-Path $EnvFile)) { throw 'Missing .env in installation directory.' }
 $Node = (Get-Command node.exe -ErrorAction Stop).Source
+$UserHome = [Environment]::GetFolderPath('UserProfile')
+if ($Root.StartsWith(($UserHome.TrimEnd('\\') + '\\'), [System.StringComparison]::OrdinalIgnoreCase)) {
+  throw 'Install service files outside the interactive user profile, for example C:\ChatPM.'
+}
+if ($Node.StartsWith(($UserHome.TrimEnd('\\') + '\\'), [System.StringComparison]::OrdinalIgnoreCase)) {
+  throw 'Node.js must be installed system-wide to be accessible from LocalService.'
+}
 
 $Logs = Join-Path $Root 'logs'
 $NextCache = Join-Path $Root 'apps/web/.next'
