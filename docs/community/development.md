@@ -20,7 +20,7 @@ npm run db:migrate
 npm run dev
 ```
 
-打开 http://localhost:3000，注册、创建项目、与成员聊天。系统默认不向外部模型发送内容；要启用 AI 需在服务端设置 `OPENAI_API_KEY` 并由项目负责人在设置页面明确开启。催办需任务负责人/期限及完整工作时间和冷却策略。
+打开 http://localhost:3000，注册、创建项目、与成员聊天。系统默认不向外部模型发送内容；要启用 AI 需在服务端设置 `LLM_API_KEY` 并由项目负责人在设置页面明确开启。催办需任务负责人/期限及完整工作时间和冷却策略。
 
 原生首次安装可执行 `npm run setup:local`：不存在 `.env` 时创建含随机会话密钥的配置；如数据库仍使用模板凭证，命令将停止并提示配置。完成数据库配置后重新执行。底层 `npm run setup:native`（安装依赖、构建、校验产物、执行迁移），然后 `npm start` 可在**单个前台终端**运行三进程；关闭终端会停止服务。长期运行应交给下述 Windows/Linux 系统服务管理器。浏览器请求统一使用同源 `/api`，服务端通过 `API_INTERNAL_URL` 连接 API（默认 127.0.0.1:3001）。
 
@@ -145,7 +145,7 @@ Start all three development processes in **one terminal**:
 npm run dev
 ```
 
-Open http://localhost:3000, register and create a project. External AI is disabled by default. To opt in, set `OPENAI_API_KEY` on the server and enable AI explicitly in project settings. Reminders require a task owner, due date, working hours and cooldown policy.
+Open http://localhost:3000, register and create a project. External AI is disabled by default. To opt in, set `LLM_API_KEY` on the server and enable AI explicitly in project settings. Reminders require a task owner, due date, working hours and cooldown policy.
 
 Native installation after configuring PostgreSQL and `.env`: run `npm run setup:local` (generates a missing secret and rejects the sample PostgreSQL password before invoking `setup:native`) to install, build, verify and migrate; `npm start` runs all three compiled processes in a single foreground terminal. For persistent production hosting, use the native system service manager below. The browser always uses same-origin `/api`, which is forwarded to `API_INTERNAL_URL` by Next.js.
 

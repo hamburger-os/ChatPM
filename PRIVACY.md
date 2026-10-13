@@ -8,7 +8,7 @@ ChatPM stores accounts, team/project memberships, project chat messages, tasks, 
 
 ## External AI / 外部模型
 
-Cloud AI calls are off by default. A server operator must configure `OPENAI_API_KEY`, and the project owner must explicitly enable AI for the project. If enabled, selected chat text and project context may be sent to the configured OpenAI API to generate suggestions and clarifications. Provider retention, processing geography and contractual terms depend on the provider/account settings and are not controlled by this repository.
+Cloud AI calls are off by default. A server operator must configure `LLM_API_KEY` and a trusted `LLM_BASE_URL` (plus model and API style), and the project owner must explicitly enable AI for the project. If enabled, selected project chat text may be sent to the configured external model endpoint to generate suggestions and clarifications. The endpoint can be OpenAI, DeepSeek or another operator-selected service. Treat external model requests as third-party data transfer, not guaranteed local processing. Provider retention, processing geography and contractual terms depend on the provider/account settings and are not controlled by this repository.
 
 ## Access and limitations / 权限与限制
 

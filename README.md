@@ -130,7 +130,7 @@ GitHub Actions 的 `Cross-platform native builds` 工作流会为 Windows 和 Li
 
 ## 选择模型提供商
 
-默认不配置模型密钥，也不发送项目消息。部署管理员在根目录 `.env` 设置 `LLM_API_KEY`、`LLM_BASE_URL`、`LLM_MODEL` 和 `LLM_API_STYLE`。默认是 OpenAI Responses（`https://api.openai.com/v1`）；DeepSeek 示例：`https://api.deepseek.com`、`responses`、`deepseek-flash`。具备 JSON Object 支持的兼容服务可改用 `chat-completions`，但真实模型能力仍需联调；本地模型需自行部署和保护。改配置后重启 Worker 或重新执行 Docker 部署，并由项目负责人显式启用 AI。详细步骤：[中英双语部署指南](docs/community/development.md)。
+默认不配置模型密钥，也不发送项目消息。部署管理员在根目录 `.env` 设置 `LLM_API_KEY`、`LLM_BASE_URL`、`LLM_MODEL` 和 `LLM_API_STYLE`（旧 `OPENAI_API_KEY`/`OPENAI_MODEL` 不再读取）。默认是 OpenAI Responses（`https://api.openai.com/v1`）；DeepSeek 示例：`https://api.deepseek.com`、`responses`、`deepseek-flash`。具备 JSON Object 支持的兼容服务可改用 `chat-completions`，但真实模型能力仍需联调；本地模型需自行部署和保护。改配置后重启 Worker 或重新执行 Docker 部署，并由项目负责人显式启用 AI。详细步骤：[中英双语部署指南](docs/community/development.md)。
 
 ## 本地演示路线
 
