@@ -164,7 +164,7 @@ test('wrong token cannot shut down the manager',async()=>{
       socket.once('data',buffer=>{resolve(buffer.toString('utf8'));socket.destroy();});
       socket.once('error',reject);
     });
-    assert.equal(message,'DENIED\\n');
+    assert.equal(message.trim(),'DENIED');
     assert.equal(calls,0);
   }finally{manager.close();rmSync(dir,{recursive:true,force:true});}
 });
