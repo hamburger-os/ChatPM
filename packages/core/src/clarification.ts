@@ -81,7 +81,10 @@ export async function processClarification(reply:Reply):Promise<boolean>{
     if(rowCount){
       await insertMessage(db,{
         projectId:reply.projectId,authorId:null,kind:'ai',
-        content:'已记录【候选:'+proposalId+'】的补充线索，请项目负责人在「AI 待确认」中核对；我不会自行更改正式任务。',
+        content:'已记录【候选:'+proposalId+'】的补充线索：'+
+          (suggestion.assignee_hint?'负责人线索已收到；':'负责人仍需确认；')+
+          (suggestion.due_at?'截止时间线索已收到；':'期限仍需补充确切年份、时区与时间；')+
+          '请负责人在「AI 待确认」中核对，我不会自行更改正式任务。',
         nonce:'clarification:'+reply.id,
       });
       await audit(db,reply.projectId,null,'ai.clarification_recorded',proposalId,
