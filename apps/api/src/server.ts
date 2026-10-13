@@ -306,10 +306,10 @@ app.get('/projects/:id/messages',async req=>{
   const query=z.object({after:z.coerce.number().int().min(0).default(0)}).parse(req.query);
   const recent=query.after===0;
   const sql=recent
-    ? `SELECT * FROM (SELECT m.id,m.seq,m.kind,m.content,m.created_at,m.author_id,
+    ? `SELECT * FROM (SELECT m.id,m.seq,m.kind,m.content,m.client_nonce,m.created_at,m.author_id,
        u.display_name AS author FROM messages m LEFT JOIN users u ON u.id=m.author_id
        WHERE m.project_id=$1 ORDER BY m.seq DESC LIMIT 200) recent ORDER BY recent.seq ASC`
-    : `SELECT m.id,m.seq,m.kind,m.content,m.created_at,m.author_id,u.display_name AS author
+    : `SELECT m.id,m.seq,m.kind,m.content,m.client_nonce,m.created_at,m.author_id,u.display_name AS author
        FROM messages m LEFT JOIN users u ON u.id=m.author_id
        WHERE m.project_id=$1 AND m.seq>$2 ORDER BY m.seq ASC LIMIT 200`;
   const {rows}=await pool.query(sql,recent?[projectId]:[projectId,query.after]);
