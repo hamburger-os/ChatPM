@@ -8,3 +8,10 @@ label{display:grid;gap:7px;font-size:13px;color:#536174}label.check{display:flex
 @media(max-width:1020px){.shell{grid-template-columns:190px 1fr}.details{grid-column:2;grid-row:2;min-height:500px}.chat-pane{min-height:650px}.shell{height:auto;overflow:visible}.sidebar{grid-row:1/span 2}}@media(max-width:640px){.shell{display:block}.sidebar{min-height:230px}.chat-pane{height:70vh}.details{min-height:500px}}
 
 .task-options{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:12px}.task-options label{font-size:11px}.task-options input,.task-options select{font-size:12px;padding:7px}
+
+/* Responsive message composer and five-tab detail panel. */
+.composer textarea{flex:1 1 auto;min-width:0}
+.composer button{flex:0 0 auto;min-width:88px;white-space:nowrap;align-self:flex-end}
+.tabs{grid-template-columns:repeat(5,minmax(0,1fr))}
+.tabs button{white-space:nowrap;min-width:0}
+@media(max-width:640px){.composer{padding:12px;gap:8px}.composer button{min-width:72px}.detail-content{padding:8px 12px 22px}}

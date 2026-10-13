@@ -1,5 +1,6 @@
 import { serverConfig } from '../../../packages/core/src/config.ts';
-import { readLLMSettings } from '../../../packages/core/src/llm-transport.ts';
+import { callStructuredLLM, modelAuditIdentity } from '../../../packages/core/src/llm-transport.ts';
+import { publicModelSettings, resolveProjectModel, updateProjectModel } from '../../../packages/core/src/project-model.ts';
 import { randomUUID } from 'node:crypto';
 import Fastify from 'fastify';
 import cors from '@fastify/cors';
@@ -140,7 +141,7 @@ app.post('/projects',async(req,reply)=>{
       [input.tenantId,userId])).rows[0];
     if(!ten) fail(403,'没有创建项目权限');
     const row=(await db.query(
-      'INSERT INTO projects(tenant_id,name,owner_id,timezone) VALUES($1,$2,$3,$4) RETURNING *',
+      'INSERT INTO projects(tenant_id,name,owner_id,timezone) VALUES($1,$2,$3,$4) RETURNING id,tenant_id,name,timezone,ai_enabled,work_start,work_end,cooldown_hours',
       [ten.tenant_id,input.name,userId,input.timezone])).rows[0];
     await db.query('INSERT INTO project_members(project_id,user_id,role) VALUES($1,$2,$3)',
       [row.id,userId,'owner']);
@@ -219,7 +220,7 @@ app.patch('/projects/:id/settings',async req=>{
   if(!none && (v.workStart===null||v.workEnd===null||v.cooldownHours===null ||
     v.workStart>=v.workEnd)) fail(400,'提醒策略必须完整配置');
   if(v.aiEnabled) {
-    try { readLLMSettings(); }
+    try { await resolveProjectModel(projectId); }
     catch { fail(400,'服务器尚未正确配置 AI 模型'); }
   }
   return transaction(async db=>{
@@ -233,16 +234,83 @@ app.patch('/projects/:id/settings',async req=>{
     return {ok:true};
   });
 });
+const modelSchema=z.object({
+  provider:z.enum(['server','openai','deepseek']),
+  model:z.string().trim().max(150),
+  style:z.enum(['responses','chat-completions']),
+  reasoning:z.enum(['auto','low','medium','high']),
+  maxOutputTokens:z.number().int().min(512).max(8192),
+  contextChars:z.number().int().min(2000).max(16000),
+  apiKey:z.string().min(1).max(500).regex(/^[^\r\n]+$/).optional(),
+  clearKey:z.boolean().optional(),
+});
+app.get('/projects/:id/model',async req=>{
+  const id=uuid.parse((req.params as {id:string}).id);
+  owner(await member(await authenticated(req),id));
+  return {model:await publicModelSettings(id)};
+});
+app.put('/projects/:id/model',async req=>{
+  const id=uuid.parse((req.params as {id:string}).id);
+  const userId=await authenticated(req);
+  owner(await member(userId,id));
+  const input=modelSchema.parse(req.body);
+  await transaction(async db=>{
+    await updateProjectModel(db,id,input);
+    await audit(db,id,userId,'project.model_configured',id,
+      {provider:input.provider,model:input.model,style:input.style,
+       reasoning:input.reasoning,maxOutputTokens:input.maxOutputTokens,
+       contextChars:input.contextChars,keyChanged:Boolean(input.apiKey||input.clearKey)});
+  });
+  return {model:await publicModelSettings(id)};
+});
+app.post('/projects/:id/model/test',async req=>{
+  const id=uuid.parse((req.params as {id:string}).id);
+  const actor=await authenticated(req);
+  owner(await member(actor,id));
+  const config=await resolveProjectModel(id).catch(()=>
+    fail(400,'该项目尚未配置可用的模型密钥或模型参数'));
+  const allowed=await pool.query(`INSERT INTO ai_model_checks(project_id,last_test_at)
+    VALUES($1,NOW()) ON CONFLICT(project_id) DO UPDATE SET
+      last_test_at=NOW() WHERE ai_model_checks.last_test_at<NOW()-INTERVAL '30 seconds'
+    RETURNING project_id`,[id]);
+  if(!allowed.rowCount)fail(429,'连接测试最多每 30 秒一次');
+  const started=Date.now();
+  const schema={type:'object',additionalProperties:false,required:['ok'],
+    properties:{ok:{type:'boolean'}}};
+  try {
+    const response=await callStructuredLLM(config,
+      '这是匿名连接测试，不含任何项目资料。请只返回 JSON 对象 {"ok":true}。',schema);
+    if(!response||typeof response!=='object'||(response as {ok?:unknown}).ok!==true)
+      throw new Error('MODEL_INVALID_TEST_RESPONSE');
+    await transaction(db=>audit(db,id,actor,'project.model_tested',id,
+      {ok:true,model:modelAuditIdentity(config)}));
+    return {ok:true,latencyMs:Date.now()-started,model:modelAuditIdentity(config)};
+  }catch(error) {
+    const code=error instanceof Error && /^MODEL_[A-Z0-9_]+$/.test(error.message)
+      ? error.message:'MODEL_CONNECTION_FAILED';
+    await transaction(db=>audit(db,id,actor,'project.model_tested',id,{ok:false,errorCode:code}));
+    fail(422,'模型测试失败：'+code);
+  }
+});
+app.get('/projects/:id/ai/runs',async req=>{
+  const id=uuid.parse((req.params as {id:string}).id);
+  owner(await member(await authenticated(req),id));
+  const {rows}=await pool.query(`SELECT source_message_id,kind,status,model_name,error_code,
+      created_at,updated_at FROM ai_analysis_runs WHERE project_id=$1
+      ORDER BY created_at DESC LIMIT 40`,[id]);
+  return {runs:rows};
+});
+
 app.get('/projects/:id/messages',async req=>{
   const projectId=uuid.parse((req.params as {id:string}).id);
   await member(await authenticated(req),projectId);
   const query=z.object({after:z.coerce.number().int().min(0).default(0)}).parse(req.query);
   const recent=query.after===0;
   const sql=recent
-    ? `SELECT * FROM (SELECT m.id,m.seq,m.kind,m.content,m.created_at,m.author_id,
+    ? `SELECT * FROM (SELECT m.id,m.seq,m.kind,m.content,m.client_nonce,m.created_at,m.author_id,
        u.display_name AS author FROM messages m LEFT JOIN users u ON u.id=m.author_id
        WHERE m.project_id=$1 ORDER BY m.seq DESC LIMIT 200) recent ORDER BY recent.seq ASC`
-    : `SELECT m.id,m.seq,m.kind,m.content,m.created_at,m.author_id,u.display_name AS author
+    : `SELECT m.id,m.seq,m.kind,m.content,m.client_nonce,m.created_at,m.author_id,u.display_name AS author
        FROM messages m LEFT JOIN users u ON u.id=m.author_id
        WHERE m.project_id=$1 AND m.seq>$2 ORDER BY m.seq ASC LIMIT 200`;
   const {rows}=await pool.query(sql,recent?[projectId]:[projectId,query.after]);

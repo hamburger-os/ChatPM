@@ -6,7 +6,7 @@ type Project={id:string,name:string,role:'owner'|'member',ai_enabled:boolean,
   timezone:string,work_start:number|null,work_end:number|null,cooldown_hours:number|null};
 type Member={id:string,email:string,display_name:string,role:string};
 type Tenant={id:string,name:string,role:'admin'|'member'};
-type Message={id:string,seq:number,kind:string,content:string,author:string|null,created_at:string};
+type Message={id:string,seq:number,kind:string,content:string,client_nonce?:string,author:string|null,created_at:string};
 type Task={id:string,title:string,status:string,version:number,assignee_id:string|null,
   assignee:string|null,due_at:string|null};
 type Proposal={id:string,kind:'task'|'risk',title:string,detail:string,assignee_hint:string|null,
@@ -18,6 +18,13 @@ type Report={id:string,kind:'week'|'month',period_key:string,content:string,
 type Risk={id:string,title:string,status:string};
 type FailedEvent={id:string,kind:string,attempts:number,last_error_code:string,dead_at:string};
 type OutboxStats={pending:number,dead:number,model_errors:number,oldest_pending_at:string|null};
+type ModelConfig={provider:'server'|'openai'|'deepseek',model:string,
+  style:'responses'|'chat-completions',reasoning:'auto'|'low'|'medium'|'high',
+  maxOutputTokens:number,contextChars:number,hasKey:boolean};
+type AiRun={source_message_id:string,kind:string,status:string,
+  model_name:string|null,error_code:string|null,created_at:string};
+const defaultModel:ModelConfig={provider:'server',model:'',style:'responses',
+  reasoning:'auto',maxOutputTokens:2048,contextChars:6500,hasKey:false};
 const API='/api';
 
 function browserLocalDateTime(iso:string|null):string {
@@ -55,8 +62,12 @@ export default function Home(){
   const [proposalDates,setProposalDates]=useState<Record<string,string>>({});
   const [settings,setSettings]=useState({aiEnabled:false,workStart:null as number|null,
     workEnd:null as number|null,cooldownHours:null as number|null});
+  const [model,setModel]=useState<ModelConfig>(defaultModel);
+  const [modelKey,setModelKey]=useState('');
+  const [modelFeedback,setModelFeedback]=useState('');
+  const [aiRuns,setAiRuns]=useState<AiRun[]>([]);
   const [notice,setNotice]=useState(''),[working,setWorking]=useState(false);
-  const [tab,setTab]=useState<'tasks'|'proposals'|'reports'|'settings'>('tasks');
+  const [tab,setTab]=useState<'tasks'|'proposals'|'reports'|'settings'|'model'>('tasks');
   const bottom=useRef<HTMLDivElement>(null);
   const cursor=useRef(0);
   const activeProject=useRef<string|null>(null);
@@ -111,6 +122,25 @@ export default function Home(){
     const timer=setInterval(update,5000);
     return ()=>clearInterval(timer);
   },[selected,refresh]);
+  useEffect(()=>{
+    if(!selected||current?.role!=='owner')return;
+    const id=selected;
+    setModel(defaultModel);setModelKey('');setModelFeedback('');setAiRuns([]);
+    request<{model:ModelConfig}>('/projects/'+id+'/model')
+      .then(x=>{if(activeProject.current===id)setModel(x.model);})
+      .catch(e=>{if(activeProject.current===id)setNotice(e.message);});
+    request<{runs:AiRun[]}>('/projects/'+id+'/ai/runs')
+      .then(x=>{if(activeProject.current===id)setAiRuns(x.runs);}).catch(()=>{});
+  },[selected,current?.role]);
+  useEffect(()=>{
+    if(tab!=='model'||!selected||current?.role!=='owner')return;
+    const id=selected;
+    const interval=setInterval(()=>{
+      request<{runs:AiRun[]}>('/projects/'+id+'/ai/runs')
+        .then(x=>{if(activeProject.current===id)setAiRuns(x.runs);}).catch(()=>{});
+    },5000);
+    return ()=>clearInterval(interval);
+  },[tab,selected,current?.role]);
   useEffect(()=>{ if(current) setSettings({
     aiEnabled:current.ai_enabled,workStart:current.work_start,
     workEnd:current.work_end,cooldownHours:current.cooldown_hours});
@@ -204,6 +234,28 @@ export default function Home(){
       await loadProjects();setNotice('已保存项目设置');
     });
   }
+  async function saveModel(){
+    if(!selected)return;
+    await action(async()=>{
+      const data=await request<{model:ModelConfig}>('/projects/'+selected+'/model',{
+        method:'PUT',body:JSON.stringify({...model,
+          ...(modelKey?{apiKey:modelKey}:{})})});
+      setModel(data.model);setModelKey('');setModelFeedback('模型配置已保存。');
+    });
+  }
+  async function testModel(){
+    if(!selected)return;
+    await action(async()=>{
+      const result=await request<{ok:boolean;latencyMs:number;model:string}>(
+        '/projects/'+selected+'/model/test',{method:'POST'});
+      setModelFeedback('连接测试成功 · '+result.latencyMs+' ms · '+result.model);
+    });
+  }
+  async function refreshAiRuns(){
+    if(!selected)return;
+    const x=await request<{runs:AiRun[]}>('/projects/'+selected+'/ai/runs');
+    setAiRuns(x.runs);
+  }
   async function inviteMember(e:FormEvent){
     e.preventDefault();if(!selected)return;
     await action(async()=>{
@@ -291,18 +343,18 @@ export default function Home(){
     <section className="chat-pane">
       <header><div>
         <h2>{current?.name||'请选择项目'}</h2>
-        <small>{current?'项目聊天室 · '+(current.ai_enabled?'AI 已启用':'AI 未启用'):'创建项目后开始协作'}</small>
+        <small>{current?'项目聊天室 · '+(current.ai_enabled?'AI 消息分析已启用':'AI 消息分析未启用'):'创建项目后开始协作'}</small>
       </div><div className="user-avatar">{user.display_name.slice(0,1)}</div></header>
       {selected?<><div className="messages">
         {messages.length===0&&<div className="empty">发送一条消息，开始讨论工作、任务与风险。</div>}
         {messages.map(m=><article key={m.id} className={'bubble '+(m.kind==='ai'?'ai':'')}>
-          <div className="msg-header"><strong>{m.kind==='ai'?'✳ AI 项目经理':m.author||'项目成员'}</strong>
+          <div className="msg-header"><strong>{m.kind==='ai'?(m.client_nonce?.startsWith('followup:')?'◷ 自动任务提醒':'✳ AI 项目经理'):m.author||'项目成员'}</strong>
             <time>{new Date(m.created_at).toLocaleString('zh-CN')}</time></div>
           <p>{m.content}</p>
         </article>)}
         <div ref={bottom}/>
       </div><form className="composer" onSubmit={send}>
-        <textarea rows={3} placeholder="讨论进度、风险和待办事项…" value={chat}
+        <textarea rows={3} placeholder="讨论进度、风险与任务；输入 @AI 提问或回复 AI 的澄清…" value={chat}
           onChange={e=>setChat(e.target.value)}
           onKeyDown={e=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();void send(e as unknown as FormEvent);}}}/>
         <button disabled={working||!chat.trim()}>发送</button>
@@ -310,10 +362,10 @@ export default function Home(){
     </section>
     <aside className="details">
       <div className="tabs">
-        {(['tasks','proposals','reports','settings'] as const).map(t=>
-          <button key={t} className={tab===t?'active':''} onClick={()=>{setTab(t);if(t==='settings'&&selected&&current?.role==='owner')
+        {(['tasks','proposals','reports','model','settings'] as const).map(t=>
+          <button key={t} className={tab===t?'active':''} onClick={()=>{setTab(t);if((t==='settings'||t==='model')&&selected&&current?.role==='owner')
             void loadDeadEvents(selected).catch(e=>setNotice(e.message));}}>
-            {({tasks:'任务',proposals:'AI 待确认',reports:'汇报',settings:'设置'})[t]}
+            {({tasks:'任务',proposals:'AI 待确认',reports:'汇报',model:'AI 模型',settings:'设置'})[t]}
           </button>)}
       </div>
       {!selected?<div className="empty">暂无项目内容</div>:<div className="detail-content">
@@ -412,6 +464,86 @@ export default function Home(){
           </details>)}
           {!reports.length&&<p className="hint">暂无报告。</p>}
         </>}
+        {tab==='model'&&<>
+          <h3>AI 模型配置和连接测试</h3>
+          {current?.role!=='owner'?<p className="hint">仅项目负责人可管理模型。</p>:<>
+            <p className="hint">模型配置属于当前项目；密钥仅加密保存在服务端，不会回显。自定义本地模型代理请由部署管理员在服务器环境变量中配置。</p>
+            <div className="stack">
+              <label>模型服务商
+                <select value={model.provider} onChange={e=>{
+                  const provider=e.target.value as ModelConfig['provider'];
+                  setModel({...model,provider,model:provider==='deepseek'?'deepseek-flash':
+                    provider==='openai'?'gpt-4.1-mini':'',reasoning:'auto',hasKey:false});
+                  setModelKey('');setModelFeedback('');
+                }}>
+                  <option value="server">服务器配置（环境变量）</option>
+                  <option value="deepseek">DeepSeek（固定 HTTPS 端点）</option>
+                  <option value="openai">OpenAI（固定 HTTPS 端点）</option>
+                </select>
+              </label>
+              {model.provider==='server'&&<p className="hint">
+                当前服务器模型：{model.model||'未指定'} ·
+                协议：{model.style==='responses'?'Responses API':'Chat Completions'} ·
+                密钥：{model.hasKey?'已配置':'未配置'}。模型地址和密钥由服务器管理员维护，
+                修改 .env 后须重启服务。
+              </p>}
+              {model.provider!=='server'&&<>
+                <label>模型 ID
+                  <input value={model.model} onChange={e=>setModel({...model,model:e.target.value})}/>
+                </label>
+                <label>API Key（{model.hasKey?'已保存，留空保持原值':'尚未设置'}）
+                  <input type="password" autoComplete="new-password" value={modelKey}
+                    placeholder={model.hasKey?'留空保持已加密密钥':'填写服务商密钥'}
+                    onChange={e=>setModelKey(e.target.value)}/>
+                </label>
+                <label>接口协议
+                  <select value={model.style} onChange={e=>setModel({...model,
+                    style:e.target.value as ModelConfig['style']})}>
+                    <option value="responses">Responses API</option>
+                    <option value="chat-completions">Chat Completions（JSON Object）</option>
+                  </select>
+                </label>
+              </>}
+              <label>推理强度（只有支持该参数的服务生效）
+                <select value={model.reasoning} disabled={model.provider==='deepseek'}
+                  onChange={e=>setModel({...model,
+                  reasoning:e.target.value as ModelConfig['reasoning']})}>
+                  <option value="auto">由模型决定</option>
+                  <option value="low">低</option><option value="medium">中</option>
+                  <option value="high">高</option>
+                </select>
+              </label>
+              <label>最大输出 Token（512–8192）
+                <input type="number" min="512" max="8192" value={model.maxOutputTokens}
+                  onChange={e=>setModel({...model,maxOutputTokens:Number(e.target.value)})}/>
+              </label>
+              <label>输入预算（字符，2000–16000）
+                <input type="number" min="2000" max="16000" value={model.contextChars}
+                  onChange={e=>setModel({...model,contextChars:Number(e.target.value)})}/>
+              </label>
+              <p className="hint">输入预算不是模型的 Token 窗口，较早聊天被确定性裁剪。正式项目事实保存在数据库中，模型不会自动替团队修改任务。</p>
+              <div className="actions">
+                <button disabled={working} onClick={()=>void saveModel()}>保存模型配置</button>
+                <button className="secondary" disabled={working||Boolean(modelKey)}
+                  title={modelKey?'先保存新密钥再测试':'只发送无项目资料的固定测试消息'}
+                  onClick={()=>void testModel()}>测试连接</button>
+              </div>
+              {modelFeedback&&<p role="status" className="hint">{modelFeedback}</p>}
+            </div>
+            <h3>AI 处理记录 <span className="count">{aiRuns.length}</span></h3>
+            <button className="secondary" disabled={working}
+              onClick={()=>void refreshAiRuns().catch(e=>setNotice(e.message))}>刷新记录</button>
+            <p className="hint">分析中 / 无新建议 / 已生成候选 / 已处理澄清 / 已回复 / 失败。失败可在项目设置中查看隔离事件。</p>
+            {aiRuns.slice(0,20).map(run=><article className="item" key={run.source_message_id}>
+              <strong>{({processing:'分析中',no_change:'已分析，无新候选',
+                proposal:'已生成候选',clarified:'已处理澄清',replied:'AI 已回复',
+                failed:'失败'} as Record<string,string>)[run.status]||run.status}</strong>
+              <small>{new Date(run.created_at).toLocaleString('zh-CN')} · {run.kind}</small>
+              {run.model_name&&<small>{run.model_name}</small>}
+              {run.error_code&&<small>错误代码：{run.error_code}</small>}
+            </article>)}
+          </>}
+        </>}
         {tab==='settings'&&<>
           <h3>项目成员</h3>
           {members.map(m=><div key={m.id} className="member"><strong>{m.display_name}</strong>
@@ -422,19 +554,31 @@ export default function Home(){
                 onChange={e=>setInvite(e.target.value)}/>
               <button disabled={working}>加入</button>
             </form>
-            <h3>AI 与提醒</h3>
+            <h3>AI 助手</h3>
             <label className="check"><input type="checkbox" checked={settings.aiEnabled}
               onChange={e=>setSettings({...settings,aiEnabled:e.target.checked})}/>
-              启用外部 AI 分析（需服务端配置模型凭证）</label>
-            <p className="hint">默认关闭；开启后项目成员消息可能发送至配置的模型服务。</p>
-            <div className="triple">
+              允许 AI 分析本项目聊天并提出候选事项</label>
+            <p className="hint">开启后消息可能发送至「AI 模型」配置的服务商。AI 只生成候选，正式任务仍需负责人审批；主动提问请在聊天室使用 @AI。</p>
+            <button className="secondary" onClick={()=>setTab('model')}>配置模型与测试连接</button>
+            <h3>自动任务提醒（无需大模型）</h3>
+            <label className="check"><input type="checkbox"
+              checked={settings.workStart!==null}
+              onChange={e=>setSettings({...settings,
+                workStart:e.target.checked?9:null,
+                workEnd:e.target.checked?18:null,
+                cooldownHours:e.target.checked?24:null})}/>
+              开启工作日到期任务催办</label>
+            {settings.workStart!==null&&<div className="triple">
               {(['workStart','workEnd','cooldownHours'] as const).map((key,i)=>
-                <label key={key}>{['开始小时','结束小时','冷却小时'][i]}
-                  <input type="number" value={settings[key]??''}
-                    onChange={e=>setSettings({...settings,[key]:e.target.value===''?null:Number(e.target.value)})}/>
+                <label key={key}>{['开始时（含）','结束时（不含）','最短间隔（小时）'][i]}
+                  <input type="number" min={i===0?0:1}
+                    max={i===0?23:i===1?24:168}
+                    value={settings[key]??''}
+                    onChange={e=>setSettings({...settings,[key]:
+                      e.target.value===''?null:Number(e.target.value)})}/>
                 </label>)}
-            </div>
-            <p className="hint">请完整填写时间策略才会启动自动催办。周末静默，时间以项目时区计。</p>
+            </div>}
+            <p className="hint">只有正式任务有负责人及截止时间才催办。按项目时区，周六日不提醒；建议工作时间 09:00–18:00，同一任务至少间隔 24 小时。</p>
             <button onClick={()=>void saveSettings()} disabled={working}>保存设置</button>
             <h3>后台任务运行状态</h3>
             {outboxStats&&<p className="hint">待处理：{outboxStats.pending} · 隔离：{outboxStats.dead} ·

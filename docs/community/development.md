@@ -36,6 +36,12 @@ npm run dev
 
 模型密钥为空时不发送外部请求；即使配置密钥，也要项目负责人在 ChatPM 内明确启用 AI。不要提交含 Key 的 `.env`。修改后原生重启 `npm start`，Docker 重新运行 `npm run deploy:docker`。真实 DeepSeek/Ollama API 功能与费用未完成联调。
 
+### 项目 AI 模型管理与连续对话
+
+项目负责人进入右侧「AI 模型」页，选择「服务器配置」（沿用部署管理员配置的 `LLM_*`）或固定 OpenAI/DeepSeek 供应商，输入模型名称及独立 Key 后点击「保存模型配置」；再点击「测试连接」，只会发送无项目资料的固定测试请求（最多每 30 秒一次，可能计费）。密钥只以数据库加密形式保存，页面不会回显。DeepSeek Responses 模型示例 `deepseek-flash`，实际模型名称和接口是否支持由供应商决定。内置提供商 URL 不允许自定义；自托管模型请由可信部署管理员配置服务器 `.env` 并使用「服务器配置」。模型 Key 密文依赖 SESSION_SECRET，旋转它之后须在 UI 重新录入项目模型 Key，不能只恢复数据库。
+
+「输入预算」为字符预算，并不是模型的上下文 Token 窗口；系统带入最近的有界群聊和已确认项目事实，超出部分进行确定性裁剪。推理强度只有服务商真正支持才发送，目前 OpenAI 官方 Responses 端点支持对应参数，其余服务商保持 API 默认。模型及密钥配置保存后**不必重启** API/Worker；修改部署管理员的 `.env` 仍需重启。所有模型建议仍需负责人批准。发送 `@AI 请总结待办` 可要求 AI 基于只读项目状态答复；成员直接回复最近唯一的候选澄清问题通常无需复制 UUID，多个澄清线程则须明确引用编号。右侧「AI 模型」提供「AI 处理记录」区分分析中、无新建议、生成候选、澄清、回复和失败。自动任务提醒独立于 AI：正式任务有负责人、期限，且启用工作日工作时段/最短间隔才提醒。
+
 ### 可靠性说明
 消息增量游标按项目提交顺序保证不漏读；重新调整任务不会绕过已发送提醒的冷却间隔。周/月报统计覆盖全项目，明细有条数上限；同周期草稿可以重新生成，已发布报告不可覆盖。这些行为可通过 `node tools/test/smoke.mjs` 在已迁移的 PostgreSQL 实例上回归。
 
@@ -152,6 +158,12 @@ Native installation after configuring PostgreSQL and `.env`: run `npm run setup:
 Checks: `npm run typecheck`, `npm test`, `npm run build:web`, `npm run check:docs`. Changes must follow [docs-sync](../../.agents/skills/docs-sync/SKILL.md).
 
 See [implementation gaps (Chinese)](../design/implementation-status.md) for unimplemented features and security limitations. [中文](#中文).
+
+### Project model settings and contextual AI collaboration
+
+A project owner can open the "AI 模型" tab, choose server-managed `LLM_*` credentials or built-in fixed-HTTPS OpenAI/DeepSeek endpoints, enter a model name and private API key, and save it. "测试连接" uses only a non-project JSON probe and is limited to once per project per 30 seconds; provider charges may apply. Keys are stored encrypted in PostgreSQL and never returned to the browser. Built-in provider URLs cannot be replaced by untrusted users; administrators may configure custom/private endpoints in the server's `.env`. The encryption key derives from SESSION_SECRET; rotating that secret requires re-entering project keys. Database-level confidentiality also depends on server/backup access controls.
+
+Input budget is measured in characters, **not** the model context window in tokens. Only bounded recent project chat plus authoritative task/risk facts are included, and older discussion is trimmed without overwriting official facts. Reasoning effort is sent only when supported by the configured official OpenAI Responses endpoint; other models use provider defaults. Database-backed settings apply without restart; editing server `.env` requires restart. Send `@AI ...` for a read-only project answer. Plain natural-language answers to a unique recently asked clarification may be linked automatically; ambiguous multi-candidate cases still require the explicit candidate reference. Review progress/errors on the model tab. Rule-based due-task reminders work independently of the external LLM when owner, due date, reminder window and cooldown are configured.
 
 ### Reliability notes
 The per-project message cursor follows transaction commit order to prevent missing chat messages. Replanning a task preserves the cooldown of its last reminder. Weekly/monthly counts cover all project tasks while detail lists are bounded; drafts can be regenerated, but published reports remain immutable. Verify these behaviors with `node tools/test/smoke.mjs` against a migrated PostgreSQL instance.

@@ -170,3 +170,7 @@ npm run check:docs
 - [维护与状态检查设置](docs/community/maintainers.md#中文) · [Issues](https://github.com/hamburger-os/ChatPM/issues) · [Discussions（启用后）](https://github.com/hamburger-os/ChatPM/discussions)
 
 **English:** ChatPM is an experimental, chat-centered AI project management tool. It keeps evidence-linked proposals separate from approved project facts. Cloud and self-hosted deployment with cloud/local model options are product goals; they are not all shipped today. See the [English guide](docs/community/development.md#english).
+
+## 本地测试反馈：模型与对话操作
+
+登录并创建项目后，打开「AI 模型」设置服务商、模型、Key、输入字符预算与最大输出 Token，点击「保存模型配置」和「测试连接」。再到「设置」启用「AI 助手」。输入 `@AI 请概览当前项目` 可触发只读回复。AI 自动候选与后续澄清仍需项目负责人审批，AI 处理记录可查看模型执行状态；规则式到期任务提醒在「设置」独立开启，不需要 AI 模型。内置 DeepSeek/OpenAI 使用固定 URL；自定义模型 URL 只能由部署管理员在服务器 .env 中配置。更多详情见 [开发部署指南](docs/community/development.md)。

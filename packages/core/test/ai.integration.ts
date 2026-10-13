@@ -3,6 +3,7 @@ import { randomUUID } from 'node:crypto';
 import { pool, transaction } from '../src/db.ts';
 import { insertMessage } from '../src/messages.ts';
 import { processClarification } from '../src/clarification.ts';
+import { projectAnalysisContext } from '../src/project-context.ts';
 import { DailyAIBudgetExceeded } from '../src/ai-provider.ts';
 
 const id=randomUUID();
@@ -12,17 +13,18 @@ const previousLimit=process.env.AI_DAILY_REQUEST_LIMIT;
 let providerCalls=0;
 try{
   process.env.LLM_API_KEY='fake-key-for-mocked-requests';
-  process.env.AI_DAILY_REQUEST_LIMIT='2';
+  process.env.AI_DAILY_REQUEST_LIMIT='4';
   globalThis.fetch=async(_input,init)=>{
     providerCalls++;
     assert.equal(String(_input),'https://api.openai.com/v1/responses');
     const body=JSON.parse(String(init?.body));
     assert.equal(body.text.format.type,'json_schema');
     assert.ok(body.input[0].content.includes('不可信'));
+    const noDetails=body.input[1].content.includes('仅说九月底');
     return new Response(JSON.stringify({output:[{content:[{
-      type:'output_text',text:JSON.stringify({
-        assignee_hint:'测试负责人',due_at:'2026-12-10T10:00:00+08:00',confidence:0.9,
-      }),
+      type:'output_text',text:JSON.stringify(noDetails
+        ? {assignee_hint:null,due_at:null,confidence:0.3}
+        : {assignee_hint:'测试负责人',due_at:'2026-12-10T10:00:00+08:00',confidence:0.9}),
     }]}]}),{status:200,headers:{'content-type':'application/json'}});
   };
   const user=(await pool.query(
@@ -80,6 +82,41 @@ try{
   assert.equal((await pool.query(
     'SELECT COUNT(*)::int AS n FROM tasks WHERE source_proposal_id=$1',
     [proposal.id])).rows[0].n,0,'AI clarification may not create official tasks');
+  // A single recently asked clarification can be answered naturally without copying its UUID.
+  await transaction(db=>insertMessage(db,{
+    projectId:project.id,authorId:null,kind:'ai',
+    content:'关于【候选:'+proposal.id+'】，请补充负责人及截止日期。',
+    nonce:'test-ai-question:'+randomUUID(),
+  }));
+  const plain=await transaction(db=>insertMessage(db,{
+    projectId:project.id,authorId:user.id,kind:'user',
+    content:'由测试负责人负责，2026年12月10日完成。',nonce:randomUUID(),
+  }));
+  assert.ok(plain);
+  assert.equal(await processClarification({
+    id:plain.id,projectId:project.id,content:plain.content,projectName:'AI mocked project',
+  }),true);
+  assert.equal(providerCalls,3);
+  const context=await projectAnalysisContext(project.id,plain.id,1400);
+  assert.ok(context.length<=1400,'Configured context budget must not be exceeded');
+  assert.ok(context.includes(plain.content),'The newest user message must remain in context');
+  // Unparseable dates are acknowledged but never guessed; replays cannot double-spend.
+  const vague=await reply('仅说九月底');
+  assert.ok(vague);
+  assert.equal(await processClarification({
+    id:vague.id,projectId:project.id,content:vague.content,projectName:'AI mocked project',
+  }),true);
+  assert.equal(providerCalls,4);
+  await processClarification({
+    id:vague.id,projectId:project.id,content:vague.content,projectName:'AI mocked project',
+  });
+  assert.equal(providerCalls,4);
+  const unclear=await pool.query('SELECT 1 FROM clarification_responses WHERE message_id=$1',[vague.id]);
+  assert.equal(unclear.rowCount,1,'Ambiguous evidence must be idempotently retained');
+  const followup=await pool.query(
+    "SELECT 1 FROM messages WHERE project_id=$1 AND client_nonce=$2",
+    [project.id,'clarification-needs-detail:'+vague.id]);
+  assert.equal(followup.rowCount,1);
   const answer3=await reply('补充备注');
   assert.ok(answer3);
   await assert.rejects(
@@ -88,7 +125,7 @@ try{
     }),
     DailyAIBudgetExceeded,
   );
-  assert.equal(providerCalls,2);
+  assert.equal(providerCalls,4);
   const unknown=await transaction(db=>insertMessage(db,{
     projectId:project.id,authorId:user.id,kind:'user',
     content:'【候选:'+randomUUID()+'】不属于本项目',nonce:randomUUID(),
@@ -97,12 +134,12 @@ try{
   assert.equal(await processClarification({
     id:unknown.id,projectId:project.id,content:unknown.content,projectName:'AI mocked project',
   }),true);
-  assert.equal(providerCalls,2,'Unrelated proposals must not trigger model calls');
+  assert.equal(providerCalls,4,'Unrelated proposals must not trigger model calls');
   console.log('AI integration passed: source-bound multi-turn evidence, replay, budget and no automatic task updates');
 }finally{
   globalThis.fetch=previousFetch;
-  if(previousKey===undefined)delete process.env.OPENAI_API_KEY;
-  else process.env.OPENAI_API_KEY=previousKey;
+  if(previousKey===undefined)delete process.env.LLM_API_KEY;
+  else process.env.LLM_API_KEY=previousKey;
   if(previousLimit===undefined)delete process.env.AI_DAILY_REQUEST_LIMIT;
   else process.env.AI_DAILY_REQUEST_LIMIT=previousLimit;
   await pool.end();
