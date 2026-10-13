@@ -82,3 +82,10 @@
 **安全/代价**：校验端点为可信部署配置，公网仅 HTTPS、本机 HTTP 例外；不输出上游响应体或密钥；拒答/超时/截断/Zod 失败关闭，真实 DeepSeek 和本地模型行为需要联调。改配置需重启；日配额计请求次数而非费用。积累不同模型真实验收数据后复审。
 
 **ADR-019 /review 补充**：项目 AI 开启 API 与 Worker 复用同一配置验证；HTTP 请求禁用自动重定向；在现有候选/澄清 model_name 文本中记录供应商端点主机、传输类型与 URL SHA-256 截断指纹以区分同名模型和代理路径，不存敏感 URL path 和 Key。本期不引入数据库迁移。
+
+## ADR-020 · 原生前台进程统一停止（2026-10-13）
+
+- **决定**：给 `npm run dev` 和 `npm start` 的同一前台进程管理器增加受令牌保护的回环控制入口，并提供跨平台 `npm run stop`；复用既有 Worker IPC 优雅关闭，不引入 PM2、操作系统后台守护器或全机进程枚举。
+- **理由**：本地测试阶段，尤其 Windows 上遇到 `npm ci` 文件锁时，使用者需要可验证、只影响当前 ChatPM 实例的一键停止操作，而非按照镜像名批量关闭 Node.js。
+- **替代与边界**：拒绝 `taskkill /IM node.exe /F`、`Stop-Process -Name node` 及 PID 文件直接 kill（存在误杀和 PID 重用风险）。原生前台应用以外的 Docker、Windows 服务、systemd 不受控制；`npm ci` 不是服务进程，失败后也可能没有 ChatPM 在运行。
+- **安全/失败**：运行状态文件私有、不入 Git；本地回环随机凭证与独占状态锁。控制器失联但 PID 存在时明确报错，避免错误杀进程。实机 Windows graceful shutdown 与被杀死后恢复仍要验证。
