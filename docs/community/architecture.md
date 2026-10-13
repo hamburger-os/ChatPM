@@ -35,3 +35,9 @@ The proposed architecture uses a **TypeScript monorepo, modular monolith, and a 
 **Important:** The model cannot directly mutate official task state. Domain commands and server-side authorization control changes. A transactional outbox connects persisted state updates to asynchronous events.
 
 [Full design (Chinese)](../design/system-architecture.md) · [中文](#中文)
+
+## ADR-021 · 用户可配置的受限项目模型 / Project-scoped controlled models
+
+中文：项目 Owner 可以在 UI 对固定的 OpenAI/DeepSeek HTTPS 提供商设置模型名称和加密密钥，也可以选择服务器预配置模型；配置采用项目隔离和审计，不允许客户端任意模型 URL。内建 Agent 仅具备候选提取、近期上下文和 `@AI` 只读回答；无权限自行提交正式任务，也未嵌入 Pi Coding Agent 的文件/Shell 能力。
+
+English: Project owners can configure model IDs and encrypted keys for fixed HTTPS OpenAI/DeepSeek endpoints or use the server-managed provider. Configurations are project-scoped and audited; arbitrary client-provided URLs are not allowed. The restricted PM assistant supports candidate extraction, bounded recent context and read-only `@AI` replies, not autonomous task commits, Pi coding-agent shell/file tools or long-term memory. Records and model connectivity checks are exposed only to owners.

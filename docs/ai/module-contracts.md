@@ -108,3 +108,12 @@ Web 端从 `GET /projects` 初始化项目列表和设置面板。该接口返�
 ## 原生前台一键停止（ADR-020）
 
 `npm start` 和 `npm run dev` 使用 `run.mjs` 同目录实例独占的回环控制服务；`npm run stop` 是一个不依赖 npm 已安装模块的 Node.js 内置工具，读取私有 `.chatpm-run.json` 中的端口/随机令牌，向当前受控管理器申请停止，等 Web、API、Worker 子进程退出才返回成功。Windows Worker 沿用现有 IPC 关闭。PID 仅用来确认状态是否陈旧，禁止按 PID 自动杀进程。Docker Compose / WinSW / systemd 使用各自停止命令，启动之前的旧版进程无法通过新控制协议停止。
+
+## ADR-021 · AI 项目配置、上下文与运行记录
+
+- 项目负责人通过 `GET/PUT /projects/:id/model` 管理固定供应商 `server|openai|deepseek`，项目成员无访问密钥配置的权限。内置 OpenAI/DeepSeek Base URL 固定于服务端，禁止由浏览器提交任意 URL。服务端模式继续读取部署管理员的 `LLM_*`；数据库保存项目 Key 的 AES-GCM 密文，并从服务器 SESSION_SECRET 派生密钥，不会给客户端返回密钥和密文。更换 SESSION_SECRET 会使已有项目 Key 失效，需重新保存。
+- `POST /projects/:id/model/test` 只用无项目资料的固定 JSON 探测，项目 Owner 授权和 PostgreSQL 每项目 30 秒限频；响应仅返回通过状态、延时和匿名模型身份，不返回上游原文。真实联网联调和供应商计费风险仍由部署者承担。
+- `GET /projects/:id/ai/runs` 只有 Owner 可查，仅包含源消息、结果/阶段、模型身份、已脱敏错误码和时间戳；不会回显聊天全文或 Key。Worker 对每条开启了 AI 的消息记录处理结果，失败仍保留 Outbox 重试语义。
+- `@AI` 触发只读问答，输出不能调用正式变更；普通消息走有界分层上下文的候选提取，近期唯一澄清追问可自然答复，多候选或不明确的回复仍需显式 `【候选:UUID】`。所有候选继续人工审批；提问也按项目 UTC 日请求限额计数。
+- 上下文首先读取同项目正式任务/风险和最后 12 条讨论，明确区分可信事实和非可信聊天并按配置预算裁剪，不保存虚构摘要，不支持跨项目历史与通用 Agent 工具。
+
