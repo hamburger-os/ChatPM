@@ -28,6 +28,7 @@ test('documentation check detects broken root-document links and missing anchors
     const support = join(dir, 'SUPPORT.md');
     const readme = join(dir, 'README.md');
     const originalSupport = readFileSync(support, 'utf8');
+    const originalReadme = readFileSync(readme, 'utf8');
     assert.equal(runChecker(dir).status, 0, 'fixture must initially pass');
 
     appendFileSync(support, '\n[obsolete](docs/community/zh/development.md)\n');
@@ -40,6 +41,13 @@ test('documentation check detects broken root-document links and missing anchors
     const brokenAnchor = runChecker(dir);
     assert.equal(brokenAnchor.status, 1);
     assert.match(brokenAnchor.stderr, /Broken anchor: README\.md/);
+
+    writeFileSync(readme, originalReadme);
+    appendFileSync(readme, '\n~~~sh\n## Hidden inside tilde fence\n~~~\n' +
+      '[fake heading](README.md#hidden-inside-tilde-fence)\n');
+    const hiddenHeading = runChecker(dir);
+    assert.equal(hiddenHeading.status, 1);
+    assert.match(hiddenHeading.stderr, /Broken anchor: README\.md/);
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
