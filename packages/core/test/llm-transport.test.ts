@@ -118,3 +118,28 @@ test('read-only PM replies use a separate system role and respect configured bud
   },'reply');
   assert.deepEqual(data,{items:['task']});
 });
+
+test('DeepSeek Responses uses selected reasoning and output budget',async()=>{
+  const cfg={...settings({LLM_BASE_URL:'https://api.deepseek.com'}),
+    reasoning:'max' as const,maxOutputTokens:16000,contextChars:45000};
+  const result=await callStructuredLLM(cfg,'short request',schema,async(_url,init)=>{
+    const body=JSON.parse(String(init?.body));
+    assert.equal(body.reasoning.effort,'max');
+    assert.equal(body.max_output_tokens,16000);
+    return new Response(JSON.stringify({status:'completed',
+      output:[{content:[{type:'output_text',text:json}]}]}),{status:200});
+  });
+  assert.deepEqual(result,{items:['task']});
+});
+test('chat-completions respects configured context instead of hidden 6500-character cap',async()=>{
+  const cfg={...settings({LLM_BASE_URL:'https://api.deepseek.com',
+      LLM_API_STYLE:'chat-completions'}),contextChars:11000,
+    reasoning:'high' as const};
+  await callStructuredLLM(cfg,'x'.repeat(9500),schema,async(_url,init)=>{
+    const body=JSON.parse(String(init?.body));
+    assert.equal(body.messages[1].content.length,9500);
+    assert.equal(body.reasoning_effort,'high');
+    return new Response(JSON.stringify({choices:[{finish_reason:'stop',
+      message:{content:json}}]}),{status:200});
+  });
+});

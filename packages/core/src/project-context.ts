@@ -7,7 +7,7 @@ export async function projectAnalysisContext(projectId:string,messageId:string,b
     pool.query(`SELECT id,kind,content FROM messages WHERE project_id=$1
       AND seq<=(SELECT seq FROM messages WHERE id=$2 AND project_id=$1)
       ORDER BY seq DESC LIMIT 100`,[projectId,messageId]),
-    pool.query(`SELECT t.id,t.title,t.status,t.due_date,u.display_name AS assignee
+    pool.query(`SELECT t.id,t.title,t.status,t.due_date::text AS due_date,u.display_name AS assignee
       FROM tasks t LEFT JOIN users u ON u.id=t.assignee_id
       WHERE t.project_id=$1 AND t.status NOT IN ('done','cancelled')
       ORDER BY t.updated_at DESC LIMIT 80`,[projectId]),

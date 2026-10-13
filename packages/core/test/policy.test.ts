@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { canSendReminder, nextReminderAt, periodKey, isValidTimezone } from '../src/policy.ts';
+import { canSendReminder, nextReminderAt, periodKey, isValidTimezone, followupIntervalDays } from '../src/policy.ts';
 import { hashPassword, verifyPassword } from '../src/security.ts';
 
 test('time zone validation and silent-by-default reminder', () => {
@@ -41,4 +41,12 @@ test('next window respects daylight saving and fractional UTC offsets', () => {
   const nepal={timezone:'Asia/Kathmandu',work_start:9,work_end:18,cooldown_hours:1};
   assert.equal(nextReminderAt(new Date('2026-10-12T02:00:00Z'),nepal).toISOString(),
     '2026-10-12T03:15:00.000Z');
+});
+
+test('proactive check intervals reflect calendar days and blocked-risk urgency',()=>{
+  assert.equal(followupIntervalDays('2026-12-31','2026-10-14','doing'),7);
+  assert.equal(followupIntervalDays('2026-10-25','2026-10-14','doing'),3);
+  assert.equal(followupIntervalDays('2026-10-16','2026-10-14','doing'),1);
+  assert.equal(followupIntervalDays('2026-12-31','2026-10-14','blocked'),1);
+  assert.equal(followupIntervalDays('2026-10-13','2026-10-14','doing'),1);
 });
