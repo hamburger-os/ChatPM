@@ -7,7 +7,7 @@ export async function projectAnalysisContext(projectId:string,messageId:string,b
     pool.query(`SELECT id,kind,content FROM messages WHERE project_id=$1
       AND seq<=(SELECT seq FROM messages WHERE id=$2 AND project_id=$1)
       ORDER BY seq DESC LIMIT 12`,[projectId,messageId]),
-    pool.query(`SELECT t.title,t.status,t.due_at,u.display_name AS assignee
+    pool.query(`SELECT t.id,t.title,t.status,t.due_date,u.display_name AS assignee
       FROM tasks t LEFT JOIN users u ON u.id=t.assignee_id
       WHERE t.project_id=$1 AND t.status NOT IN ('done','cancelled')
       ORDER BY t.updated_at DESC LIMIT 15`,[projectId]),
@@ -24,7 +24,7 @@ export async function projectAnalysisContext(projectId:string,messageId:string,b
   const available=Math.max(0,budget-head.length-middle.length-tail.length);
   const factsMax=Math.floor(available*0.65);
   const facts=tasks.rows.map(t=>'- 任务 '+String(t.title).slice(0,120)+
-    ' ['+t.status+'; 截止 '+(t.due_at?new Date(t.due_at).toISOString():'未定')+
+    ' [ID '+t.id+'; '+t.status+'; 截止 '+(t.due_date?String(t.due_date).slice(0,10):'未定')+
     '; 负责人 '+(t.assignee||'未定')+']').join('\n')+'\n'+
     risks.rows.map(r=>'- 风险 '+String(r.title).slice(0,120)+' ['+r.status+']').join('\n');
   const keptFacts=facts.slice(0,factsMax);
