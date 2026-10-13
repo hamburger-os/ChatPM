@@ -9,8 +9,21 @@ export function referencedCandidate(text:string):string|null{
 
 type Reply={id:string;projectId:string;content:string;projectName:string};
 export async function processClarification(reply:Reply):Promise<boolean>{
-  const proposalId=referencedCandidate(reply.content);
-  if(!proposalId)return false;
+  let proposalId=referencedCandidate(reply.content);
+  if(!proposalId){
+    if(!/(负责|截止|完成|日期|排期|交付|月底|本周|下周|月\\d|\\d+月)/u.test(reply.content))return false;
+    const recent=await pool.query(`SELECT t.proposal_id FROM clarification_threads t
+      JOIN proposed_changes p ON p.id=t.proposal_id
+      JOIN messages ai ON ai.project_id=p.project_id AND ai.kind='ai'
+        AND ai.content LIKE '%' || t.proposal_id::text || '%'
+      WHERE t.project_id=$1 AND t.status IN ('open','answered') AND p.status='pending'
+        AND ai.created_at>NOW()-INTERVAL '30 minutes'
+        AND ai.seq<(SELECT seq FROM messages WHERE id=$2 AND project_id=$1)
+      GROUP BY t.proposal_id ORDER BY MAX(ai.seq) DESC LIMIT 2`,[reply.projectId,reply.id]);
+    // Only a single, recently asked clarification is safe to infer.
+    if(recent.rows.length!==1)return false;
+    proposalId=recent.rows[0].proposal_id as string;
+  }
   const {rows}=await pool.query(`SELECT p.id,p.title,t.status
     FROM proposed_changes p JOIN clarification_threads t ON t.proposal_id=p.id
     WHERE p.id=$1 AND p.project_id=$2 AND p.status='pending' AND t.status IN ('open','answered')`,
