@@ -5,6 +5,13 @@ updates:
     schedule:
       interval: weekly
     open-pull-requests-limit: 5
+    # Keep routine dependency bot PRs safe and reviewable. Major upgrades
+    # require a dedicated migration PR; security updates are unaffected.
+    allow:
+      - dependency-name: '*'
+        update-types:
+          - version-update:semver-minor
+          - version-update:semver-patch
     groups:
       development-tools:
         dependency-type: development
