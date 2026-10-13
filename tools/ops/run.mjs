@@ -5,6 +5,7 @@ import { existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { resolve } from 'node:path';
 import { config as loadEnv } from 'dotenv';
+import { startControl } from './process-control.mjs';
 
 const root = fileURLToPath(new URL('../../', import.meta.url));
 // Next.js runs in apps/web; it does not discover the monorepo root .env by itself.
@@ -39,13 +40,25 @@ for (const file of required) {
 }
 
 const children = new Map();
+let control;
+let resolveDrained;
+const drained=new Promise(resolve=>{resolveDrained=resolve;});
+let finalized=false;
+function finalize(){
+  if(finalized)return;
+  finalized=true;
+  if(forceTimer)clearTimeout(forceTimer);
+  control?.close();
+  resolveDrained();
+  process.exitCode=exitCode;
+}
 let stopping = false;
 let exitCode = 0;
 let forceTimer;
-function stopAll(signal, failed = false) {
+function stopAll(signal, failed = false, requested = false) {
   if (stopping) return;
   stopping = true;
-  exitCode = failed ? (exitCode || 1) : (signal === 'SIGINT' ? 130 : 143);
+  exitCode = failed ? (exitCode || 1) : requested ? 0 : (signal === 'SIGINT' ? 130 : 143);
   for (const [child, name] of children) {
     if (child.exitCode !== null || child.signalCode !== null) continue;
     if (process.platform === 'win32' && name === 'worker' && child.connected) {
@@ -62,8 +75,12 @@ function stopAll(signal, failed = false) {
       }
     }, 60_000);
     forceTimer.unref();
-  }
+  } else finalize();
 }
+control=await startControl(root,()=>{
+  stopAll('SIGTERM',false,true);
+  return drained;
+});
 process.on('SIGINT', () => stopAll('SIGINT'));
 process.on('SIGTERM', () => stopAll('SIGTERM'));
 
@@ -87,10 +104,7 @@ for (const [name, file, args] of entry) {
       exitCode = code || 1;
       stopAll('SIGTERM', true);
     }
-    if (children.size === 0) {
-      if (forceTimer) clearTimeout(forceTimer);
-      process.exitCode = exitCode;
-    }
+    if (children.size === 0) finalize();
   });
 }
 console.log('ChatPM ' + mode + ': started API, Worker and Web in one terminal.');

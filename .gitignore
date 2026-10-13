@@ -11,4 +11,5 @@ coverage/
 /chatpm-*.wrapper.log
 backups/
 logs/
+.chatpm-run.json
 *.partial
