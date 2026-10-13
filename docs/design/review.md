@@ -28,27 +28,26 @@
 Web 仅承担界面与固定上游 HTTP 代理，生产 Compose 不再向 Web 注入数据库连接口令、Session 签名密钥和 OpenAI API 密钥。API、Worker、迁移按职责获取所需凭据。PostgreSQL 不开放宿主机端口，容器备份需通过数据库容器执行。持续验证 Cookie、Origin 和跨平台构建。
 
 
-## /review · 部署、权限、备份与可观测性复审（2026-10-13）
+## 本次整体 /review（2026-10-13）
 
-审查范围：跨平台运行脚本、Compose 依赖与服务健康、Worker Outbox 处理、SQL 迁移、Windows WinSW、Linux systemd、备份工具与双语使用手册。
+审查基线：已合并的 PR #17 及随后的一致性修复。此前 PR 中逐步发现和修正的问题留在 Git 历史；当前文件只维护仍有效的约束与未关闭的事项。
 
-**已处理的高风险设计点：**
-- 消除日常运行的三终端门槛，同时保留 API/Worker/Web 独立进程；前台 CLI 不替代系统级守护。
-- 生产 Docker 初次安装生成独立随机数据库密码及会话密钥，不在重复启动中无故重置。
-- Windows 服务配置从默认 LocalSystem 改为 LocalService，并将写权限限制到日志和 Next 缓存，密钥文件不继承目录的普通访问权限；管理员仍须检查已有显式 ACL 与程序目录写权限。
-- 新增 Worker 最后成功 tick 的数据库心跳和 Doctor 诊断，发现 API/数据库不通、Worker 停滞、Outbox 逾期及死信；这里只提供本地非零退出码，外部告警发送仍需监控平台接入。
-- 新增原生/Docker 备份及 Linux/Windows 定时任务模板，备份使用 custom-format、私有临时文件、完成后原子更名以及受约束的留存清理。文件签名检查不能替代隔离恢复演练。
+### 已检查并修正的文档与部署问题
 
-**未关闭、需要实机独立验收的事项：** Windows 11 WinSW LocalService 实际权限与重启、Linux 断电/开机恢复、任务调度故障告警接入、数据库 PITR、离机加密备份、异机还原演练、生产 HTTPS/Cookie 端到端测试、压力与安全测评。以上均不能由 PR CI 通过直接宣布完成。
+- 生产 Compose 显式向 Worker 注入 `AI_DAILY_REQUEST_LIMIT`，使部署配置与模型调用额度一致；该额度不是 token 费用预算。
+- 本机单独启动 Web 时默认监听 127.0.0.1；容器显式使用 `start:web:container` 监听容器网卡，生产 Compose 仍只发布宿主机回环端口。
+- 清理过期支持链接、WinSW LocalSystem 描述和群聊“全量轮询”说明，区分当前状态快照与尚未实现的带证据历史周期汇报。
+- 将根目录 Markdown、社区双语主题和 Markdown 锚点纳入文档校验；运维脚本及运行配置变更纳入 PR 文档同步门禁。
+- 原生备份保留唯一正式入口 `npm run backup`（私有归档、原子落盘、留存清理）；恢复仅走受确认约束的恢复命令。存量历史记录不作为当前 API 契约。
 
-**合并判定规则**：新增迁移经 PostgreSQL CI、应用回归与 Docker Compose 冒烟、Windows/Linux 构建、安装脚本语法/运维单元测试及文档检查全部通过，并确认 PR 可合并后，代码可作为实验性运维功能进入 main；生产级承诺仍不得发布。
+### 已有设计的合理性
 
+保留 Fastify + Next.js + PostgreSQL + Worker 模块化单体；消息以项目级序号增量轮询，AI 输出只产生候选且需 Owner 审批，正式业务记录和 Outbox 保持数据库事务边界。不引入微服务、多 Agent、自定义队列或旧命令兼容层。
 
-### 本次复审追加：发行与升级
+### 未关闭的发布门槛
 
-原生初装新增 `setup:local` 的模板密钥生成与数据库默认密码阻止；升级新增 `upgrade:native` 的人工停服确认、HTTP 运行态检查与备份先行顺序。CI 可上传便携构建包，但目标机仍需自行安装 Node/PostgreSQL、验证密钥和服务账户，不能标记为已完成正式 MSI/DEB/RPM。
+Windows 11 WinSW LocalService ACL、Linux 关机重启恢复、数据库隔离恢复演练与 PITR、离机加密备份、HTTPS/Cookie E2E、生产告警、提示注入/越权测试以及端到端多人交付均仍需实机验证。CI 通过仅证明对应自动化检查，不构成生产安全验收。
 
+### 合并与文档判定规则
 
-### PR 审查会话修复确认
-
-PR 自动代码审查发现数据卷存在时误轮换凭证、Compose 默认环境目录偏移、Web 子应用缺少根 `.env`、Windows SIGTERM 非优雅停止四项问题。现以受管卷检测、显式 Compose 环境文件、跨进程注入根环境、Windows Worker IPC 排空修复；CI 追加真实首次启动与数据库已有卷凭证丢失的失败关闭用例。修复完成后须重新检查全部 CI，才能关闭审查会话并合并。
+以 PR 的准确 Head SHA 检查 `verify`、`documentation`、Docker、native、security 等可用 Job；人工对比本次 Diff、测试断言、部署命令及中英文公开内容。未跑过的环境或手工步骤不得写为已通过。
