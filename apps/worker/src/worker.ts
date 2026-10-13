@@ -5,9 +5,22 @@ import { generateScheduledReport } from '../../../packages/core/src/reports.ts';
 import { insertMessage } from '../../../packages/core/src/messages.ts';
 import { ConfiguredLLMProvider } from '../../../packages/core/src/ai-provider.ts';
 import { processClarification } from '../../../packages/core/src/clarification.ts';
+import { projectAnalysisContext } from '../../../packages/core/src/project-context.ts';
+import { resolveProjectModel } from '../../../packages/core/src/project-model.ts';
 import { claimEvents, finishEvent, failEvent, type EventRow } from '../../../packages/core/src/outbox.ts';
 
-async function runAnalysis(event:EventRow) {
+type AnalysisResult={kind:'extract'|'clarify'|'reply';status:'proposal'|'no_change'|'clarified'|'replied';modelName?:string};
+async function recordAnalysis(event:EventRow,kind:'extract'|'clarify'|'reply',
+  status:'processing'|'proposal'|'no_change'|'clarified'|'replied'|'failed',modelName?:string,errorCode?:string){
+  await pool.query(`INSERT INTO ai_analysis_runs(
+    project_id,source_message_id,kind,status,model_name,error_code)
+    VALUES($1,$2,$3,$4,$5,$6)
+    ON CONFLICT(project_id,source_message_id) DO UPDATE SET
+      kind=EXCLUDED.kind,status=EXCLUDED.status,model_name=EXCLUDED.model_name,
+      error_code=EXCLUDED.error_code,updated_at=NOW()`,
+    [event.project_id,event.message_id,kind,status,modelName??null,errorCode??null]);
+}
+async function runAnalysis(event:EventRow):Promise<AnalysisResult|null> {
   if(event.kind!=='message.created') throw new Error('UNSUPPORTED_EVENT_KIND');
   if(!event.message_id) throw new Error('EVENT_MISSING_MESSAGE');
   const lookup=await pool.query(
@@ -16,16 +29,35 @@ async function runAnalysis(event:EventRow) {
     [event.message_id,event.project_id],
   );
   const msg=lookup.rows[0] as {kind:string,content:string,name:string,ai_enabled:boolean}|undefined;
-  if(!msg || msg.kind!=='user'||!msg.ai_enabled) return;
+  if(!msg || msg.kind!=='user'||!msg.ai_enabled) return null;
+  const kind=/(?:^|\\s)@AI(?:\\s|$|[：:，,])/iu.test(msg.content)?'reply':'extract';
+  await recordAnalysis(event,kind,'processing');
+  if(kind==='reply'){
+    const settings=await resolveProjectModel(event.project_id);
+    const context=await projectAnalysisContext(event.project_id,event.message_id,
+      settings.contextChars??6500);
+    const result=await new ConfiguredLLMProvider(event.project_id).respond(msg.name,context);
+    await transaction(async db=>{
+      await insertMessage(db,{projectId:event.project_id,authorId:null,kind:'ai',
+        content:result.value.reply,nonce:'reply:'+event.id});
+      await audit(db,event.project_id,null,'ai.reply_created',event.id,
+        {sourceMessageId:event.message_id,modelName:result.modelName});
+    });
+    return {kind:'reply',status:'replied',modelName:result.modelName};
+  }
   if(await processClarification({id:event.message_id,projectId:event.project_id,
-    content:msg.content,projectName:msg.name}))return;
+    content:msg.content,projectName:msg.name}))
+    return {kind:'clarify',status:'clarified'};
   const existing=await pool.query(
     'SELECT 1 FROM proposed_changes WHERE project_id=$1 AND source_message_id=$2 LIMIT 1',
     [event.project_id,event.message_id]);
-  if(existing.rowCount)return; // A retried event must not bill the model twice for stored proposals.
-  const output=await new ConfiguredLLMProvider(event.project_id).extractCandidates(msg.name,msg.content);
+  if(existing.rowCount)return {kind:'extract',status:'proposal'};
+  const settings=await resolveProjectModel(event.project_id);
+  const context=await projectAnalysisContext(event.project_id,event.message_id,
+    settings.contextChars??6500);
+  const output=await new ConfiguredLLMProvider(event.project_id).extractCandidates(msg.name,context);
   const suggestions=output.value;
-  if(!suggestions.length)return;
+  if(!suggestions.length)return {kind:'extract',status:'no_change',modelName:output.modelName};
   await transaction(async db=>{
     let added=0;
     const questions:string[]=[];
@@ -52,33 +84,35 @@ async function runAnalysis(event:EventRow) {
       added+=result.rowCount??0;
     }
     if(added) {
-      const recent=await db.query(
-        `SELECT 1 FROM messages WHERE project_id=$1 AND kind='ai'
-         AND client_nonce LIKE 'analysis:%'
-         AND created_at > NOW()-INTERVAL '10 minutes' LIMIT 1`,
-        [event.project_id]);
-      if(!recent.rowCount){
-        const content='我从刚才的讨论中提取了 '+added+
-          ' 项待确认的任务或风险，负责人可在「AI 待确认」中审核。'+
-          (questions.length?'\n'+questions.slice(0,2).join('\n'):'');
-        await insertMessage(db,{
-          projectId:event.project_id,authorId:null,kind:'ai',
-          content,nonce:'analysis:'+event.id,
-        });
-      }
+      const content='我从刚才的讨论中提取了 '+added+
+        ' 项待确认的任务或风险，负责人可在「AI 待确认」中审核。'+
+        (questions.length?'\n'+questions.slice(0,2).join('\n'):'');
+      await insertMessage(db,{
+        projectId:event.project_id,authorId:null,kind:'ai',
+        content,nonce:'analysis:'+event.id,
+      });
       await audit(db,event.project_id,null,'ai.proposals_created',event.id,
         {sourceMessageId:event.message_id,count:added});
     }
   });
+  return {kind:'extract',status:'proposal',modelName:output.modelName};
 }
 
 async function processEvents() {
   const events=await claimEvents();
   for(const event of events) {
     try {
-      await runAnalysis(event);
+      const result=await runAnalysis(event);
+      if(result && event.message_id)
+        await recordAnalysis(event,result.kind,result.status,result.modelName);
       await finishEvent(event);
     }catch(err) {
+      if(event.message_id){
+        const code=err instanceof Error && /^MODEL_[A-Z0-9_]+$/.test(err.message)
+          ?err.message:err instanceof Error?err.name.slice(0,60):'UNKNOWN_FAILURE';
+        try {await recordAnalysis(event,'extract','failed',undefined,code);}
+        catch { /* Event failure still flows through the outbox retry state. */ }
+      }
       await failEvent(event,err);
       console.error('Outbox event failed',event.id,
         err instanceof Error?err.name:'UnknownFailure');
