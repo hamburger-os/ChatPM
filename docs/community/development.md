@@ -28,6 +28,14 @@ npm run dev
 
 未完成的功能和安全验收见 [实施状态](../design/implementation-status.md)。[English](#english)。
 
+### 模型 API 配置（Windows 11 / Linux / Docker）
+
+在根目录 `.env` 配置 `LLM_API_KEY`、`LLM_BASE_URL`、`LLM_MODEL`、`LLM_API_STYLE`。默认 OpenAI Responses：`https://api.openai.com/v1`、`responses`、`gpt-4.1-mini`。若接入 DeepSeek，将三项改为 `https://api.deepseek.com`、`responses`、`deepseek-flash`，密钥填入 DeepSeek Key。
+
+对于具备 JSON Object 模式的 Chat Completions 兼容服务，可设 `LLM_API_STYLE=chat-completions`；模型结果仍需本地 Zod 校验，不保证每个声称兼容的模型实际可用。本机 Ollama 可尝试 `LLM_BASE_URL=http://127.0.0.1:11434/v1`，`LLM_MODEL` 填已拉取模型名，`LLM_API_STYLE=chat-completions`，`LLM_API_KEY=local-test`（仅本地测试占位）。Docker 内 localhost 并非 Windows 宿主机；可通过受保护的 `host.docker.internal` 访问宿主，但应确认本地模型服务监听及防火墙，不能将未鉴权模型公网暴露。
+
+模型密钥为空时不发送外部请求；即使配置密钥，也要项目负责人在 ChatPM 内明确启用 AI。不要提交含 Key 的 `.env`。修改后原生重启 `npm start`，Docker 重新运行 `npm run deploy:docker`。真实 DeepSeek/Ollama API 功能与费用未完成联调。
+
 ### 可靠性说明
 消息增量游标按项目提交顺序保证不漏读；重新调整任务不会绕过已发送提醒的冷却间隔。周/月报统计覆盖全项目，明细有条数上限；同周期草稿可以重新生成，已发布报告不可覆盖。这些行为可通过 `node tools/test/smoke.mjs` 在已迁移的 PostgreSQL 实例上回归。
 
@@ -113,6 +121,13 @@ docker compose --env-file .env -f infra/compose.prod.yml exec -T postgres pg_dum
 ---
 
 ## English
+
+### Model API configuration (Windows / Linux / Docker)
+
+Set `LLM_API_KEY`, `LLM_BASE_URL`, `LLM_MODEL` and `LLM_API_STYLE` in the root `.env`. Defaults: OpenAI Responses (`https://api.openai.com/v1`, `responses`, `gpt-4.1-mini`). For DeepSeek Responses use `https://api.deepseek.com`, `responses`, `deepseek-flash`, and a DeepSeek API key. Set `chat-completions` for servers supporting Chat Completions JSON Object mode; all outputs are still checked with Zod. Real compatibility is not guaranteed.
+
+Local Ollama experiments may use `http://127.0.0.1:11434/v1`, `chat-completions`, an installed model name and a placeholder `LLM_API_KEY=local-test`. In containers, localhost is the container itself; `host.docker.internal` may be used only for a protected, reachable host API. Never expose an unauthenticated local model to the public internet. Blank keys disable outbound requests. A project owner must also opt in explicitly. Never commit `.env`. Restart native `npm start` or rerun `npm run deploy:docker` after config changes. Real DeepSeek/Ollama behavior, privacy and cost still need live validation.
+
 
 Node.js 24 LTS is recommended; Docker can provide a database-only development instance or a complete production-style Compose stack. Native Windows/Linux deployment is also supported. From the repository root:
 
