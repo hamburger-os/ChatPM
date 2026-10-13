@@ -66,7 +66,7 @@ function owner(m:{role:string}) {
 }
 async function issueSession(reply:{setCookie:Function},userId:string) {
   reply.setCookie('chatpm_session',await createSession(userId),{
-    path:'/',httpOnly:true,secure:serverConfig.NODE_ENV==='production',
+    path:'/',httpOnly:true,secure:new URL(serverConfig.WEB_ORIGIN).protocol==='https:',
     sameSite:'lax',maxAge:7*86400,
   });
 }

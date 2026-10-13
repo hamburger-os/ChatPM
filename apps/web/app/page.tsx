@@ -418,7 +418,7 @@ export default function Home(){
             <small>{m.email} · {m.role}</small><small>ID: {m.id}</small></div>)}
           {current?.role==='owner'&&<>
             <form className="row-form" onSubmit={inviteMember}>
-              <input type="email" placeholder="邀请已注册成员的邮箱" value={invite} required
+              <input type="email" placeholder="添加已注册成员的邮箱" value={invite} required
                 onChange={e=>setInvite(e.target.value)}/>
               <button disabled={working}>加入</button>
             </form>

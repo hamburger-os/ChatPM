@@ -12,4 +12,4 @@ ENV NODE_ENV=production
 COPY --chown=node:node --from=build /app /app
 USER node
 EXPOSE 3000 3001
-CMD ["npm","run","start:web"]
+CMD ["npm","run","start:web:container"]

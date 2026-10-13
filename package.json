@@ -21,7 +21,8 @@
     "db:migrate:prod": "node dist/packages/core/src/migrate.js",
     "start:api": "node dist/apps/api/src/server.js",
     "start:worker": "node dist/apps/worker/src/worker.js",
-    "start:web": "next start apps/web -p 3000 -H 0.0.0.0",
+    "start:web": "next start apps/web -p 3000 -H 127.0.0.1",
+    "start:web:container": "next start apps/web -p 3000 -H 0.0.0.0",
     "check:distribution": "node tools/test/distribution.mjs",
     "start": "node tools/ops/run.mjs prod",
     "deploy:docker": "node tools/ops/deploy.mjs",
@@ -30,6 +31,7 @@
     "doctor": "node tools/ops/doctor.mjs",
     "backup": "node tools/ops/backup.mjs",
     "backup:docker": "node tools/ops/backup.mjs --docker",
+    "restore": "node tools/ops/restore.mjs",
     "setup:local": "node tools/ops/bootstrap-native.mjs",
     "upgrade:native": "node tools/ops/upgrade.mjs"
   },

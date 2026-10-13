@@ -27,6 +27,8 @@ jobs:
           node-version: '22'
       - name: Validate structure, links, and bilingual files
         run: node tools/docs/check-docs.mjs
+      - name: Regression tests for root links and Markdown anchors
+        run: node --test tools/docs/check-docs.test.mjs
       - name: Verify documentation changes in PR
         if: github.event_name == 'pull_request'
         run: node tools/docs/check-sync.mjs "origin/$GITHUB_BASE_REF" HEAD

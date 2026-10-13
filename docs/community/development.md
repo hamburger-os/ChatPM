@@ -4,7 +4,7 @@
 
 ## 中文
 
-开发建议 Node.js 24 LTS；Docker 仅用于可选的 PostgreSQL 开发实例。在仓库根目录：
+开发建议 Node.js 24 LTS；开发环境可用 Docker 仅启动 PostgreSQL，正式部署另有完整 Compose 或 Windows/Linux 原生安装方案。在仓库根目录：
 
 ```bash
 cp .env.example .env
@@ -32,7 +32,7 @@ npm run dev
 消息增量游标按项目提交顺序保证不漏读；重新调整任务不会绕过已发送提醒的冷却间隔。周/月报统计覆盖全项目，明细有条数上限；同周期草稿可以重新生成，已发布报告不可覆盖。这些行为可通过 `node tools/test/smoke.mjs` 在已迁移的 PostgreSQL 实例上回归。
 
 ### 澄清与失败恢复
-AI 开启后，缺字段的候选任务在群聊中包含「【候选:UUID】」。成员回复携带该引用并提供明确负责人或带时区期限，AI 只保存待审核线索；项目负责人仍需确认候选。项目负责人在「设置」中能查看和重试隔离事件。AI_DAILY_REQUEST_LIMIT 服务端环境变量按项目限制每日调用数，默认 50，AI 仍默认关闭。数据库回归：`node --import tsx packages/core/test/outbox.integration.ts`。
+AI 开启后，缺字段的候选任务在群聊中包含「【候选:UUID】」。成员回复携带该引用并提供明确负责人或带时区期限，AI 只保存待审核线索；项目负责人仍需确认候选。项目负责人在「设置」中能查看和重试隔离事件。AI_DAILY_REQUEST_LIMIT 服务端环境变量按项目 UTC 日期限制每日调用数，默认 50；Docker Compose 将该变量传给 Worker，AI 仍默认关闭。数据库回归：`node --import tsx packages/core/test/outbox.integration.ts`。
 
 ### 自动报告补充
 Worker 只在项目时区符合计划时创建本期周/月报一次；不会每次轮询覆盖草稿。负责人可重新生成未发布报告，已发布报告保持不变。数据库回归：`node --import tsx packages/core/test/reports.integration.ts`。
@@ -69,7 +69,7 @@ Docker/Compose 与 Node 已安装后，在仓库根目录执行：
 npm run deploy:docker
 ```
 
-首次自动创建 `.env` 并生成缺失/模板中的随机 SESSION_SECRET 与 POSTGRES_PASSWORD；不覆盖已有非占位符秘密，重复执行幂等。该命令不安装 Docker，不自动创建公网 TLS，也不覆盖已存在数据库。已有配置可继续直接执行 `docker compose --env-file .env -f infra/compose.prod.yml up -d --build`。查看运行状态：`docker compose --env-file .env -f infra/compose.prod.yml ps`；停服务：`docker compose --env-file .env -f infra/compose.prod.yml down`（不要添加 `-v`）。
+首次自动创建 `.env` 并生成缺失/模板中的随机 SESSION_SECRET 与 POSTGRES_PASSWORD；不覆盖已有非占位符秘密，重复执行幂等。该命令不安装 Docker，不自动创建公网 TLS，也不覆盖已存在数据库。已有配置可继续直接执行 `docker compose --env-file .env -f infra/compose.prod.yml up -d --build`。Worker 使用 `AI_DAILY_REQUEST_LIMIT`（默认 50）；它限制调用次数而非 token 费用。查看运行状态：`docker compose --env-file .env -f infra/compose.prod.yml ps`；停服务：`docker compose --env-file .env -f infra/compose.prod.yml down`（不要添加 `-v`）。
 
 默认仅监听本机 `127.0.0.1:3000`。已配置 `restart: unless-stopped`，但主机重启自动恢复仍需要 Docker 引擎随系统启动（Windows Docker Desktop 通常在用户登录后启动）。公网访问应由 HTTPS 反向代理接入；数据库持久化为命名卷。开发用 `infra/compose.yml` 仍只有 PostgreSQL。
 
@@ -89,7 +89,13 @@ npm run deploy:docker
 
 ### 备份、恢复和正式上线限制
 
-`node tools/ops/postgres.mjs backup ./backups/chatpm.dump` 需要 PostgreSQL 客户端。恢复到隔离实例前停止服务，执行 `node tools/ops/postgres.mjs restore ./backups/chatpm.dump --confirm-replace`，这会覆盖目标库对象。必须另行建立自动备份、加密和恢复演练。
+`npm run backup -- --dir=./backups --keep=14` 使用 PostgreSQL 客户端和原子私有备份。恢复到隔离实例前停止全部服务，执行 `npm run restore -- ./backups/<实际归档文件>.dump --confirm-replace --confirm-services-stopped`，这会删除或覆盖归档包含的目标库对象。**恢复脚本不会自动执行迁移**。恢复成功后，必须在重新启动服务前另行运行：
+
+```bash
+npm run db:migrate:prod
+```
+
+仍须建立加密备份、离机保存与定期隔离恢复演练。
 
 以上是部署入口及示例，并非 Windows Service、Linux 服务、HTTPS、性能、隐私与生产灾备的已通过实机验收；敏感项目上线仍需完成这些验收。参见 [部署架构](../design/deployment.md)。
 
@@ -108,7 +114,7 @@ docker compose --env-file .env -f infra/compose.prod.yml exec -T postgres pg_dum
 
 ## English
 
-Node.js 24 LTS is recommended; Docker is optional and only provides the development PostgreSQL instance. From the repository root:
+Node.js 24 LTS is recommended; Docker can provide a database-only development instance or a complete production-style Compose stack. Native Windows/Linux deployment is also supported. From the repository root:
 
 ```bash
 cp .env.example .env
@@ -136,7 +142,7 @@ See [implementation gaps (Chinese)](../design/implementation-status.md) for unim
 The per-project message cursor follows transaction commit order to prevent missing chat messages. Replanning a task preserves the cooldown of its last reminder. Weekly/monthly counts cover all project tasks while detail lists are bounded; drafts can be regenerated, but published reports remain immutable. Verify these behaviors with `node tools/test/smoke.mjs` against a migrated PostgreSQL instance.
 
 ### clarification and recovery
-For opted-in AI, tasks with missing details get a `【候选:UUID】` reference. Team members may reply with the exact reference and an explicit assignee or timezone-aware deadline. Suggestions remain pending until the project owner approves them. Owners may inspect and retry quarantined background events in Settings. AI_DAILY_REQUEST_LIMIT limits each project's daily model calls (default 50); external AI remains disabled by default. Database regression: `node --import tsx packages/core/test/outbox.integration.ts`.
+For opted-in AI, tasks with missing details get a `【候选:UUID】` reference. Team members may reply with the exact reference and an explicit assignee or timezone-aware deadline. Suggestions remain pending until the project owner approves them. Owners may inspect and retry quarantined background events in Settings. AI_DAILY_REQUEST_LIMIT limits each project's model calls per UTC day (default 50) and is passed to the Worker by Docker Compose; external AI remains disabled by default. Database regression: `node --import tsx packages/core/test/outbox.integration.ts`.
 
 ### Scheduled reporting
 The Worker creates a scheduled weekly/monthly report only once per project and reporting period. Polling does not overwrite drafts; owners can manually regenerate an unpublished draft, while published reports remain unchanged. Database regression: `node --import tsx packages/core/test/reports.integration.ts`.
@@ -161,7 +167,7 @@ Install Node.js 24 and PostgreSQL 17/client tools; create a database, database r
 
 ### Complete Docker Compose
 
-With Docker/Compose and Node installed, run `npm run deploy:docker`. It initializes missing/placeholder SESSION_SECRET and POSTGRES_PASSWORD in `.env`, then builds and starts the stack in the background without replacing configured secrets or databases. Repeat runs preserve secrets. To check use `docker compose --env-file .env -f infra/compose.prod.yml ps`, and to stop use `docker compose --env-file .env -f infra/compose.prod.yml down` (never add `-v` unless deleting data is intended). `restart: unless-stopped` works after a host reboot only if Docker itself starts; Docker Desktop commonly starts after user sign-in. Only `127.0.0.1:3000` is published; add a secure external HTTPS proxy to expose it. `infra/compose.yml` remains the database-only development Compose.
+With Docker/Compose and Node installed, run `npm run deploy:docker`. It initializes missing/placeholder SESSION_SECRET and POSTGRES_PASSWORD in `.env`, then builds and starts the stack in the background without replacing configured secrets or databases. Repeat runs preserve secrets. The Worker receives `AI_DAILY_REQUEST_LIMIT` (default 50); this is a request count, not a token-cost budget. To check use `docker compose --env-file .env -f infra/compose.prod.yml ps`, and to stop use `docker compose --env-file .env -f infra/compose.prod.yml down` (never add `-v` unless deleting data is intended). `restart: unless-stopped` works after a host reboot only if Docker itself starts; Docker Desktop commonly starts after user sign-in. Only `127.0.0.1:3000` is published; add a secure external HTTPS proxy to expose it. `infra/compose.yml` remains the database-only development Compose.
 
 ### Experimental portable distributions
 
@@ -179,7 +185,7 @@ Templates and CI do not prove real machine boot-recovery, end-to-end restore, en
 
 ### Database operations and release status
 
-`node tools/ops/postgres.mjs backup ./backups/chatpm.dump` creates a PostgreSQL custom-format backup. After stopping ChatPM and selecting an isolated target, `node tools/ops/postgres.mjs restore ./backups/chatpm.dump --confirm-replace` **overwrites database objects**. Automated backups, real recovery exercises, TLS, Windows service resilience, operational alerts, and production security certification have not been completed; do not use sensitive production data.
+`npm run backup -- --dir=./backups --keep=14` creates a private, atomic PostgreSQL custom-format archive. After stopping ChatPM and selecting an isolated target, run `npm run restore -- ./backups/<actual-archive>.dump --confirm-replace --confirm-services-stopped`, then `npm run db:migrate:prod`. Restore **drops or overwrites objects included in the archive**. Automated backups, real recovery exercises, TLS, Windows service resilience, operational alerts, and production security certification have not been completed; do not use sensitive production data.
 
 #### Compose database backups
 

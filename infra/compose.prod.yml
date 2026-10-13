@@ -60,8 +60,12 @@ services:
   worker:
     <<: *app
     command: ["npm","run","start:worker"]
+    environment:
+      <<: *app-env
+      AI_DAILY_REQUEST_LIMIT: ${AI_DAILY_REQUEST_LIMIT:-50}
   web:
     <<: *app
+    command: ["npm","run","start:web:container"]
     # Web is an HTTP proxy only; never inject database, AI or signing secrets.
     environment:
       NODE_ENV: production

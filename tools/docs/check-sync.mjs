@@ -19,10 +19,17 @@ if (result.status !== 0) {
 
 const changed = result.stdout.split(/\r?\n/).filter(Boolean);
 const set = new Set(changed);
-const productCode = changed.some((name) => /^(apps|packages|infra|database)\//.test(name));
+// Deployment entry points and runtime configuration are product behavior too.
+const productCode = changed.some((name) =>
+  /^(apps|packages|infra|database)\//.test(name) ||
+  /^(tools\/ops|tools\/build)\//.test(name) ||
+  ['package.json', '.env.example'].includes(name));
 const errors = [];
 
 if (productCode) {
+  if (!changed.some(name => /^docs\/community\/(?!README\.md$).+\.md$/.test(name))) {
+    errors.push('Product behavior change requires an updated bilingual community guide.');
+  }
   if (!changed.some((name) => /^docs\/design\/(?!README\.md$).+\.md$/.test(name))) {
     errors.push('Product code change requires a corresponding Chinese design module update.');
   }

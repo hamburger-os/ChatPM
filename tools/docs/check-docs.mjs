@@ -40,24 +40,76 @@ if (fs.existsSync(docsRoot)) {
 
 
 const docs = [
+  ...fs.readdirSync(root, { withFileTypes: true })
+    .filter(entry => entry.isFile() && entry.name.endsWith('.md'))
+    .map(entry => path.join(root, entry.name)),
   ...walk(path.join(root, 'docs')),
   ...walk(path.join(root, '.agents')),
-  path.join(root, 'README.md'),
-  path.join(root, 'AGENTS.md'),
+  ...walk(path.join(root, '.github')),
 ].filter((file) => file.endsWith('.md') && fs.existsSync(file));
 
+// Match GitHub-style Markdown heading fragments, including repeated headings.
+function titleSlug(title) {
+  return title.toLowerCase()
+    .replace(/!?\[([^\]]*)\]\([^)]*\)/g, '$1')
+    .replace(/[\x60*_~]/g, '')
+    .replace(/[^\p{L}\p{N}\s_-]/gu, '')
+    .trim().replace(/\s/g, '-');
+}
+function anchorsFor(body) {
+  const anchors = new Set();
+  const count = new Map();
+  const visible = [];
+  let fence = null;
+  for (const line of body.split(/\r?\n/)) {
+    const marker = line.match(/^[ \t]{0,3}(\x60{3,}|~{3,})(.*)$/);
+    if (marker) {
+      const kind = marker[1][0], size = marker[1].length;
+      if (!fence) fence = { kind, size };
+      else if (fence.kind === kind && size >= fence.size && !marker[2].trim()) fence = null;
+      continue;
+    }
+    if (fence) continue;
+    visible.push(line);
+    const heading = line.match(/^#{1,6}\s+(.+?)\s*#*\s*$/);
+    if (!heading) continue;
+    const slug = titleSlug(heading[1]);
+    const n = count.get(slug) || 0;
+    anchors.add(n ? slug + '-' + n : slug);
+    count.set(slug, n + 1);
+  }
+  for (const match of visible.join('\n').matchAll(/<a\s+[^>]*(?:id|name)=[\x22']([^\x22']+)[\x22'][^>]*>/gi))
+    anchors.add(match[1].toLowerCase());
+  return anchors;
+}
+const allAnchors = new Map(docs.map(file =>
+  [file, anchorsFor(fs.readFileSync(file, 'utf8'))]));
 for (const file of docs) {
   const body = fs.readFileSync(file, 'utf8');
   const rel = path.relative(root, file).replaceAll(path.sep, '/');
   if (!body.trim().startsWith('#') && !body.trim().startsWith('---')) {
     errors.push('Missing heading/frontmatter: ' + rel);
   }
-  for (const match of body.matchAll(/\[[^\]]*\]\(([^)]+)\)/g)) {
+  for (const match of body.matchAll(/!?\[[^\]]*\]\(([^)]+)\)/g)) {
     const link = match[1].trim().replace(/^<|>$/g, '');
-    if (!link || link.startsWith('#') || /^(https?:|mailto:|data:)/i.test(link)) continue;
-    const relative = decodeURIComponent(link.split('#')[0].split('?')[0]);
-    const target = path.resolve(path.dirname(file), relative);
+    if (!link || /^(https?:|mailto:|data:)/i.test(link)) continue;
+    const hashAt = link.indexOf('#');
+    const href = hashAt === -1 ? link : link.slice(0, hashAt);
+    const fragment = hashAt === -1 ? '' : link.slice(hashAt + 1);
+    let relative, anchor;
+    try {
+      relative = decodeURIComponent(href.split('?')[0]);
+      anchor = decodeURIComponent(fragment).toLowerCase();
+    } catch {
+      errors.push('Invalid link encoding: ' + rel + ' -> ' + link);
+      continue;
+    }
+    const target = relative ? path.resolve(path.dirname(file), relative) : file;
     if (!fs.existsSync(target)) errors.push('Broken link: ' + rel + ' -> ' + link);
+    else if (anchor && target.endsWith('.md')) {
+      const anchors = allAnchors.get(target) || anchorsFor(fs.readFileSync(target, 'utf8'));
+      if (!anchors.has(anchor)) errors.push('Broken anchor: ' + rel + ' -> ' + link);
+    }
   }
 }
 
@@ -104,5 +156,5 @@ if (errors.length) {
   console.error(errors.length + ' documentation error(s).');
   process.exit(1);
 }
-console.log('Documentation checks passed: ' + docs.length + ' Markdown files, '
+console.log('Documentation checks passed: ' + docs.length + ' Markdown files (including root and .github), '
   + topicFiles.length + ' single-file bilingual community topics.');

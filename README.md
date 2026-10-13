@@ -111,7 +111,7 @@ npm start
 
 ## Docker（可选）
 
-Docker 不是必需组件。上述 `npm run deploy:docker` 提供第一次安装时的配置与秘密初始化；已有安全配置的环境也可直接执行 `docker compose --env-file .env -f infra/compose.prod.yml up -d --build`。开发用 `infra/compose.yml` 只启动 PostgreSQL。
+Docker 不是必需组件。`npm run start:web` 默认只监听回环地址，容器环境通过 `start:web:container` 明确监听容器网卡。上述 `npm run deploy:docker` 提供第一次安装时的配置与秘密初始化；已有安全配置的环境也可直接执行 `docker compose --env-file .env -f infra/compose.prod.yml up -d --build`。开发用 `infra/compose.yml` 只启动 PostgreSQL。
 
 ## 运维诊断、备份与升级
 
@@ -130,7 +130,7 @@ GitHub Actions 的 `Cross-platform native builds` 工作流会为 Windows 和 Li
 
 ## 本地演示路线
 
-1. 注册账号并创建团队/项目，邀请已注册的成员。
+1. 注册账号并创建团队/项目，按邮箱直接添加已注册成员（当前没有邮件邀请和接受流程）。
 2. 在项目聊天室中讨论可交付事项；未配置模型时可以手动创建任务。
 3. 可选择配置服务端 API Key 并由项目负责人显式开启外部 AI，将讨论转为有依据的**候选任务/风险**。
 4. 由负责人审批候选、确认任务负责人和期限，配置工作时间与提醒冷却。
@@ -157,7 +157,7 @@ npm run check:docs
 
 ## 安全与隐私
 
-默认不开启第三方模型传输；成员身份、项目权限与候选审批由服务端控制。请阅读 [安全政策](SECURITY.md)、[隐私与数据边界](PRIVACY.md) 和 [当前限制](docs/design/implementation-status.md)。敏感业务数据请勿直接用于未经生产验收的实例。
+默认不开启第三方模型传输；Docker 部署通过 `AI_DAILY_REQUEST_LIMIT`（默认 50）配置每项目 UTC 日模型请求次数，这不是 token 费用预算；成员身份、项目权限与候选审批由服务端控制。请阅读 [安全政策](SECURITY.md)、[隐私与数据边界](PRIVACY.md) 和 [当前限制](docs/design/implementation-status.md)。敏感业务数据请勿直接用于未经生产验收的实例。
 
 ## 参与开源
 

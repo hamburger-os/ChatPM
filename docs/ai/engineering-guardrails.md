@@ -16,7 +16,7 @@
 - Outbox 已具备 UUID 领取令牌、重试退避、隔离与项目负责人手动重放；候选已记录模型/Prompt 版本。生产前仍要补主动告警、审计覆盖与恢复演练。
 - 内建项目授权与会话 Cookie、Origin 校验、请求限速并不构成生产安全认证。
 - 生成的报告只代表执行时的当前任务/风险状态，不应宣称历史周期完成率。
-- 群聊目前是全量短轮询；后续实现增量/推送时需保留服务端顺序与权限校验。
+- 群聊消息目前按项目 `seq` 游标每 5 秒增量轮询（首次最近 200 条）；任务等其余资源仍定时刷新。后续推送必须保留顺序与权限校验。
 
 ## 关键不变量
 - Outbox 最多八次交付、租约五分钟；逾期的最终尝试必须隔离，失败只保存脱敏代码，重放受项目 owner 授权和审计。
@@ -49,7 +49,7 @@
 - `tools/ops/run.mjs` 只负责本机**前台**三个子进程的统一运行；意外退出时组内故障显式可见，并向其他进程发出终止信号。不得用于声称已具备后台守护、滚动更新、故障隔离或开机自启。
 - `tools/ops/deploy.mjs` 依赖已安装的 Docker Compose；首次安装生成独立随机 SESSION_SECRET 与 POSTGRES_PASSWORD，不输出密钥，不重写用户已设置的秘密，重复运行保持幂等。
 - 原生迁移与编译通过 `npm run setup:native` 统一执行；PostgreSQL 配置必须预先有效，不能在失败后静默创建或删除已有数据库。
-- Linux systemd 三服务统一读取 `/opt/chatpm/.env`，Windows WinSW 使用根目录 `.env`。秘密文件只授权服务运行账户读取；Windows 当前 WinSW 默认 LocalSystem 仍是需要人工加固的风险。
+- Linux systemd 三服务统一读取 `/opt/chatpm/.env`，Windows WinSW 使用根目录 `.env`。秘密文件只授权服务运行账户读取；Windows WinSW 显式使用 LocalService；文件 ACL、服务恢复及权限边界仍需实机验收，不能视为已通过。
 - CI 覆盖 Docker 配置的秘密生成、重复执行、已有设置保护以及 Windows/Linux Node 入口语法；Docker 服务自启和原生服务实际故障恢复需要另外在目标系统验证。
 
 ## 运维健康、备份、恢复的非业务边界（ADR-018）
