@@ -51,7 +51,6 @@ const docs = [
 // Match GitHub-style Markdown heading fragments, including repeated headings.
 function titleSlug(title) {
   return title.toLowerCase()
-    .replace(/<[^>]*>/g, '')
     .replace(/!?\[([^\]]*)\]\([^)]*\)/g, '$1')
     .replace(/[\x60*_~]/g, '')
     .replace(/[^\p{L}\p{N}\s_-]/gu, '')
