@@ -122,7 +122,7 @@ test('Web binds loopback natively and exposes container networking only when exp
     /CMD \["npm","run","start:web:container"\]/);
 });
 
-import { mkdtempSync, rmSync, readFileSync, writeFileSync, existsSync } from 'node:fs';
+import { mkdtempSync, rmSync, writeFileSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { connect } from 'node:net';
