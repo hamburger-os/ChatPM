@@ -72,7 +72,7 @@ export async function resolveProjectModel(projectId:string):Promise<LLMSettings>
     contextChars:row.model_context_chars,reasoning:row.model_reasoning};
 }
 export async function updateProjectModel(
-  db:DbClient,projectId:string,value:ProjectModelSettings & {apiKey?:string;clearKey?:boolean},
+  db:DbClient,projectId:string,value:Omit<ProjectModelSettings,'hasKey'> & {apiKey?:string;clearKey?:boolean},
 ){
   if(value.provider!=='server' && !value.model.trim())throw new Error('MODEL_INVALID_MODEL');
   const old=(await db.query('SELECT model_provider,model_key_ciphertext FROM projects WHERE id=$1 FOR UPDATE',
