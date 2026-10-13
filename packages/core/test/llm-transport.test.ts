@@ -104,3 +104,17 @@ test('fetch explicitly forbids redirecting POST chat contents and model keys',as
   };
   await assert.rejects(callStructuredLLM(settings(),'sensitive project text',schema,mocked),TypeError);
 });
+
+test('read-only PM replies use a separate system role and respect configured budgets',async()=>{
+  const config={...settings(),maxOutputTokens:900,contextChars:2000,reasoning:'high' as const};
+  const data=await callStructuredLLM(config,'project status',schema,async(_url,init)=>{
+    const body=JSON.parse(String(init?.body));
+    assert.equal(body.max_output_tokens,900);
+    assert.equal(body.reasoning.effort,'high');
+    assert.ok(body.input[0].content.includes('AI 项目经理助手'));
+    assert.equal(body.input[0].content.includes('项目记录抽取器'),false);
+    return new Response(JSON.stringify({status:'completed',
+      output:[{content:[{type:'output_text',text:json}]}]}),{status:200});
+  },'reply');
+  assert.deepEqual(data,{items:['task']});
+});

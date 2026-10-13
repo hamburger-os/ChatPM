@@ -3,6 +3,7 @@ import { randomUUID } from 'node:crypto';
 import { pool, transaction } from '../src/db.ts';
 import { insertMessage } from '../src/messages.ts';
 import { processClarification } from '../src/clarification.ts';
+import { projectAnalysisContext } from '../src/project-context.ts';
 import { DailyAIBudgetExceeded } from '../src/ai-provider.ts';
 
 const id=randomUUID();
@@ -96,6 +97,9 @@ try{
     id:plain.id,projectId:project.id,content:plain.content,projectName:'AI mocked project',
   }),true);
   assert.equal(providerCalls,3);
+  const context=await projectAnalysisContext(project.id,plain.id,1400);
+  assert.ok(context.length<=1400,'Configured context budget must not be exceeded');
+  assert.ok(context.includes(plain.content),'The newest user message must remain in context');
   // Unparseable dates are acknowledged but never guessed; replays cannot double-spend.
   const vague=await reply('仅说九月底');
   assert.ok(vague);
