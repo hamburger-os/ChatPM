@@ -66,7 +66,7 @@ async function runAnalysis(event:EventRow):Promise<AnalysisResult|null> {
     WHERE project_id=$1 AND status NOT IN ('done','cancelled')`,[event.project_id]);
   const matching=new Map(known.rows.map(r=>[r.id as string,r.title as string]));
 
-  await transaction(async db=>{
+  const total=await transaction(async db=>{
     let added=0,progressAdded=0;
     const questions:string[]=[];
     const usedTasks=new Set<string>();
@@ -86,7 +86,23 @@ async function runAnalysis(event:EventRow):Promise<AnalysisResult|null> {
       // Exact/contained normalized titles cannot create a second active task.
       // Ambiguous semantic matches stay human-reviewed; never auto-merge by fuzzy score.
       if(item.kind==='task'){
-        if(isDuplicateActiveTask(item.title,[...matching.values()]))continue;
+        const candidates=known.rows.filter(t=>isDuplicateActiveTask(item.title,[t.title]));
+        if(candidates.length){
+          // When the model emits a duplicate "new task" instead of a progress link,
+          // a unique normalized match becomes pending evidence, never a formal update.
+          if(candidates.length===1&&!usedTasks.has(candidates[0].id)){
+            const saved=await db.query(`INSERT INTO task_progress_updates(
+              project_id,task_id,source_message_id,summary,kind,model_name,prompt_version)
+              SELECT $1,t.id,$3,$4,'progress',$5,$6 FROM tasks t
+              WHERE t.project_id=$1 AND t.id=$2 AND t.status NOT IN ('done','cancelled')
+              ON CONFLICT(project_id,task_id,source_message_id) DO NOTHING RETURNING id`,
+              [event.project_id,candidates[0].id,event.message_id,msg.content.slice(0,2000),
+                output.modelName,output.promptVersion]);
+            progressAdded+=saved.rowCount??0;
+            usedTasks.add(candidates[0].id);
+          }
+          continue;
+        }
       }
       const result=await db.query(
         `INSERT INTO proposed_changes(
@@ -120,8 +136,9 @@ async function runAnalysis(event:EventRow):Promise<AnalysisResult|null> {
       await audit(db,event.project_id,null,'ai.proposals_created',event.id,
         {sourceMessageId:event.message_id,count:added,progressCount:progressAdded});
     }
+    return added+progressAdded;
   });
-  return {kind:'extract',status:'proposal',modelName:output.modelName};
+  return {kind:'extract',status:total>0?'proposal':'no_change',modelName:output.modelName};
 }
 
 async function processEvents() {

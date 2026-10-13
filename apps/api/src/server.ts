@@ -441,6 +441,16 @@ app.post('/projects/:id/progress/:progressId/decision',async req=>{
       [progress,projectId,decision,userId]);
     if(!rows.length)fail(409,'进度建议已处理或不存在');
     await audit(db,projectId,userId,'task.progress_'+decision,progress,{taskId:rows[0].task_id});
+    // A newly accepted blocker should be checked promptly, without bypassing
+    // the reminder policy's existing last-successful-send cooldown.
+    if(decision==='accepted'){
+      await db.query(`UPDATE followup_plans fp SET next_at=GREATEST(
+        LEAST(fp.next_at,NOW()+INTERVAL '1 minute'),
+        COALESCE(fp.last_sent_at+(p.cooldown_hours*INTERVAL '1 hour'),NOW()))
+        FROM projects p JOIN task_progress_updates u ON u.project_id=p.id
+        WHERE u.id=$1 AND fp.project_id=$2 AND fp.task_id=u.task_id
+          AND u.kind='blocker' AND fp.active`,[progress,projectId]);
+    }
     return {ok:true};
   });
 });
