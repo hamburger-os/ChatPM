@@ -53,7 +53,9 @@ export async function processClarification(reply:Reply):Promise<boolean>{
     await transaction(async db=>{
       const saved=await db.query(`INSERT INTO clarification_responses(
         project_id,proposal_id,message_id,model_name,prompt_version,assignee_hint,due_at,confidence)
-        VALUES($1,$2,$3,$4,$5,NULL,NULL,$6)
+        SELECT $1,$2,$3,$4,$5,NULL,NULL,$6 WHERE EXISTS(
+          SELECT 1 FROM proposed_changes
+          WHERE id=$2 AND project_id=$1 AND status='pending')
         ON CONFLICT(proposal_id,message_id) DO NOTHING RETURNING id`,
         [reply.projectId,proposalId,reply.id,result.modelName,
           result.promptVersion,suggestion.confidence]);
