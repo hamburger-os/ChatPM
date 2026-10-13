@@ -36,11 +36,20 @@ export async function processClarification(reply:Reply):Promise<boolean>{
   const result=await new ConfiguredLLMProvider(reply.projectId).clarify(reply.projectName,rows[0].title,reply.content);
   const suggestion=result.value;
   if(!suggestion.assignee_hint&&!suggestion.due_at){
-    await transaction(db=>insertMessage(db,{
-      projectId:reply.projectId,authorId:null,kind:'ai',
-      content:'我收到了【候选:'+proposalId+'】的回复，但还无法确认具体负责人或包含年份、时区的截止时间。请补充明确日期，例如 2026-11-30 18:00（北京时间），我不会猜测。',
-      nonce:'clarification-needs-detail:'+reply.id,
-    }).then(()=>{}));
+    await transaction(async db=>{
+      const saved=await db.query(`INSERT INTO clarification_responses(
+        project_id,proposal_id,message_id,model_name,prompt_version,assignee_hint,due_at,confidence)
+        VALUES($1,$2,$3,$4,$5,NULL,NULL,$6)
+        ON CONFLICT(proposal_id,message_id) DO NOTHING RETURNING id`,
+        [reply.projectId,proposalId,reply.id,result.modelName,
+          result.promptVersion,suggestion.confidence]);
+      if(!saved.rowCount)return;
+      await insertMessage(db,{
+        projectId:reply.projectId,authorId:null,kind:'ai',
+        content:'已收到【候选:'+proposalId+'】的回复，但目前还无法确认负责人或包含确切年份及时区的期限。请补充明确的信息，我不会猜测。',
+        nonce:'clarification-needs-detail:'+reply.id,
+      });
+    });
     return true;
   }
   await transaction(async db=>{
