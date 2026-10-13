@@ -114,27 +114,6 @@ try{
     maxOutputTokens:2048,contextChars:6500,
   }});
   assert.equal(resetModel.status,200);
-  const progressSource=await api('/projects/'+pid+'/messages',{method:'POST',
-    body:{content:'方案初稿已完成，请核对评审',nonce:randomUUID()}});
-  assert.equal(progressSource.status,201);
-  const taskForProgress=(await db.query('SELECT id FROM tasks WHERE project_id=$1 LIMIT 1',[pid])).rows[0];
-  assert.ok(taskForProgress);
-  const progressInsert=(await db.query(`INSERT INTO task_progress_updates(
-    project_id,task_id,source_message_id,summary,kind,model_name,prompt_version)
-    VALUES($1,$2,$3,'方案初稿完成','progress','mock','p1') RETURNING id`,
-    [pid,taskForProgress.id,progressSource.data.message.id])).rows[0];
-  const progressMember=await api('/projects/'+pid+'/progress',{cookie:cookieB});
-  assert.equal(progressMember.status,200);
-  assert.ok(progressMember.data.updates.some(x=>x.id===progressInsert.id));
-  const progressForbidden=await api('/projects/'+pid+'/progress/'+progressInsert.id+'/decision',{
-    method:'POST',cookie:cookieB,body:{decision:'accepted'}});
-  assert.equal(progressForbidden.status,403);
-  const progressAccepted=await api('/projects/'+pid+'/progress/'+progressInsert.id+'/decision',{
-    method:'POST',body:{decision:'accepted'}});
-  assert.equal(progressAccepted.status,200);
-  const progressAgain=await api('/projects/'+pid+'/progress/'+progressInsert.id+'/decision',{
-    method:'POST',body:{decision:'accepted'}});
-  assert.equal(progressAgain.status,409);
   const before=await api('/projects/'+pid+'/messages');
   assert.equal(before.status,200);
   const nonce=randomUUID();
@@ -188,6 +167,28 @@ try{
     body:{title:'正式任务',detail:'',assigneeId:uid,dueDate:null}});
   assert.equal(task.status,201,JSON.stringify(task.data));
   const tid=task.data.task.id;
+  const progressSource=await api('/projects/'+pid+'/messages',{method:'POST',
+    body:{content:'方案初稿已完成，请核对评审',nonce:randomUUID()}});
+  assert.equal(progressSource.status,201);
+  const taskForProgress=(await db.query('SELECT id FROM tasks WHERE project_id=$1 LIMIT 1',[pid])).rows[0];
+  assert.ok(taskForProgress);
+  const progressInsert=(await db.query(`INSERT INTO task_progress_updates(
+    project_id,task_id,source_message_id,summary,kind,model_name,prompt_version)
+    VALUES($1,$2,$3,'方案初稿完成','progress','mock','p1') RETURNING id`,
+    [pid,taskForProgress.id,progressSource.data.message.id])).rows[0];
+  const progressMember=await api('/projects/'+pid+'/progress',{cookie:cookieB});
+  assert.equal(progressMember.status,200);
+  assert.ok(progressMember.data.updates.some(x=>x.id===progressInsert.id));
+  const progressForbidden=await api('/projects/'+pid+'/progress/'+progressInsert.id+'/decision',{
+    method:'POST',cookie:cookieB,body:{decision:'accepted'}});
+  assert.equal(progressForbidden.status,403);
+  const progressAccepted=await api('/projects/'+pid+'/progress/'+progressInsert.id+'/decision',{
+    method:'POST',body:{decision:'accepted'}});
+  assert.equal(progressAccepted.status,200);
+  const progressAgain=await api('/projects/'+pid+'/progress/'+progressInsert.id+'/decision',{
+    method:'POST',body:{decision:'accepted'}});
+  assert.equal(progressAgain.status,409);
+
   const changed=await api('/projects/'+pid+'/tasks/'+tid,{method:'PATCH',
     body:{status:'doing',version:1}});
   assert.equal(changed.status,200);
