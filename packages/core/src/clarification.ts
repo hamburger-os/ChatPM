@@ -28,7 +28,16 @@ export async function processClarification(reply:Reply):Promise<boolean>{
     FROM proposed_changes p JOIN clarification_threads t ON t.proposal_id=p.id
     WHERE p.id=$1 AND p.project_id=$2 AND p.status='pending' AND t.status IN ('open','answered')`,
     [proposalId,reply.projectId]);
-  if(!rows.length)return true; // Explicit reference: never create an unrelated proposal.
+  if(!rows.length){
+    await transaction(async db=>{
+      await insertMessage(db,{
+        projectId:reply.projectId,authorId:null,kind:'ai',
+        content:'我没找到这条待确认候选，可能已处理或不属于当前项目。请从「AI 待确认」选择正确事项继续补充。',
+        nonce:'clarification-not-found:'+reply.id,
+      });
+    });
+    return true;
+  }
   const processed=await pool.query(
     'SELECT 1 FROM clarification_responses WHERE proposal_id=$1 AND message_id=$2',
     [proposalId,reply.id]);

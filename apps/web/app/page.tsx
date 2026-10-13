@@ -132,6 +132,15 @@ export default function Home(){
     request<{runs:AiRun[]}>('/projects/'+id+'/ai/runs')
       .then(x=>{if(activeProject.current===id)setAiRuns(x.runs);}).catch(()=>{});
   },[selected,current?.role]);
+  useEffect(()=>{
+    if(tab!=='model'||!selected||current?.role!=='owner')return;
+    const id=selected;
+    const interval=setInterval(()=>{
+      request<{runs:AiRun[]}>('/projects/'+id+'/ai/runs')
+        .then(x=>{if(activeProject.current===id)setAiRuns(x.runs);}).catch(()=>{});
+    },5000);
+    return ()=>clearInterval(interval);
+  },[tab,selected,current?.role]);
   useEffect(()=>{ if(current) setSettings({
     aiEnabled:current.ai_enabled,workStart:current.work_start,
     workEnd:current.work_end,cooldownHours:current.cooldown_hours});
@@ -490,7 +499,8 @@ export default function Home(){
                 </label>
               </>}
               <label>推理强度（只有支持该参数的服务生效）
-                <select value={model.reasoning} onChange={e=>setModel({...model,
+                <select value={model.reasoning} disabled={model.provider==='deepseek'}
+                  onChange={e=>setModel({...model,
                   reasoning:e.target.value as ModelConfig['reasoning']})}>
                   <option value="auto">由模型决定</option>
                   <option value="low">低</option><option value="medium">中</option>
