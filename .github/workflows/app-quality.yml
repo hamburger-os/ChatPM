@@ -33,7 +33,7 @@ jobs:
       SESSION_SECRET: ci-test-session-secret-please-replace-123456789
       WEB_ORIGIN: http://localhost:3000
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: actions/setup-node@v4
         with:
           node-version: '24'
