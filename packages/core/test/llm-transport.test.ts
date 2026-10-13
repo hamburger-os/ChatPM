@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { callStructuredLLM, readLLMSettings } from '../src/llm-transport.ts';
+import { callStructuredLLM, readLLMSettings, modelAuditIdentity } from '../src/llm-transport.ts';
 
 const schema={type:'object',additionalProperties:false,required:['items'],
   properties:{items:{type:'array',items:{type:'string'}}}};
@@ -13,6 +13,7 @@ test('defaults to OpenAI Responses; private key stays only in request header',as
   const got:string[]=[];
   const mocked:typeof fetch=async(input,init)=>{
     got.push(String(input));
+    assert.equal(init?.redirect,'error');
     const body=JSON.parse(String(init?.body));
     assert.equal(body.text.format.type,'json_schema');
     assert.equal(body.text.format.strict,true);
@@ -80,4 +81,26 @@ test('rejects upstream errors, incomplete responses, refusals, empty and non-JSO
   await assert.rejects(callStructuredLLM(chat,'msg',schema,async()=>new Response(
     JSON.stringify({choices:[{finish_reason:'stop',message:{content:json,refusal:'no'}}]}),{status:200}
   )),/MODEL_INCOMPLETE_OUTPUT/);
+});
+
+test('audit identity distinguishes endpoints without exposing credentials or private URL paths',()=>{
+  const a=settings({LLM_BASE_URL:'https://api.deepseek.com/v1/proxy-private-segment',
+    LLM_MODEL:'same-model'});
+  const b=settings({LLM_BASE_URL:'https://api.deepseek.com/v2',
+    LLM_MODEL:'same-model'});
+  const c=settings({LLM_BASE_URL:'https://api.deepseek.com/v2',
+    LLM_MODEL:'same-model',LLM_API_STYLE:'chat-completions'});
+  const names=[a,b,c].map(modelAuditIdentity);
+  assert.equal(new Set(names).size,3);
+  assert.ok(names.every(n=>n.includes('api.deepseek.com')));
+  assert.ok(names.every(n=>!n.includes('private-test-key')&&!n.includes('proxy-private-segment')));
+});
+
+test('fetch explicitly forbids redirecting POST chat contents and model keys',async()=>{
+  const mocked:typeof fetch=async (_input,init)=>{
+    assert.equal(init?.redirect,'error');
+    // Real fetch will reject a redirect in this mode. Simulate that failure.
+    throw new TypeError('redirect mode is set to error');
+  };
+  await assert.rejects(callStructuredLLM(settings(),'sensitive project text',schema,mocked),TypeError);
 });

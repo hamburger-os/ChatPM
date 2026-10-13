@@ -1,6 +1,6 @@
 import { pool } from './db.ts';
 import { z } from 'zod';
-import { readLLMSettings, callStructuredLLM } from './llm-transport.ts';
+import { readLLMSettings, callStructuredLLM, modelAuditIdentity } from './llm-transport.ts';
 
 export const PROMPT_VERSION='candidate-v2';
 export const CLARIFICATION_PROMPT_VERSION='clarification-v1';
@@ -47,7 +47,7 @@ export class ConfiguredLLMProvider implements LLMProvider{
     const settings=readLLMSettings();
     await reserveCall(this.projectId);
     const data=await callStructuredLLM(settings,input,schema);
-    return {value:output.parse(data),modelName:settings.model,promptVersion};
+    return {value:output.parse(data),modelName:modelAuditIdentity(settings),promptVersion};
   }
 
   async extractCandidates(project:string,message:string){

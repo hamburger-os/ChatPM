@@ -78,3 +78,5 @@
 - 只读部署级可信 LLM URL，不接收来自聊天内容、浏览器和非管理员成员的目标 URL；外部必须 HTTPS，本机开发 HTTP 明确限于回环和内部宿主别名。Key 不流向 Web，也不进入日志、Outbox 或异常输出。
 - Responses API 使用 `text.format=json_schema`，Chat Completions 使用 `response_format=json_object` 并且系统提示包含预期 JSON Schema；两种格式的结果都必须交给 Zod 校验。HTTP 异常、截断、空 JSON、拒答和 JSON 解析失败均安全失败。
 - 依然必须先按项目预留日调用次数、在明确 Owner 启用后运行、只保存候选与来源，由有权限用户审核。真实模型 API 质量、隐私和 Token 费用需独立实测。
+
+**review 修复**：AI 开启校验必须与 Worker 的 LLM 配置一致；禁止 fetch 自动跟随上游重定向以避免携带聊天数据的 POST 跨地址发送。记录不含机密的提供商/协议/端点指纹，保证模型名称相同、配置不同的项目建议在审计中可追踪。

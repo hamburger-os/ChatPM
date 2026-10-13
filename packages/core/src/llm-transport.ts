@@ -1,3 +1,5 @@
+import { createHash } from 'node:crypto';
+
 // Deployment-controlled model endpoint adapters. No client-supplied URL or hidden fallback.
 export type LLMApiStyle = 'responses' | 'chat-completions';
 export type LLMSettings = {
@@ -32,6 +34,14 @@ export function readLLMSettings(env:Readonly<Record<string,string|undefined>>=pr
   return {apiKey,style,model,baseUrl:url.origin+prefix};
 }
 
+// Keep a non-secret endpoint fingerprint with the model label for provenance after reconfiguration.
+// Do not store API keys or URL paths: some reverse proxies embed credentials in path segments.
+export function modelAuditIdentity(config:LLMSettings):string {
+  const host=new URL(config.baseUrl).host;
+  const digest=createHash('sha256').update(config.baseUrl).digest('hex').slice(0,16);
+  return config.model+' @'+host+' ['+config.style+':'+digest+']';
+}
+
 export async function callStructuredLLM(
   config:LLMSettings,input:string,schema:object,
   fetchImpl:typeof fetch=fetch,
@@ -58,6 +68,7 @@ export async function callStructuredLLM(
       };
   const response=await fetchImpl(url,{
     method:'POST',
+    redirect:'error',
     headers:{Authorization:'Bearer '+config.apiKey,'Content-Type':'application/json'},
     body:JSON.stringify(body),
     signal:AbortSignal.timeout(60000),

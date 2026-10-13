@@ -102,3 +102,5 @@ Web 端从 `GET /projects` 初始化项目列表和设置面板。该接口返�
 - 模型配置仅在服务端：`LLM_API_KEY`（空值禁用调用）、`LLM_BASE_URL`（只接受无凭据/query/fragment 的绝对 URL；外部须 HTTPS，回环或 `host.docker.internal` 可 HTTP）、`LLM_MODEL`、`LLM_API_STYLE=responses|chat-completions`。
 - `packages/core/src/llm-transport.ts` 是无数据库副作用的模型 HTTP 适配；`ai-provider.ts` 在每次业务调用时先校验配置、原子预留项目日额度，再解析并通过 Zod 校验，来源/Prompt/模型版本随候选落库。无额外回退模型、错误不产生正式领域记录。
 - Docker 仅 API、Worker、迁移任务读取服务端 LLM 变量，Web 独立配置无 Key；原生从项目根目录环境读取。变更模型后重启 Worker。
+
+**开启 AI 的统一校验**：`PATCH /projects/:id/settings` 对 `aiEnabled=true` 调用与 Worker 一致的 `readLLMSettings`；`model_name` 保存模型/端点主机/协议/端点指纹复合身份（密钥和 URL path 不落库）。所有模型请求必须 `redirect:'error'`。

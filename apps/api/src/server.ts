@@ -1,4 +1,5 @@
 import { serverConfig } from '../../../packages/core/src/config.ts';
+import { readLLMSettings } from '../../../packages/core/src/llm-transport.ts';
 import { randomUUID } from 'node:crypto';
 import Fastify from 'fastify';
 import cors from '@fastify/cors';
@@ -217,7 +218,10 @@ app.patch('/projects/:id/settings',async req=>{
   const none=v.workStart===null && v.workEnd===null && v.cooldownHours===null;
   if(!none && (v.workStart===null||v.workEnd===null||v.cooldownHours===null ||
     v.workStart>=v.workEnd)) fail(400,'提醒策略必须完整配置');
-  if(v.aiEnabled && !process.env.OPENAI_API_KEY) fail(400,'服务器尚未配置 AI 模型');
+  if(v.aiEnabled) {
+    try { readLLMSettings(); }
+    catch { fail(400,'服务器尚未正确配置 AI 模型'); }
+  }
   return transaction(async db=>{
     await db.query(
       `UPDATE projects SET ai_enabled=$1,work_start=$2,work_end=$3,cooldown_hours=$4 WHERE id=$5`,
