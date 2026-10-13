@@ -118,4 +118,6 @@ test('Web binds loopback natively and exposes container networking only when exp
   const scripts = JSON.parse(readFileSync('package.json','utf8')).scripts;
   assert.match(scripts['start:web'], /-H 127\.0\.0\.1$/);
   assert.match(scripts['start:web:container'], /-H 0\.0\.0\.0$/);
+  assert.match(readFileSync('infra/docker/Dockerfile','utf8'),
+    /CMD \["npm","run","start:web:container"\]/);
 });
