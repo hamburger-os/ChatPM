@@ -465,19 +465,31 @@ export default function Home(){
                 onChange={e=>setInvite(e.target.value)}/>
               <button disabled={working}>加入</button>
             </form>
-            <h3>AI 与提醒</h3>
+            <h3>AI 助手</h3>
             <label className="check"><input type="checkbox" checked={settings.aiEnabled}
               onChange={e=>setSettings({...settings,aiEnabled:e.target.checked})}/>
-              启用外部 AI 分析（需服务端配置模型凭证）</label>
-            <p className="hint">默认关闭；开启后项目成员消息可能发送至配置的模型服务。</p>
-            <div className="triple">
+              允许 AI 分析本项目聊天并提出候选事项</label>
+            <p className="hint">开启后消息可能发送至「AI 模型」配置的服务商。AI 只生成候选，正式任务仍需负责人审批；主动提问请在聊天室使用 @AI。</p>
+            <button className="secondary" onClick={()=>setTab('model')}>配置模型与测试连接</button>
+            <h3>自动任务提醒（无需大模型）</h3>
+            <label className="check"><input type="checkbox"
+              checked={settings.workStart!==null}
+              onChange={e=>setSettings({...settings,
+                workStart:e.target.checked?9:null,
+                workEnd:e.target.checked?18:null,
+                cooldownHours:e.target.checked?24:null})}/>
+              开启工作日到期任务催办</label>
+            {settings.workStart!==null&&<div className="triple">
               {(['workStart','workEnd','cooldownHours'] as const).map((key,i)=>
-                <label key={key}>{['开始小时','结束小时','冷却小时'][i]}
-                  <input type="number" value={settings[key]??''}
-                    onChange={e=>setSettings({...settings,[key]:e.target.value===''?null:Number(e.target.value)})}/>
+                <label key={key}>{['开始时（含）','结束时（不含）','最短间隔（小时）'][i]}
+                  <input type="number" min={i===0?0:1}
+                    max={i===0?23:i===1?24:168}
+                    value={settings[key]??''}
+                    onChange={e=>setSettings({...settings,[key]:
+                      e.target.value===''?null:Number(e.target.value)})}/>
                 </label>)}
-            </div>
-            <p className="hint">请完整填写时间策略才会启动自动催办。周末静默，时间以项目时区计。</p>
+            </div>}
+            <p className="hint">只有正式任务有负责人及截止时间才催办。按项目时区，周六日不提醒；建议工作时间 09:00–18:00，同一任务至少间隔 24 小时。</p>
             <button onClick={()=>void saveSettings()} disabled={working}>保存设置</button>
             <h3>后台任务运行状态</h3>
             {outboxStats&&<p className="hint">待处理：{outboxStats.pending} · 隔离：{outboxStats.dead} ·
