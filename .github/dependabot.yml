@@ -16,3 +16,11 @@ updates:
     schedule:
       interval: weekly
     open-pull-requests-limit: 5
+    groups:
+      github-actions-maintenance:
+        patterns:
+          - 'actions/*'
+          - 'github/codeql-action'
+        update-types:
+          - minor
+          - patch
