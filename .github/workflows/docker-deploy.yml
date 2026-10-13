@@ -15,7 +15,7 @@ jobs:
       WEB_ORIGIN: http://127.0.0.1:3000
       CHATPM_PORT: '3000'
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Validate compose
         run: docker compose -f infra/compose.prod.yml config --quiet
       - name: Verify runtime environment and least-secret Web boundary
