@@ -67,7 +67,7 @@ Web 端从 `GET /projects` 初始化项目列表和设置面板。该接口返�
 - `packages/core/src/config.ts` 校验 Node 服务运行配置；`db.ts` 从统一配置创建连接池。
 - `tsconfig.server.json` 构建 API、Worker、核心领域及 SQL 迁移，生成 `dist/apps/api/src/server.js`、`dist/apps/worker/src/worker.js`、`dist/packages/core/src/migrate.js`。
 - `apps/web/app/api/[...path]/route.ts` 代理本源 `/api/*` 到配置的服务端 URL。浏览器不可访问内部地址配置。
-- `infra/compose.prod.yml` 只公开 Web 回环端口；`infra/linux` 和 `infra/windows` 是原生部署入口；`tools/ops/postgres.mjs` 执行显式备份恢复。
+- `infra/compose.prod.yml` 只公开 Web 回环端口；`infra/linux` 和 `infra/windows` 是原生部署入口；`tools/ops/backup.mjs` 是唯一原生/容器备份入口；`tools/ops/restore.mjs` 仅承担带显式停服确认的原生隔离恢复。
 
 
 ## 单命令运维入口

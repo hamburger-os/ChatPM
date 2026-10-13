@@ -37,7 +37,7 @@ Windows PowerShell 前台启动脚本与 WinSW 服务包装示例；Linux system
 
 ### 数据库备份与恢复约束
 
-原生环境可执行 `node tools/ops/postgres.mjs backup ./backups/chatpm-YYYYMMDD.dump`，在**停止 API/Worker/Web 且确认隔离目标库后**显式执行 `node tools/ops/postgres.mjs restore ./backups/chatpm-YYYYMMDD.dump --confirm-replace`，随后运行数据库迁移。恢复操作会覆盖已有数据库对象，不允许对仍在提供业务服务的生产库直接恢复。备份必须限制访问、加密并定期在隔离环境做恢复演练。
+原生环境使用 `npm run backup -- --dir=./backups --keep=14` 创建私有、原子落盘的归档；在**停止 API/Worker/Web 且确认隔离目标库后**执行 `npm run restore -- ./backups/<实际归档文件>.dump --confirm-replace --confirm-services-stopped`，随后运行数据库迁移。旧的直接写目标文件备份入口已移除。恢复操作会覆盖已有数据库对象，不允许对仍在提供业务服务的生产库直接恢复。备份必须限制访问、加密并定期在隔离环境做恢复演练。
 
 Compose 默认不暴露 PostgreSQL 宿主机端口，使用 `docker compose --env-file .env -f infra/compose.prod.yml exec -T postgres pg_dump -U chatpm -d chatpm -Fc > backups/chatpm.dump` 等容器内客户端备份方式，操作前保证目标目录存在。
 
@@ -55,7 +55,7 @@ Compose 默认不暴露 PostgreSQL 宿主机端口，使用 `docker compose --en
 ## 运维可靠性与服务治理（ADR-018）
 
 - Worker 在 PostgreSQL 中记录最近存活、最后成功及最后失败时刻。独立诊断命令 `npm run doctor` 检查数据库和部署 API，并将心跳超时及过期未处理事件作为失败信号；此诊断不要求浏览器权限，也不提供公网运维接口。
-- `npm run backup` 默认创建新的 PostgreSQL custom-format 文件并按保留份数清理**本工具创建且匹配命名规则**的旧文件。必须在受限目录执行，成功后才允许清理历史文件。Docker 模式在宿主机使用 `--docker`，由 Compose 内 `pg_dump` 输出到宿主机备份目录。重复执行不可覆盖已有备份文件。
+- `npm run backup` 是唯一受支持的原生备份入口，默认创建新的 PostgreSQL custom-format 文件并按保留份数清理**本工具创建且匹配命名规则**的旧文件。必须在受限目录执行，成功后才允许清理历史文件。Docker 模式在宿主机使用 `--docker`，由 Compose 内 `pg_dump` 输出到宿主机备份目录。重复执行不可覆盖已有备份文件。
 - Linux 定时器使用专用 `chatpm` 账户，按需授权备份文件路径；Windows Task Scheduler 使用指定低权限主体，不内嵌数据库密码。备份文件需加密、离机保存并在隔离库实测恢复。
 - 版本升级避免不停机自动迁移；先停止服务和可验证备份，再迁移。复杂/破坏性数据迁移需另行发布计划；非兼容迁移不保证通过代码回滚恢复旧版。
 - 全流程测试边界：CI 可以验证迁移/基本健康与备份失败语义，但设备关机恢复、Windows Service 权限、远端告警与恢复时间目标必须在目标平台人工验收并保留记录。
