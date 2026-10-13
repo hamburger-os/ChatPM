@@ -105,7 +105,7 @@ npm start
 
 **开机自启**：Linux 使用仓库自带的三个 systemd 单元执行 `sudo systemctl enable --now chatpm-api chatpm-worker chatpm-web`；Windows 11 需将安装目录放在用户个人目录之外（例如 `C:\\ChatPM`），系统级安装 Node.js，准备并验证 WinSW 后，以管理员权限运行 `./infra/windows/install-services.ps1 -WinSWPath <路径> -StartNow`，默认注册为 Automatic 服务。Windows 服务安装器使用内置低权限 LocalService 并设置运行目录和密钥文件 ACL。运行前仍须由管理员验证目录继承权限、数据库连接、服务启停和重启。两种平台均需要 PostgreSQL 服务先行可用。
 
-开发调试只需一个终端执行 `npm run dev`（需先 `npm ci`、配置数据库并迁移）。
+使用 `npm run stop` 可从另一终端安全停止 `npm start` 或 `npm run dev` 启动的原生前台服务（不会结束其他 Node.js 进程、数据库或 Docker）。开发调试只需一个终端执行 `npm run dev`（需先 `npm ci`、配置数据库并迁移）。
 
 更详细的原生安装、服务托管、备份与恢复方法：[中文指南](docs/community/development.md#中文) · [English guide](docs/community/development.md#english) · [部署设计](docs/design/deployment.md)。
 

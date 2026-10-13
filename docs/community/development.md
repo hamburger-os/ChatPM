@@ -14,7 +14,7 @@ npm ci
 npm run db:migrate
 ```
 
-开发时只需一个终端（内部仍启动三个独立进程）：
+开发时只需一个终端（内部仍启动三个独立进程），需要停止时可在另一个终端执行 `npm run stop`：
 
 ```bash
 npm run dev
@@ -22,7 +22,7 @@ npm run dev
 
 打开 http://localhost:3000，注册、创建项目、与成员聊天。系统默认不向外部模型发送内容；要启用 AI 需在服务端设置 `LLM_API_KEY` 并由项目负责人在设置页面明确开启。催办需任务负责人/期限及完整工作时间和冷却策略。
 
-原生首次安装可执行 `npm run setup:local`：不存在 `.env` 时创建含随机会话密钥的配置；如数据库仍使用模板凭证，命令将停止并提示配置。完成数据库配置后重新执行。底层 `npm run setup:native`（安装依赖、构建、校验产物、执行迁移），然后 `npm start` 可在**单个前台终端**运行三进程；关闭终端会停止服务。长期运行应交给下述 Windows/Linux 系统服务管理器。浏览器请求统一使用同源 `/api`，服务端通过 `API_INTERNAL_URL` 连接 API（默认 127.0.0.1:3001）。
+原生首次安装可执行 `npm run setup:local`：不存在 `.env` 时创建含随机会话密钥的配置；如数据库仍使用模板凭证，命令将停止并提示配置。完成数据库配置后重新执行。底层 `npm run setup:native`（安装依赖、构建、校验产物、执行迁移），然后 `npm start` 可在**单个前台终端**运行三进程；在另一终端执行 `npm run stop` 可以等待整组停止，也可在原终端按 `Ctrl+C`。长期运行应交给下述 Windows/Linux 系统服务管理器。浏览器请求统一使用同源 `/api`，服务端通过 `API_INTERNAL_URL` 连接 API（默认 127.0.0.1:3001）。
 
 检查命令：`npm run typecheck`、`npm test`、`npm run build:web`、`npm run check:docs`。更新代码需执行 [docs-sync](../../.agents/skills/docs-sync/SKILL.md)。
 
@@ -58,7 +58,7 @@ Worker 只在项目时区符合计划时创建本期周/月报一次；不会每
 1. 安装 Node.js 24、PostgreSQL 17 和 Git；创建数据库及专用用户并授予必要权限，确保 `pg_dump` / `pg_restore` 可执行。
 2. 在 PowerShell 根目录执行 `Copy-Item .env.example .env`，设置数据库连接、随机 SESSION_SECRET 和部署对外 WEB_ORIGIN。
 3. 执行 `npm run setup:local`（会检查模板密码和环境），确认构建和迁移无错误。
-4. 执行 `npm start` 直接在一个 PowerShell 终端运行三个进程；浏览器打开 http://localhost:3000。仅适合前台试运行。
+4. 执行 `npm start` 直接在一个 PowerShell 终端运行三个进程；在另一个 PowerShell 执行 `npm run stop` 一键停止。浏览器打开 http://localhost:3000。仅适合前台试运行。
 5. 开机自启应先将仓库安装到用户个人目录之外（如 `C:\\ChatPM`），使用系统级 Node.js，取得并验证官方 WinSW，以管理员身份执行 `./infra/windows/install-services.ps1 -WinSWPath <WinSW路径> -StartNow`。三个服务注册为 Automatic，并立即启动；可用 `Get-Service chatpm-*` 检查、`Restart-Service chatpm-api,chatpm-worker,chatpm-web` 重启。脚本显式安装为内置低权限 LocalService，授权运行目录读取、Next 缓存及日志写入，限制 `.env` 文件继承权限；管理员仍需审查所有显式 ACL 项与安装目录可写主体，确保普通账户不能替换程序文件，并演练重启及恢复。
 
 ### 不使用 Docker 的 Linux 安装
@@ -139,7 +139,7 @@ npm ci
 npm run db:migrate
 ```
 
-Start all three development processes in **one terminal**:
+Start all three development processes in **one terminal**; stop them from a second terminal with `npm run stop` (or press Ctrl+C in the first):
 
 ```bash
 npm run dev
@@ -147,7 +147,7 @@ npm run dev
 
 Open http://localhost:3000, register and create a project. External AI is disabled by default. To opt in, set `LLM_API_KEY` on the server and enable AI explicitly in project settings. Reminders require a task owner, due date, working hours and cooldown policy.
 
-Native installation after configuring PostgreSQL and `.env`: run `npm run setup:local` (generates a missing secret and rejects the sample PostgreSQL password before invoking `setup:native`) to install, build, verify and migrate; `npm start` runs all three compiled processes in a single foreground terminal. For persistent production hosting, use the native system service manager below. The browser always uses same-origin `/api`, which is forwarded to `API_INTERNAL_URL` by Next.js.
+Native installation after configuring PostgreSQL and `.env`: run `npm run setup:local` (generates a missing secret and rejects the sample PostgreSQL password before invoking `setup:native`) to install, build, verify and migrate; `npm start` runs all three compiled processes in a single foreground terminal. Run `npm run stop` in another terminal to request graceful shutdown of that managed process group. For persistent production hosting, use the native system service manager below. The browser always uses same-origin `/api`, which is forwarded to `API_INTERNAL_URL` by Next.js.
 
 Checks: `npm run typecheck`, `npm test`, `npm run build:web`, `npm run check:docs`. Changes must follow [docs-sync](../../.agents/skills/docs-sync/SKILL.md).
 
@@ -212,3 +212,9 @@ docker compose --env-file .env -f infra/compose.prod.yml exec -T postgres pg_dum
 ```
 
 After stopping Web/API/Worker and selecting a disposable restore target, use `docker compose --env-file .env -f infra/compose.prod.yml exec -T postgres pg_restore -U chatpm -d chatpm --clean --if-exists --no-owner --no-privileges < backups/chatpm.dump`. Do not restore into a live production database.
+
+### 原生前台停止的边界 / Native stop scope
+
+中文：`npm run stop` 只停止当前仓库使用 `npm start`/`npm run dev` 注册的前台进程组，不会结束所有 `node.exe`、PostgreSQL、Docker 容器或 Windows/Linux 系统服务；如果没有启动实例则安全返回，若发现通道失联且 PID 存在则提示人工检查。更早版本启动的进程不能由新命令接管。`npm ci` 网络下载问题、被安全软件锁定的文件仍需另外排查。
+
+English: `npm run stop` only stops the foreground API/Worker/Web group registered by this checkout's `npm start` or `npm run dev`. It never mass-kills `node.exe` and does not affect PostgreSQL, Docker containers or system services. A missing runner is a no-op; an unreachable live runner fails closed. It cannot adopt processes started with older scripts and does not fix `npm ci` network errors or antivirus file locks.

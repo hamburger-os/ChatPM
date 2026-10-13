@@ -6,7 +6,7 @@ const template = [
   'NODE_ENV=development',
   'SESSION_SECRET=replace-with-a-long-random-secret-at-least-32-characters',
   'WEB_ORIGIN=http://localhost:3000',
-  'OPENAI_API_KEY=',
+  'LLM_API_KEY=',
   '',
 ].join('\n');
 
@@ -18,7 +18,7 @@ test('new install generates both independent high-entropy secrets without touchi
   assert.ok(session);
   assert.ok(postgres);
   assert.notEqual(session, postgres);
-  assert.match(text, /^OPENAI_API_KEY=$/m);
+  assert.match(text, /^LLM_API_KEY=$/m);
   assert.match(text, /^WEB_ORIGIN=http:\/\/localhost:3000$/m);
 });
 
@@ -120,4 +120,61 @@ test('Web binds loopback natively and exposes container networking only when exp
   assert.match(scripts['start:web:container'], /-H 0\.0\.0\.0$/);
   assert.match(readFileSync('infra/docker/Dockerfile','utf8'),
     /CMD \["npm","run","start:web:container"\]/);
+});
+
+import { mkdtempSync, rmSync, writeFileSync, existsSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { connect } from 'node:net';
+import { startControl, requestStop } from '../ops/process-control.mjs';
+
+test('one command stops only its registered manager and cleans up local runtime state',async()=>{
+  const dir=mkdtempSync(join(tmpdir(),'chatpm-stop-'));
+  let calls=0;
+  let manager;
+  try{
+    manager=await startControl(dir,async()=>{
+      calls++;
+      await new Promise(resolve=>setTimeout(resolve,15));
+      manager.close();
+    });
+    const state=JSON.parse(readFileSync(join(dir,'.chatpm-run.json'),'utf8'));
+    assert.equal(state.pid,process.pid);
+    const secondStart=await assert.rejects(startControl(dir,()=>{}),/already has a registered runner/);
+    assert.equal(secondStart,undefined);
+    assert.equal(await requestStop(dir),true);
+    assert.equal(calls,1);
+    assert.equal(existsSync(join(dir,'.chatpm-run.json')),false);
+    assert.equal(await requestStop(dir),false);
+  }finally{
+    manager?.close();
+    rmSync(dir,{recursive:true,force:true});
+  }
+});
+
+test('wrong token cannot shut down the manager',async()=>{
+  const dir=mkdtempSync(join(tmpdir(),'chatpm-deny-'));
+  let calls=0;
+  const manager=await startControl(dir,()=>{calls++;});
+  try{
+    const state=JSON.parse(readFileSync(join(dir,'.chatpm-run.json'),'utf8'));
+    const message=await new Promise((resolve,reject)=>{
+      const socket=connect({host:'127.0.0.1',port:state.port});
+      socket.on('connect',()=>socket.write('0'.repeat(64)+'\n'));
+      socket.once('data',buffer=>{resolve(buffer.toString('utf8'));socket.destroy();});
+      socket.once('error',reject);
+    });
+    assert.equal(message.trim(),'DENIED');
+    assert.equal(calls,0);
+  }finally{manager.close();rmSync(dir,{recursive:true,force:true});}
+});
+test('stale state is cleared only after the old owner is no longer running',async()=>{
+  const dir=mkdtempSync(join(tmpdir(),'chatpm-stale-'));
+  try{
+    writeFileSync(join(dir,'.chatpm-run.json'),JSON.stringify({
+      pid:2147483647,port:3000,token:'a'.repeat(64),
+    }));
+    assert.equal(await requestStop(dir),false);
+    assert.equal(existsSync(join(dir,'.chatpm-run.json')),false);
+  }finally{rmSync(dir,{recursive:true,force:true});}
 });
