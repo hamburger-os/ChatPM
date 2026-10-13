@@ -117,3 +117,11 @@ Web 端从 `GET /projects` 初始化项目列表和设置面板。该接口返�
 - `@AI` 触发只读问答，输出不能调用正式变更；普通消息走有界分层上下文的候选提取，近期唯一澄清追问可自然答复，多候选或不明确的回复仍需显式 `【候选:UUID】`。所有候选继续人工审批；提问也按项目 UTC 日请求限额计数。
 - 上下文首先读取同项目正式任务/风险和最后 12 条讨论，明确区分可信事实和非可信聊天并按配置预算裁剪，不保存虚构摘要，不支持跨项目历史与通用 Agent 工具。
 
+## ADR-022 · 任务进度证据、日历期限及提前检查
+
+- `tasks.due_date DATE` 为项目本地截止日，Web / API 使用 `dueDate: YYYY-MM-DD|null`，实际事件时间与计划检查仍用 UTC `TIMESTAMPTZ`。迁移 006 按当前项目 IANA 时区把旧 `due_at` 转成日期并删除旧列。候选内部仍存带时区时间戳，Owner 确认时映射为项目当地日历日期；不维持旧 `dueAt` JSON 接口。
+- `task_progress_updates` 包含 `project_id/task_id/source_message_id` 复合外键、摘要、进度类型、模型与 Prompt 版本及审批状态；受控 Worker 只接受模型引用的**同项目活动任务 ID**，仅保存候选证据，不能自动改正式状态。 `GET /projects/:id/progress` 成员可查、`POST /projects/:id/progress/:progressId/decision` Owner 审批（已处理返回冲突并审计）。
+- `analyzeWork` 区分 `items`（独立新任务/风险）与 `progress`（既有任务进度/阻塞/完成声明）；确定性同题重复项过滤只用于精确/规范化重合，不能用模糊相似度强行合并。未来任务依赖、里程碑、风险升级仍需独立领域建模。
+- `syncFollowup` 在有效正式任务建立后计划首次检查，Worker 根据项目日期差、阻塞与冷却及工作时间安排下一次，长期任务默认间隔 7 天；临近到期/阻塞可更频繁。不是发送外部通知，不对无负责人/期限任务催办。
+- 模型配置迁移 007 将输入字符预算提升至 250000、输出 Token 上限 131072，默认 32768 字符/8192 Token；DeepSeek 官方 Responses 走 provider-specific `reasoning.effort`，Chat Completions 走 `reasoning_effort`；模型/供应商实际最大能力不等于本应用的每次预算。
+

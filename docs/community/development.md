@@ -42,6 +42,14 @@ npm run dev
 
 「输入预算」为字符预算，并不是模型的上下文 Token 窗口；系统带入最近的有界群聊和已确认项目事实，超出部分进行确定性裁剪。推理强度只有服务商真正支持才发送，目前 OpenAI 官方 Responses 端点支持对应参数，其余服务商保持 API 默认。模型及密钥配置保存后**不必重启** API/Worker；修改部署管理员的 `.env` 仍需重启。所有模型建议仍需负责人批准。发送 `@AI 请总结待办` 可要求 AI 基于只读项目状态答复；成员直接回复最近唯一的候选澄清问题通常无需复制 UUID，多个澄清线程则须明确引用编号。右侧「AI 模型」提供「AI 处理记录」区分分析中、无新建议、生成候选、澄清、回复和失败。自动任务提醒独立于 AI：正式任务有负责人、期限，且启用工作日工作时段/最短间隔才提醒。
 
+### 任务进展、日期与提前催办（ADR-022）
+
+正式任务的期限现在只输入 **YYYY-MM-DD 日期**，不再需要选择小时与分钟。升级迁移会将现有任务时间按其项目设置的时区转换为日历日期，旧的 `dueAt` API 被替换为 `dueDate`；请务必备份数据库后再执行 `npm run setup:local` 或生产 Docker 更新。历史任务和审核记录不能删除。
+
+在聊天室讨论已有任务时，Worker 现在尝试将内容关联到同项目活动任务 ID：阶段进展、阻塞、完成声明只生成证据建议，在右侧「任务」标签页核对后才归入进度，不会自动将任务设置为完成；独立新工作仍由「AI 待确认」审批。系统优先过滤明显重复的规范化标题，不能保证所有语义重叠都正确匹配。要人工更正请在 AI 待确认忽略错误新任务并在任务页更新正式状态。任务有负责人、期限与合法提醒工作窗口时，将在任务登记后进入跟进队列，不再等到最后一天才首次检查；阻塞与临近截止会更频繁，按项目时区和冷却发送站内提醒。
+
+DeepSeek 配置允许根据任务增加模型输入字符预算和输出 Token 限额；默认分别为 32768 字符与 8192 Token，最大可配置 250000 字符与 131072 Token。这不是 DeepSeek 的 1M/384K 理论上限或真实 Token 压缩。建议根据模型费用和输出长度测试后调整。`MODEL_SCHEMA` 确定性错误不再无意义重复请求八次，隔离事件需修复根因后再由 Owner 重放。正式连续 Agent、依赖关键路径计算和实际 DeepSeek 大上下文压测仍未完成。
+
 ### 可靠性说明
 消息增量游标按项目提交顺序保证不漏读；重新调整任务不会绕过已发送提醒的冷却间隔。周/月报统计覆盖全项目，明细有条数上限；同周期草稿可以重新生成，已发布报告不可覆盖。这些行为可通过 `node tools/test/smoke.mjs` 在已迁移的 PostgreSQL 实例上回归。
 
@@ -164,6 +172,14 @@ See [implementation gaps (Chinese)](../design/implementation-status.md) for unim
 A project owner can open the "AI 模型" tab, choose server-managed `LLM_*` credentials or built-in fixed-HTTPS OpenAI/DeepSeek endpoints, enter a model name and private API key, and save it. "测试连接" uses only a non-project JSON probe and is limited to once per project per 30 seconds; provider charges may apply. Keys are stored encrypted in PostgreSQL and never returned to the browser. Built-in provider URLs cannot be replaced by untrusted users; administrators may configure custom/private endpoints in the server's `.env`. The encryption key derives from SESSION_SECRET; rotating that secret requires re-entering project keys. Database-level confidentiality also depends on server/backup access controls.
 
 Input budget is measured in characters, **not** the model context window in tokens. Only bounded recent project chat plus authoritative task/risk facts are included, and older discussion is trimmed without overwriting official facts. Reasoning effort is sent only when supported by the configured official OpenAI Responses endpoint; other models use provider defaults. Database-backed settings apply without restart; editing server `.env` requires restart. Send `@AI ...` for a read-only project answer. Plain natural-language answers to a unique recently asked clarification may be linked automatically; ambiguous multi-candidate cases still require the explicit candidate reference. Review progress/errors on the model tab. Rule-based due-task reminders work independently of the external LLM when owner, due date, reminder window and cooldown are configured.
+
+### Task progress, date-only deadlines and proactive check-ins (ADR-022)
+
+Formal task deadlines are now **YYYY-MM-DD calendar dates**, without hours/minutes. Upgrade migration 006 converts existing due timestamps into the project's local calendar date before removing the old task column; back up your database before running native setup or a production Docker upgrade. The API accepts `dueDate` instead of the retired `dueAt` field. Existing work/audit history is not discarded.
+
+Worker analysis now attempts to link project chat updates to existing authorized active task IDs; progress, blockers and completion claims are stored as pending evidence for owner review under Tasks, and never automatically mark the task as done. Independently new task/risk proposals still require owner acceptance. Deterministic duplicate-title checks reduce obvious repeats but do not promise semantic equivalence. An assigned task with a deadline and valid reminder policy enters a check-in plan shortly after creation; longer tasks get periodic check-ins and blocked or near-due tasks receive more frequent in-app reminders, subject to configured local working hours and cooldown.
+
+DeepSeek-related limits can be increased for quality-sensitive tasks: default 32768 input characters / 8192 output tokens, configurable up to 250000 characters / 131072 tokens. These are application budgets, not the provider's advertised 1M context / 384K output capabilities or an actual token-based compaction implementation. Schema-incompatible outputs are quarantined without retrying eight identical model calls. Full agent autonomy, dependency-network risk propagation and live large-context provider validation remain future work.
 
 ### Reliability notes
 The per-project message cursor follows transaction commit order to prevent missing chat messages. Replanning a task preserves the cooldown of its last reminder. Weekly/monthly counts cover all project tasks while detail lists are bounded; drafts can be regenerated, but published reports remain immutable. Verify these behaviors with `node tools/test/smoke.mjs` against a migrated PostgreSQL instance.
