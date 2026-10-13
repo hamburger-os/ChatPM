@@ -4,7 +4,7 @@
 
 ## 中文
 
-开发建议 Node.js 24 LTS；Docker 仅用于可选的 PostgreSQL 开发实例。在仓库根目录：
+开发建议 Node.js 24 LTS；开发环境可用 Docker 仅启动 PostgreSQL，正式部署另有完整 Compose 或 Windows/Linux 原生安装方案。在仓库根目录：
 
 ```bash
 cp .env.example .env
@@ -108,7 +108,7 @@ docker compose --env-file .env -f infra/compose.prod.yml exec -T postgres pg_dum
 
 ## English
 
-Node.js 24 LTS is recommended; Docker is optional and only provides the development PostgreSQL instance. From the repository root:
+Node.js 24 LTS is recommended; Docker can provide a database-only development instance or a complete production-style Compose stack. Native Windows/Linux deployment is also supported. From the repository root:
 
 ```bash
 cp .env.example .env

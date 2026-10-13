@@ -4,7 +4,7 @@
 
 ## 中文
 
-设计采用 **TypeScript Monorepo、模块化单体和独立 Worker 进程**。Web 使用 Next.js， API 使用 Fastify，PostgreSQL 保存业务事实，PostgreSQL Outbox + Worker 轮询完成异步分析与提醒。模型和通知渠道通过适配器连接，未来可替换。
+设计采用 **TypeScript Monorepo、模块化单体和独立 Worker 进程**。Web 使用 Next.js， API 使用 Fastify，PostgreSQL 保存业务事实，PostgreSQL Outbox + Worker 轮询完成异步分析与提醒。当前仅 OpenAI 模型已有 Provider 接口，站内提醒为内建实现；其他模型与通知渠道适配器尚未交付。
 
 ### 主要模块
 - 项目与权限：成员、租户、项目作用域。
@@ -22,7 +22,7 @@
 
 ## English
 
-The proposed architecture uses a **TypeScript monorepo, modular monolith, and a separate worker process**. Next.js provides the UI, Fastify the API, PostgreSQL stores authoritative records, and a PostgreSQL Outbox and polling worker handle asynchronous analysis and reminders. Model and notification providers are replaceable adapters.
+The proposed architecture uses a **TypeScript monorepo, modular monolith, and a separate worker process**. Next.js provides the UI, Fastify the API, PostgreSQL stores authoritative records, and a PostgreSQL Outbox and polling worker handle asynchronous analysis and reminders. Only the OpenAI model has a provider abstraction today; reminders are built into ChatPM. Additional model and notification adapters are planned.
 
 ### Core modules
 - Project and access control: membership, tenants, project scopes.
