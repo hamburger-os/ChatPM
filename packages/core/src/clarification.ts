@@ -11,7 +11,7 @@ type Reply={id:string;projectId:string;content:string;projectName:string};
 export async function processClarification(reply:Reply):Promise<boolean>{
   let proposalId=referencedCandidate(reply.content);
   if(!proposalId){
-    if(!/(负责|截止|完成|日期|排期|交付|月底|本周|下周|月\d|\d+月)/u.test(reply.content))return false;
+    if(!/(负责人|负责|截止|完成时间|交付日期|计划于|月底|本周|下周|\d+月|[一二三四五六七八九十]+月)/u.test(reply.content))return false;
     const recent=await pool.query(`SELECT t.proposal_id FROM clarification_threads t
       JOIN proposed_changes p ON p.id=t.proposal_id
       JOIN messages ai ON ai.project_id=p.project_id AND ai.kind='ai'
@@ -19,6 +19,11 @@ export async function processClarification(reply:Reply):Promise<boolean>{
       WHERE t.project_id=$1 AND t.status IN ('open','answered') AND p.status='pending'
         AND ai.created_at>NOW()-INTERVAL '30 minutes'
         AND ai.seq<(SELECT seq FROM messages WHERE id=$2 AND project_id=$1)
+        AND NOT EXISTS (
+          SELECT 1 FROM messages later
+          WHERE later.project_id=$1 AND later.kind='user' AND later.seq>ai.seq
+            AND later.seq<(SELECT seq FROM messages WHERE id=$2 AND project_id=$1)
+        )
       GROUP BY t.proposal_id ORDER BY MAX(ai.seq) DESC LIMIT 2`,[reply.projectId,reply.id]);
     // Only a single, recently asked clarification is safe to infer.
     if(recent.rows.length!==1)return false;
