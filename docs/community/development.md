@@ -89,7 +89,13 @@ npm run deploy:docker
 
 ### 备份、恢复和正式上线限制
 
-`npm run backup -- --dir=./backups --keep=14` 使用 PostgreSQL 客户端和原子私有备份。恢复到隔离实例前停止全部服务，执行 `npm run restore -- ./backups/<实际归档文件>.dump --confirm-replace --confirm-services-stopped`，这会删除或覆盖归档包含的目标库对象，并在恢复后运行 `npm run db:migrate:prod`。必须另行建立自动备份、加密和恢复演练。
+`npm run backup -- --dir=./backups --keep=14` 使用 PostgreSQL 客户端和原子私有备份。恢复到隔离实例前停止全部服务，执行 `npm run restore -- ./backups/<实际归档文件>.dump --confirm-replace --confirm-services-stopped`，这会删除或覆盖归档包含的目标库对象。**恢复脚本不会自动执行迁移**。恢复成功后，必须在重新启动服务前另行运行：
+
+```bash
+npm run db:migrate:prod
+```
+
+仍须建立加密备份、离机保存与定期隔离恢复演练。
 
 以上是部署入口及示例，并非 Windows Service、Linux 服务、HTTPS、性能、隐私与生产灾备的已通过实机验收；敏感项目上线仍需完成这些验收。参见 [部署架构](../design/deployment.md)。
 
