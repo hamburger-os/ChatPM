@@ -92,7 +92,7 @@ test('audit identity distinguishes endpoints without exposing credentials or pri
     LLM_MODEL:'same-model',LLM_API_STYLE:'chat-completions'});
   const names=[a,b,c].map(modelAuditIdentity);
   assert.equal(new Set(names).size,3);
-  assert.ok(names.every(n=>n.includes('api.deepseek.com')));
+  assert.equal(names[0].split(' ')[1], '@api.deepseek.com');
   assert.ok(names.every(n=>!n.includes('private-test-key')&&!n.includes('proxy-private-segment')));
 });
 
