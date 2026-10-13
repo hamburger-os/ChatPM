@@ -1,5 +1,5 @@
 import { serverConfig } from '../../../packages/core/src/config.ts';
-import { callStructuredLLM, modelAuditIdentity, type LLMSettings } from '../../../packages/core/src/llm-transport.ts';
+import { callStructuredLLM, modelAuditIdentity } from '../../../packages/core/src/llm-transport.ts';
 import { publicModelSettings, resolveProjectModel, updateProjectModel } from '../../../packages/core/src/project-model.ts';
 import { randomUUID } from 'node:crypto';
 import Fastify from 'fastify';
@@ -267,9 +267,8 @@ app.post('/projects/:id/model/test',async req=>{
   const id=uuid.parse((req.params as {id:string}).id);
   const actor=await authenticated(req);
   owner(await member(actor,id));
-  let config:LLMSettings;
-  try { config=await resolveProjectModel(id); }
-  catch { fail(400,'该项目尚未配置可用的模型密钥或模型参数'); }
+  const config=await resolveProjectModel(id).catch(()=>
+    fail(400,'该项目尚未配置可用的模型密钥或模型参数'));
   const allowed=await pool.query(`INSERT INTO ai_model_checks(project_id,last_test_at)
     VALUES($1,NOW()) ON CONFLICT(project_id) DO UPDATE SET
       last_test_at=NOW() WHERE ai_model_checks.last_test_at<NOW()-INTERVAL '30 seconds'
