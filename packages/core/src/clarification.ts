@@ -11,7 +11,7 @@ type Reply={id:string;projectId:string;content:string;projectName:string};
 export async function processClarification(reply:Reply):Promise<boolean>{
   let proposalId=referencedCandidate(reply.content);
   if(!proposalId){
-    if(!/(负责|截止|完成|日期|排期|交付|月底|本周|下周|月\\d|\\d+月)/u.test(reply.content))return false;
+    if(!/(负责|截止|完成|日期|排期|交付|月底|本周|下周|月\d|\d+月)/u.test(reply.content))return false;
     const recent=await pool.query(`SELECT t.proposal_id FROM clarification_threads t
       JOIN proposed_changes p ON p.id=t.proposal_id
       JOIN messages ai ON ai.project_id=p.project_id AND ai.kind='ai'

@@ -30,12 +30,12 @@ async function runAnalysis(event:EventRow):Promise<AnalysisResult|null> {
   );
   const msg=lookup.rows[0] as {kind:string,content:string,name:string,ai_enabled:boolean}|undefined;
   if(!msg || msg.kind!=='user'||!msg.ai_enabled) return null;
-  const kind=/(?:^|\\s)@AI(?:\\s|$|[：:，,])/iu.test(msg.content)?'reply':'extract';
+  const kind=/(?:^|\s)@AI(?:\s|$|[：:，,])/iu.test(msg.content)?'reply':'extract';
   await recordAnalysis(event,kind,'processing');
   if(kind==='reply'){
     const settings=await resolveProjectModel(event.project_id);
     const context=await projectAnalysisContext(event.project_id,event.message_id,
-      settings.contextChars??6500);
+      Math.max(1200,(Math.max(1200,(settings.contextChars??6500)-500))-500));
     const result=await new ConfiguredLLMProvider(event.project_id).respond(msg.name,context);
     await transaction(async db=>{
       await insertMessage(db,{projectId:event.project_id,authorId:null,kind:'ai',
