@@ -12,7 +12,9 @@ const proposal=z.object({
   title:z.string().trim().min(1).max(250),
   detail:z.string().max(5000),
   assignee_hint:z.string().max(100).nullable(),
-  due_at:z.string().datetime({offset:true}).nullable(),
+  due_at:z.string().nullable().transform(v=>
+    v&&/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(v)&&!Number.isNaN(Date.parse(v))
+      ? new Date(v).toISOString():null),
   confidence:z.number().min(0).max(1),
 });
 const progress=z.object({

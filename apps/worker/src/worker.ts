@@ -139,7 +139,7 @@ async function processEvents() {
     }catch(err) {
       if(event.message_id){
         const code=err instanceof Error && /^MODEL_[A-Z0-9_]+$/.test(err.message)
-          ?err.message:err instanceof Error?err.name.slice(0,60):'UNKNOWN_FAILURE';
+          ?err.message:err instanceof Error&&err.name==='ZodError'?'MODEL_SCHEMA':err instanceof Error?err.name.slice(0,60):'UNKNOWN_FAILURE';
         try {await recordAnalysis(event,'extract','failed',undefined,code);}
         catch { /* Event failure still flows through the outbox retry state. */ }
       }

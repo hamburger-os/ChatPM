@@ -241,9 +241,9 @@ const modelSchema=z.object({
   provider:z.enum(['server','openai','deepseek']),
   model:z.string().trim().max(150),
   style:z.enum(['responses','chat-completions']),
-  reasoning:z.enum(['auto','low','medium','high']),
-  maxOutputTokens:z.number().int().min(512).max(8192),
-  contextChars:z.number().int().min(2000).max(16000),
+  reasoning:z.enum(['auto','none','low','medium','high','max']),
+  maxOutputTokens:z.number().int().min(512).max(131072),
+  contextChars:z.number().int().min(2000).max(250000),
   apiKey:z.string().min(1).max(500).regex(/^[^\r\n]+$/).optional(),
   clearKey:z.boolean().optional(),
 });

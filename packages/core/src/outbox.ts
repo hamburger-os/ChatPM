@@ -37,6 +37,8 @@ export async function finishEvent(event:EventRow){
 
 export function failureCode(error:unknown){
   if(error instanceof Error){
+    if(/^MODEL_HTTP_\d{3}$/.test(error.message))return error.message;
+    if(/^MODEL_(INCOMPLETE_OUTPUT|EMPTY_OUTPUT|INVALID_JSON)$/.test(error.message))return error.message;
     if(error.message==='MODEL_NOT_CONFIGURED')return 'MODEL_NOT_CONFIGURED';
     const m=/^Model request failed: HTTP (\d{3})$/.exec(error.message);
     if(m)return 'MODEL_HTTP_'+m[1];
@@ -52,6 +54,15 @@ export async function failEvent(event:EventRow,error:unknown){
       last_error_code='AI_DAILY_BUDGET',attempts=GREATEST(0,attempts-1),
       next_attempt_at=date_trunc('day',NOW() AT TIME ZONE 'UTC') AT TIME ZONE 'UTC'
         +INTERVAL '1 day 5 minutes'
+      WHERE id=$1 AND claim_token=$2 AND processed_at IS NULL AND dead_at IS NULL`,
+      [event.id,event.claim_token]);
+    return;
+  }
+  const code=failureCode(error);
+  // A deterministic model schema failure cannot be fixed by retrying 8 times unchanged.
+  if(code==='MODEL_SCHEMA'){
+    await pool.query(`UPDATE outbox_events SET claimed_at=NULL,claim_token=NULL,
+      last_error_code='MODEL_SCHEMA',dead_at=NOW(),next_attempt_at=NOW()
       WHERE id=$1 AND claim_token=$2 AND processed_at IS NULL AND dead_at IS NULL`,
       [event.id,event.claim_token]);
     return;

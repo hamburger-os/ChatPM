@@ -6,7 +6,7 @@ import { readLLMSettings, type LLMSettings, type LLMApiStyle } from './llm-trans
 export type ProjectModelProvider='server'|'openai'|'deepseek';
 export type ProjectModelSettings={
   provider:ProjectModelProvider; model:string; style:LLMApiStyle;
-  reasoning:'auto'|'low'|'medium'|'high';
+  reasoning:'auto'|'none'|'low'|'medium'|'high'|'max';
   maxOutputTokens:number;contextChars:number;hasKey:boolean;
 };
 type ModelRow={
