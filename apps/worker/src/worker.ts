@@ -5,6 +5,7 @@ import { generateScheduledReport } from '../../../packages/core/src/reports.ts';
 import { insertMessage } from '../../../packages/core/src/messages.ts';
 import { ConfiguredLLMProvider } from '../../../packages/core/src/ai-provider.ts';
 import { processClarification } from '../../../packages/core/src/clarification.ts';
+import { isDuplicateActiveTask } from '../../../packages/core/src/task-progress.ts';
 import { projectAnalysisContext } from '../../../packages/core/src/project-context.ts';
 import { resolveProjectModel } from '../../../packages/core/src/project-model.ts';
 import { claimEvents, finishEvent, failEvent, type EventRow } from '../../../packages/core/src/outbox.ts';
@@ -56,7 +57,7 @@ async function runAnalysis(event:EventRow):Promise<AnalysisResult|null> {
   if(existing.rowCount)return {kind:'extract',status:'proposal'};
   const settings=await resolveProjectModel(event.project_id);
   const context=await projectAnalysisContext(event.project_id,event.message_id,
-    settings.contextChars??6500);
+    Math.max(1200,(settings.contextChars??6500)-1200));
   const output=await new ConfiguredLLMProvider(event.project_id).analyzeWork(msg.name,context);
   const suggestions=output.value.items;
   const progress=output.value.progress;
@@ -64,8 +65,7 @@ async function runAnalysis(event:EventRow):Promise<AnalysisResult|null> {
   const known=await pool.query(`SELECT id,title FROM tasks
     WHERE project_id=$1 AND status NOT IN ('done','cancelled')`,[event.project_id]);
   const matching=new Map(known.rows.map(r=>[r.id as string,r.title as string]));
-  const normalized=(value:string)=>value.normalize('NFKC')
-    .replace(/[\\p{P}\\p{S}\\s]/gu,'').toLowerCase();
+
   await transaction(async db=>{
     let added=0,progressAdded=0;
     const questions:string[]=[];
@@ -86,11 +86,7 @@ async function runAnalysis(event:EventRow):Promise<AnalysisResult|null> {
       // Exact/contained normalized titles cannot create a second active task.
       // Ambiguous semantic matches stay human-reviewed; never auto-merge by fuzzy score.
       if(item.kind==='task'){
-        const n=normalized(item.title);
-        if(n.length>=5&&[...matching.values()].some(title=>{
-          const existing=normalized(title);
-          return existing===n || (n.length>=8 && existing.includes(n));
-        }))continue;
+        if(isDuplicateActiveTask(item.title,[...matching.values()]))continue;
       }
       const result=await db.query(
         `INSERT INTO proposed_changes(

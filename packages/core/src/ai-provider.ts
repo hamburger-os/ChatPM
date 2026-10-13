@@ -86,7 +86,7 @@ export class ConfiguredLLMProvider implements LLMProvider{
       '如果消息是在描述已有任务的进度、阻塞或声称完成，请在 progress 中写入对应 task_id，'+
       '不要重复在 items 创建它。仅能使用上下文中给出的任务 ID，不得编造。'+
       '只有明确是独立的新工作或新风险才生成 items；不明确时留空。'+
-      '关于任务进度的“已完成初稿”不等于正式任务已完成。不得自己批准。\\n'+message,
+      '关于任务进度的“已完成初稿”不等于正式任务已完成。不得自己批准。\n'+message,
       schema,activity,PROMPT_VERSION);
   }
 
