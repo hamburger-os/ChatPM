@@ -49,9 +49,13 @@ async function findModel(projectId:string):Promise<ModelRow>{
 }
 export async function publicModelSettings(projectId:string):Promise<ProjectModelSettings>{
   const row=await findModel(projectId);
-  return {provider:row.model_provider,model:row.model_id,style:row.model_api_style,
+  const server=row.model_provider==='server';
+  const activeModel=server?(process.env.LLM_MODEL?.trim()||'gpt-4.1-mini'):row.model_id;
+  const activeStyle=server?(process.env.LLM_API_STYLE==='chat-completions'
+    ? 'chat-completions':'responses'):row.model_api_style;
+  return {provider:row.model_provider,model:activeModel,style:activeStyle,
     reasoning:row.model_reasoning,maxOutputTokens:row.model_max_output_tokens,
-    contextChars:row.model_context_chars,hasKey:row.model_provider==='server'
+    contextChars:row.model_context_chars,hasKey:server
       ? Boolean(process.env.LLM_API_KEY?.trim()):Boolean(row.model_key_ciphertext)};
 }
 export async function resolveProjectModel(projectId:string):Promise<LLMSettings>{
