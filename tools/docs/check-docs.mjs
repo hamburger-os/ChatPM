@@ -59,13 +59,26 @@ function titleSlug(title) {
 function anchorsFor(body) {
   const anchors = new Set();
   const count = new Map();
-  for (const match of body.matchAll(/^#{1,6}\s+(.+?)\s*#*\s*$/gm)) {
-    const slug = titleSlug(match[1]);
+  const visible = [];
+  let fence = null;
+  for (const line of body.split(/\r?\n/)) {
+    const marker = line.match(/^[ \t]{0,3}(\x60{3,}|~{3,})(.*)$/);
+    if (marker) {
+      const kind = marker[1][0], size = marker[1].length;
+      if (!fence) fence = { kind, size };
+      else if (fence.kind === kind && size >= fence.size && !marker[2].trim()) fence = null;
+      continue;
+    }
+    if (fence) continue;
+    visible.push(line);
+    const heading = line.match(/^#{1,6}\s+(.+?)\s*#*\s*$/);
+    if (!heading) continue;
+    const slug = titleSlug(heading[1]);
     const n = count.get(slug) || 0;
     anchors.add(n ? slug + '-' + n : slug);
     count.set(slug, n + 1);
   }
-  for (const match of body.matchAll(/<a\s+[^>]*(?:id|name)=["']([^"']+)["'][^>]*>/gi))
+  for (const match of visible.join('\n').matchAll(/<a\s+[^>]*(?:id|name)=[\x22']([^\x22']+)[\x22'][^>]*>/gi))
     anchors.add(match[1].toLowerCase());
   return anchors;
 }
