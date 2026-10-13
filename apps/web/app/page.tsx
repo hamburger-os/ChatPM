@@ -481,6 +481,12 @@ export default function Home(){
                   <option value="openai">OpenAI（固定 HTTPS 端点）</option>
                 </select>
               </label>
+              {model.provider==='server'&&<p className="hint">
+                当前服务器模型：{model.model||'未指定'} ·
+                协议：{model.style==='responses'?'Responses API':'Chat Completions'} ·
+                密钥：{model.hasKey?'已配置':'未配置'}。模型地址和密钥由服务器管理员维护，
+                修改 .env 后须重启服务。
+              </p>}
               {model.provider!=='server'&&<>
                 <label>模型 ID
                   <input value={model.model} onChange={e=>setModel({...model,model:e.target.value})}/>
