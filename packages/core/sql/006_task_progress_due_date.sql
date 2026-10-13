@@ -26,3 +26,11 @@ CREATE TABLE task_progress_updates (
 );
 CREATE INDEX idx_task_progress_pending ON task_progress_updates(project_id,status,created_at DESC);
 CREATE INDEX idx_task_progress_task ON task_progress_updates(project_id,task_id,created_at DESC);
+
+-- Re-enroll existing active plans into the new early-check policy on upgrade.
+-- Do not bypass the cooldown from an already delivered reminder.
+UPDATE followup_plans fp SET next_at=GREATEST(
+  LEAST(fp.next_at,NOW()+INTERVAL '2 minutes'),
+  COALESCE(fp.last_sent_at+(p.cooldown_hours*INTERVAL '1 hour'),NOW()))
+  FROM projects p WHERE p.id=fp.project_id AND fp.active
+    AND p.cooldown_hours IS NOT NULL;
