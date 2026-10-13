@@ -455,6 +455,79 @@ export default function Home(){
           </details>)}
           {!reports.length&&<p className="hint">暂无报告。</p>}
         </>}
+        {tab==='model'&&<>
+          <h3>AI 模型配置和连接测试</h3>
+          {current?.role!=='owner'?<p className="hint">仅项目负责人可管理模型。</p>:<>
+            <p className="hint">模型配置属于当前项目；密钥仅加密保存在服务端，不会回显。自定义本地模型代理请由部署管理员在服务器环境变量中配置。</p>
+            <div className="stack">
+              <label>模型服务商
+                <select value={model.provider} onChange={e=>{
+                  const provider=e.target.value as ModelConfig['provider'];
+                  setModel({...model,provider,model:provider==='deepseek'?'deepseek-flash':
+                    provider==='openai'?'gpt-4.1-mini':'',reasoning:'auto',hasKey:false});
+                  setModelKey('');setModelFeedback('');
+                }}>
+                  <option value="server">服务器配置（环境变量）</option>
+                  <option value="deepseek">DeepSeek（固定 HTTPS 端点）</option>
+                  <option value="openai">OpenAI（固定 HTTPS 端点）</option>
+                </select>
+              </label>
+              {model.provider!=='server'&&<>
+                <label>模型 ID
+                  <input value={model.model} onChange={e=>setModel({...model,model:e.target.value})}/>
+                </label>
+                <label>API Key（{model.hasKey?'已保存，留空保持原值':'尚未设置'}）
+                  <input type="password" autoComplete="new-password" value={modelKey}
+                    placeholder={model.hasKey?'留空保持已加密密钥':'填写服务商密钥'}
+                    onChange={e=>setModelKey(e.target.value)}/>
+                </label>
+                <label>接口协议
+                  <select value={model.style} onChange={e=>setModel({...model,
+                    style:e.target.value as ModelConfig['style']})}>
+                    <option value="responses">Responses API</option>
+                    <option value="chat-completions">Chat Completions（JSON Object）</option>
+                  </select>
+                </label>
+              </>}
+              <label>推理强度（只有支持该参数的服务生效）
+                <select value={model.reasoning} onChange={e=>setModel({...model,
+                  reasoning:e.target.value as ModelConfig['reasoning']})}>
+                  <option value="auto">由模型决定</option>
+                  <option value="low">低</option><option value="medium">中</option>
+                  <option value="high">高</option>
+                </select>
+              </label>
+              <label>最大输出 Token（512–8192）
+                <input type="number" min="512" max="8192" value={model.maxOutputTokens}
+                  onChange={e=>setModel({...model,maxOutputTokens:Number(e.target.value)})}/>
+              </label>
+              <label>输入预算（字符，2000–16000）
+                <input type="number" min="2000" max="16000" value={model.contextChars}
+                  onChange={e=>setModel({...model,contextChars:Number(e.target.value)})}/>
+              </label>
+              <p className="hint">输入预算不是模型的 Token 窗口，较早聊天被确定性裁剪。正式项目事实保存在数据库中，模型不会自动替团队修改任务。</p>
+              <div className="actions">
+                <button disabled={working} onClick={()=>void saveModel()}>保存模型配置</button>
+                <button className="secondary" disabled={working||Boolean(modelKey)}
+                  title={modelKey?'先保存新密钥再测试':'只发送无项目资料的固定测试消息'}
+                  onClick={()=>void testModel()}>测试连接</button>
+              </div>
+              {modelFeedback&&<p role="status" className="hint">{modelFeedback}</p>}
+            </div>
+            <h3>AI 处理记录 <span className="count">{aiRuns.length}</span></h3>
+            <button className="secondary" disabled={working}
+              onClick={()=>void refreshAiRuns().catch(e=>setNotice(e.message))}>刷新记录</button>
+            <p className="hint">分析中 / 无新建议 / 已生成候选 / 已处理澄清 / 已回复 / 失败。失败可在项目设置中查看隔离事件。</p>
+            {aiRuns.slice(0,20).map(run=><article className="item" key={run.source_message_id}>
+              <strong>{({processing:'分析中',no_change:'已分析，无新候选',
+                proposal:'已生成候选',clarified:'已处理澄清',replied:'AI 已回复',
+                failed:'失败'} as Record<string,string>)[run.status]||run.status}</strong>
+              <small>{new Date(run.created_at).toLocaleString('zh-CN')} · {run.kind}</small>
+              {run.model_name&&<small>{run.model_name}</small>}
+              {run.error_code&&<small>错误代码：{run.error_code}</small>}
+            </article>)}
+          </>}
+        </>}
         {tab==='settings'&&<>
           <h3>项目成员</h3>
           {members.map(m=><div key={m.id} className="member"><strong>{m.display_name}</strong>
