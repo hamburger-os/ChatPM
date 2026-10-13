@@ -83,6 +83,37 @@ try{
   const ownerOnly=await api('/projects/'+pid+'/settings',{method:'PATCH',cookie:cookieB,
     body:{aiEnabled:false,workStart:9,workEnd:18,cooldownHours:24}});
   assert.equal(ownerOnly.status,403,'Project members cannot change AI or reminder policy');
+  const memberModel=await api('/projects/'+pid+'/model',{cookie:cookieB});
+  assert.equal(memberModel.status,403,'Only owner may view project model settings');
+  const initialModel=await api('/projects/'+pid+'/model');
+  assert.equal(initialModel.status,200);
+  assert.equal(initialModel.data.model.provider,'server');
+  const rejectUrl=await api('/projects/'+pid+'/model',{method:'PUT',body:{
+    provider:'http://127.0.0.1:80',model:'unsafe',style:'responses',reasoning:'auto',
+    maxOutputTokens:2048,contextChars:6500,
+  }});
+  assert.equal(rejectUrl.status,400,'Project members cannot configure arbitrary model URLs');
+  const savedModel=await api('/projects/'+pid+'/model',{method:'PUT',body:{
+    provider:'deepseek',model:'deepseek-flash',style:'responses',reasoning:'auto',
+    maxOutputTokens:2048,contextChars:6500,apiKey:'test-project-private-key',
+  }});
+  assert.equal(savedModel.status,200,JSON.stringify(savedModel.data));
+  assert.equal(savedModel.data.model.hasKey,true);
+  assert.equal(JSON.stringify(savedModel.data).includes('test-project-private-key'),false);
+  const modelDenied=await api('/projects/'+pid+'/model',{method:'PUT',cookie:cookieB,body:{
+    provider:'server',model:'',style:'responses',reasoning:'auto',
+    maxOutputTokens:2048,contextChars:6500,
+  }});
+  assert.equal(modelDenied.status,403,'Members cannot rotate owner model secrets');
+  const runsDenied=await api('/projects/'+pid+'/ai/runs',{cookie:cookieB});
+  assert.equal(runsDenied.status,403);
+  const runs=await api('/projects/'+pid+'/ai/runs');
+  assert.equal(runs.status,200);
+  const resetModel=await api('/projects/'+pid+'/model',{method:'PUT',body:{
+    provider:'server',model:'',style:'responses',reasoning:'auto',
+    maxOutputTokens:2048,contextChars:6500,
+  }});
+  assert.equal(resetModel.status,200);
   const before=await api('/projects/'+pid+'/messages');
   assert.equal(before.status,200);
   const nonce=randomUUID();

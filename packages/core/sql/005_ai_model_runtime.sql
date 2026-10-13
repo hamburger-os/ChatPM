@@ -27,3 +27,7 @@ CREATE TABLE ai_analysis_runs (
   FOREIGN KEY(project_id,source_message_id) REFERENCES messages(project_id,id)
 );
 CREATE INDEX idx_analysis_project ON ai_analysis_runs(project_id,created_at DESC);
+CREATE TABLE ai_model_checks (
+  project_id UUID PRIMARY KEY REFERENCES projects(id) ON DELETE CASCADE,
+  last_test_at TIMESTAMPTZ NOT NULL
+);
