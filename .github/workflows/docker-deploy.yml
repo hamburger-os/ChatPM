@@ -18,6 +18,15 @@ jobs:
       - uses: actions/checkout@v4
       - name: Validate compose
         run: docker compose -f infra/compose.prod.yml config --quiet
+      - name: Verify runtime environment and least-secret Web boundary
+        shell: bash
+        run: |
+          AI_DAILY_REQUEST_LIMIT=73 docker compose -f infra/compose.prod.yml config --format json | jq -e '
+            ((.services.worker.environment.AI_DAILY_REQUEST_LIMIT | tostring) == "73") and
+            (.services.web.command == ["npm","run","start:web:container"]) and
+            (.services.web.environment | has("SESSION_SECRET") | not) and
+            (.services.web.environment | has("PGPASSWORD") | not) and
+            (.services.web.environment | has("OPENAI_API_KEY") | not)'
       - name: Build production image
         run: docker compose -f infra/compose.prod.yml build
       - name: Start full stack

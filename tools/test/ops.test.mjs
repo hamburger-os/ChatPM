@@ -103,3 +103,19 @@ test('existing PostgreSQL volume blocks missing or placeholder credentials', () 
   assert.doesNotThrow(() => assertSafeDockerBootstrap([], true));
   assert.doesNotThrow(() => assertSafeDockerBootstrap(['SESSION_SECRET', 'POSTGRES_PASSWORD'], false));
 });
+
+import { parseRestoreArgs } from '../ops/restore.mjs';
+import { readFileSync } from 'node:fs';
+
+test('restore refuses operation without both explicit confirmations', () => {
+  assert.throws(() => parseRestoreArgs([]), /--confirm-services-stopped/);
+  assert.throws(() => parseRestoreArgs(['backup.dump', '--confirm-replace']), /--confirm-services-stopped/);
+  assert.throws(() => parseRestoreArgs(['nonexistent.dump','--confirm-replace','--confirm-services-stopped']),
+    /Backup file not found/);
+});
+
+test('Web binds loopback natively and exposes container networking only when explicitly selected', () => {
+  const scripts = JSON.parse(readFileSync('package.json','utf8')).scripts;
+  assert.match(scripts['start:web'], /-H 127\.0\.0\.1$/);
+  assert.match(scripts['start:web:container'], /-H 0\.0\.0\.0$/);
+});
