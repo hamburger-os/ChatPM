@@ -12,7 +12,7 @@
 | AI | ClarificationThread/Response、来源证据、项目请求配额 | AnalysisRun、长期记忆和质量评价 |
 | Automation | FollowUpPlan、OutboxEvent | 复杂干预、外部投递记录 |
 | Reporting | Report | 历史基线、周期快照、可编辑草稿 |
-| Integrations | OpenAIProvider | 本地模型、更多 Provider、通知与对象存储 |
+| Integrations | ConfiguredLLMProvider、Responses/Chat Completions HTTP 适配 | 更多协议实测、UI 模型设置、通知与对象存储 |
 | Audit | AuditEntry | 完整组织级审计查询 |
 
 目标设计不能伪装成当前已经存在的数据库表或 API。
@@ -46,7 +46,7 @@
 
 ## AI 与扩展原则
 
-`LLMProvider` 是模型抽象；目前只有 `OpenAIProvider`，不得声称支持本地或多供应商。观察、正式业务变更、通知与外部工具必须经过确定性服务端权限边界。其他目标适配器和领域概念按实际用例渐进实施，不创建没有实现者的空抽象。
+`LLMProvider` 是业务抽象，由 `ConfiguredLLMProvider` 实现，两个协议适配分别使用 Responses JSON Schema 与 Chat Completions JSON Object；真实本地/多厂商 API 仍待联调。观察、正式业务变更、通知与外部工具必须经过确定性服务端权限边界。其他目标适配器和领域概念按实际用例渐进实施，不创建没有实现者的空抽象。
 
 ## 验收要求
 
@@ -96,3 +96,11 @@ Web 端从 `GET /projects` 初始化项目列表和设置面板。该接口返�
 
 - `deploy.mjs` 固定 Compose 项目名并使用 `--env-file`，在替换任何占位秘密前先检查已有名为 `chatpm_postgres_data` 的数据卷；原密码遗失需人工恢复。
 - `run.mjs` 将根环境变量交给 API、Worker 和 Next 子应用；Worker 接收 `{type:'chatpm:shutdown'}` IPC 消息，在完成 tick/关闭连接池后断开 IPC 退出。这是受限时间内的进程级排空，不是持久消息事务回滚。
+
+## 可配置模型传输契约（ADR-019）
+
+- 模型配置仅在服务端：`LLM_API_KEY`（空值禁用调用）、`LLM_BASE_URL`（只接受无凭据/query/fragment 的绝对 URL；外部须 HTTPS，回环或 `host.docker.internal` 可 HTTP）、`LLM_MODEL`、`LLM_API_STYLE=responses|chat-completions`。
+- `packages/core/src/llm-transport.ts` 是无数据库副作用的模型 HTTP 适配；`ai-provider.ts` 在每次业务调用时先校验配置、原子预留项目日额度，再解析并通过 Zod 校验，来源/Prompt/模型版本随候选落库。无额外回退模型、错误不产生正式领域记录。
+- Docker 仅 API、Worker、迁移任务读取服务端 LLM 变量，Web 独立配置无 Key；原生从项目根目录环境读取。变更模型后重启 Worker。
+
+**开启 AI 的统一校验**：`PATCH /projects/:id/settings` 对 `aiEnabled=true` 调用与 Worker 一致的 `readLLMSettings`；`model_name` 保存模型/端点主机/协议/端点指纹复合身份（密钥和 URL path 不落库）。所有模型请求必须 `redirect:'error'`。

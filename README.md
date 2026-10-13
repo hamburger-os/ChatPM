@@ -28,7 +28,7 @@
 - 后台按工作时间跟进已有负责人及期限的任务，并通过持久 Outbox 管理失败重试和隔离。
 - 周/月项目当前状态报告草稿，负责人审核发布。**当前不是历史周期变化分析。**
 
-**尚未实现：** 本地模型与多提供商接入、文档知识库、自动语义关联、完整风险升级、实时推送、完整企业身份管理和正式 SaaS 运营。以上属于 [路线图](docs/design/roadmap-acceptance.md)，不是现有功能。
+**尚未实现：** 本地模型与多提供商的真实兼容性验收、模型管理 UI、文档知识库、自动语义关联、完整风险升级、实时推送、完整企业身份管理和正式 SaaS 运营。以上属于 [路线图](docs/design/roadmap-acceptance.md)，不是现有功能。
 
 ## 最简安装：Docker 一条命令
 
@@ -85,7 +85,7 @@ API_PORT=3001
 API_INTERNAL_URL=http://127.0.0.1:3001
 ```
 
-数据库密码包含 `@`、`#`、`:` 等特殊字符时，须将密码部分按 URL 编码。上面的尖括号内容必须替换为实际值；本机 HTTP 仅用于可信的本地访问，不是公网生产配置。第三方 AI 默认关闭，可暂时不填 `OPENAI_API_KEY`。
+数据库密码包含 `@`、`#`、`:` 等特殊字符时，须将密码部分按 URL 编码。上面的尖括号内容必须替换为实际值；本机 HTTP 仅用于可信的本地访问，不是公网生产配置。第三方 AI 默认关闭，可暂时不填 `LLM_API_KEY`。
 
 ### 3. 安装、构建并初始化
 
@@ -127,6 +127,10 @@ Docker 不是必需组件。`npm run start:web` 默认只监听回环地址，�
 ## 预构建跨平台分发包（实验性）
 
 GitHub Actions 的 `Cross-platform native builds` 工作流会为 Windows 和 Linux 生成包含 `dist/`、Next.js 构建结果、SQL、配置模板与运维工具的实验性 Artifact，不携带数据库或私有密钥。取出与目标系统匹配的 Artifact 后，仍需 Node.js/npm 和 PostgreSQL；执行 `npm ci --omit=dev`、配置本机 `.env`、`npm run db:migrate:prod`，然后 `npm start` 或安装系统服务。它不是经过签名验证的 Windows MSI/Linux DEB/RPM 安装包，也不意味着已完成开机或恢复验收。
+
+## 选择模型提供商
+
+默认不配置模型密钥，也不发送项目消息。部署管理员在根目录 `.env` 设置 `LLM_API_KEY`、`LLM_BASE_URL`、`LLM_MODEL` 和 `LLM_API_STYLE`（旧 `OPENAI_API_KEY`/`OPENAI_MODEL` 不再读取）。默认是 OpenAI Responses（`https://api.openai.com/v1`）；DeepSeek 示例：`https://api.deepseek.com`、`responses`、`deepseek-flash`。具备 JSON Object 支持的兼容服务可改用 `chat-completions`，但真实模型能力仍需联调；本地模型需自行部署和保护。改配置后重启 Worker 或重新执行 Docker 部署，并由项目负责人显式启用 AI。详细步骤：[中英双语部署指南](docs/community/development.md)。
 
 ## 本地演示路线
 

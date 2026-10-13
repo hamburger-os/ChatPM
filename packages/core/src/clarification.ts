@@ -1,5 +1,5 @@
 import { pool, transaction, audit } from './db.ts';
-import { OpenAIProvider } from './ai-provider.ts';
+import { ConfiguredLLMProvider } from './ai-provider.ts';
 import { insertMessage } from './messages.ts';
 
 const REFERENCE=/【候选:([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})】/i;
@@ -20,7 +20,7 @@ export async function processClarification(reply:Reply):Promise<boolean>{
     'SELECT 1 FROM clarification_responses WHERE proposal_id=$1 AND message_id=$2',
     [proposalId,reply.id]);
   if(processed.rowCount)return true; // A redelivered event never spends budget twice.
-  const result=await new OpenAIProvider(reply.projectId).clarify(reply.projectName,rows[0].title,reply.content);
+  const result=await new ConfiguredLLMProvider(reply.projectId).clarify(reply.projectName,rows[0].title,reply.content);
   const suggestion=result.value;
   if(!suggestion.assignee_hint&&!suggestion.due_at)return true;
   await transaction(async db=>{

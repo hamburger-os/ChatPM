@@ -14,8 +14,10 @@ x-app: &app
     SESSION_SECRET: ${SESSION_SECRET:?Set SESSION_SECRET in .env}
     WEB_ORIGIN: ${WEB_ORIGIN:-http://localhost:3000}
     DB_POOL_MAX: ${DB_POOL_MAX:-10}
-    OPENAI_API_KEY: ${OPENAI_API_KEY:-}
-    OPENAI_MODEL: ${OPENAI_MODEL:-gpt-4.1-mini}
+    LLM_API_KEY: ${LLM_API_KEY:-}
+    LLM_BASE_URL: ${LLM_BASE_URL:-https://api.openai.com/v1}
+    LLM_MODEL: ${LLM_MODEL:-gpt-4.1-mini}
+    LLM_API_STYLE: ${LLM_API_STYLE:-responses}
   depends_on:
     migrate:
       condition: service_completed_successfully

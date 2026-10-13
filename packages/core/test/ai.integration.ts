@@ -7,14 +7,15 @@ import { DailyAIBudgetExceeded } from '../src/ai-provider.ts';
 
 const id=randomUUID();
 const previousFetch=globalThis.fetch;
-const previousKey=process.env.OPENAI_API_KEY;
+const previousKey=process.env.LLM_API_KEY;
 const previousLimit=process.env.AI_DAILY_REQUEST_LIMIT;
 let providerCalls=0;
 try{
-  process.env.OPENAI_API_KEY='fake-key-for-mocked-requests';
+  process.env.LLM_API_KEY='fake-key-for-mocked-requests';
   process.env.AI_DAILY_REQUEST_LIMIT='2';
   globalThis.fetch=async(_input,init)=>{
     providerCalls++;
+    assert.equal(String(_input),'https://api.openai.com/v1/responses');
     const body=JSON.parse(String(init?.body));
     assert.equal(body.text.format.type,'json_schema');
     assert.ok(body.input[0].content.includes('不可信'));
