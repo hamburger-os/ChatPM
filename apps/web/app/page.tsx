@@ -412,6 +412,11 @@ export default function Home(){
           </form>}
           {tasks.map(t=><article className="item" key={t.id}>
             <strong>{t.title}</strong><small>负责人：{t.assignee||'待指定'}</small>
+            {progress.filter(u=>u.task_id===t.id&&u.status==='accepted')
+              .slice(0,3).map(u=><p className="hint" key={u.id}>
+                已确认{u.kind==='blocker'?'阻塞':u.kind==='completion_claim'?'完成声明':'进度'}：
+                {u.summary}（{new Date(u.created_at).toLocaleDateString('zh-CN')}）
+              </p>)}
             <div className="between"><small>{t.due_date||'无截止日期'}</small>
               <select aria-label={'任务状态：'+t.title} value={t.status}
                 onChange={e=>void changeStatus(t,e.target.value)}>

@@ -3,7 +3,7 @@ import { pool } from './db.ts';
 // Only authoritative project state may be labeled as facts. Chat stays untrusted.
 // Always retain the most recent source message before allocating the remaining budget.
 export async function projectAnalysisContext(projectId:string,messageId:string,budget=6500):Promise<string>{
-  const [messages,tasks,risks]=await Promise.all([
+  const [messages,tasks,risks,updates]=await Promise.all([
     pool.query(`SELECT id,kind,content FROM messages WHERE project_id=$1
       AND seq<=(SELECT seq FROM messages WHERE id=$2 AND project_id=$1)
       ORDER BY seq DESC LIMIT 100`,[projectId,messageId]),
@@ -13,6 +13,9 @@ export async function projectAnalysisContext(projectId:string,messageId:string,b
       ORDER BY t.updated_at DESC LIMIT 80`,[projectId]),
     pool.query(`SELECT title,status FROM risks WHERE project_id=$1 AND status='open'
       ORDER BY created_at DESC LIMIT 30`,[projectId]),
+    pool.query(`SELECT task_id,kind,summary FROM task_progress_updates
+      WHERE project_id=$1 AND status='accepted'
+      ORDER BY reviewed_at DESC LIMIT 30`,[projectId]),
   ]);
   const messagesAsc=messages.rows.reverse();
   const newest=messagesAsc.pop();
@@ -26,7 +29,10 @@ export async function projectAnalysisContext(projectId:string,messageId:string,b
   const facts=tasks.rows.map(t=>'- 任务 '+String(t.title).slice(0,120)+
     ' [ID '+t.id+'; '+t.status+'; 截止 '+(t.due_date?String(t.due_date).slice(0,10):'未定')+
     '; 负责人 '+(t.assignee||'未定')+']').join('\n')+'\n'+
-    risks.rows.map(r=>'- 风险 '+String(r.title).slice(0,120)+' ['+r.status+']').join('\n');
+    risks.rows.map(r=>'- 风险 '+String(r.title).slice(0,120)+' ['+r.status+']').join('\n')+
+    '\n已经过负责人审核的进度证据（非正式完成状态）：\n'+
+    updates.rows.map(u=>'- 任务ID '+u.task_id+' ['+u.kind+'] '+
+      String(u.summary).slice(0,300)).join('\n');
   const keptFacts=facts.slice(0,factsMax);
   const historyMax=Math.max(0,available-keptFacts.length);
   const history=historyMax>0?messagesAsc.map(m=>m.kind+': '+String(m.content).slice(0,1200))
