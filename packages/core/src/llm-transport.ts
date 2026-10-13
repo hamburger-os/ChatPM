@@ -11,7 +11,7 @@ const systemInstruction =
   '只提取明确的事项或填写线索，不猜测负责人、期限或项目事实。' +
   '必须只返回符合指定 JSON Schema 的 JSON 对象。';
 
-export function readLLMSettings(env:NodeJS.ProcessEnv=process.env):LLMSettings {
+export function readLLMSettings(env:Readonly<Record<string,string|undefined>>=process.env):LLMSettings {
   const apiKey=env.LLM_API_KEY?.trim();
   if(!apiKey)throw new Error('MODEL_NOT_CONFIGURED');
   const style=env.LLM_API_STYLE || 'responses';
