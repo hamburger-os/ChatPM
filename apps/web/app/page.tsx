@@ -8,7 +8,7 @@ type Member={id:string,email:string,display_name:string,role:string};
 type Tenant={id:string,name:string,role:'admin'|'member'};
 type Message={id:string,seq:number,kind:string,content:string,client_nonce?:string,author:string|null,created_at:string};
 type Task={id:string,title:string,status:string,version:number,assignee_id:string|null,
-  assignee:string|null,due_at:string|null};
+  assignee:string|null,due_date:string|null};
 type Proposal={id:string,kind:'task'|'risk',title:string,detail:string,assignee_hint:string|null,
   due_at:string|null,status:string,confidence:string,
   clarified_assignee_hint:string|null,clarified_due_at:string|null,
@@ -16,23 +16,24 @@ type Proposal={id:string,kind:'task'|'risk',title:string,detail:string,assignee_
 type Report={id:string,kind:'week'|'month',period_key:string,content:string,
   state:'draft'|'published'};
 type Risk={id:string,title:string,status:string};
+type Progress={id:string,task_id:string,source_message_id:string,summary:string,
+  kind:'progress'|'blocker'|'completion_claim',status:'pending'|'accepted'|'rejected',
+  task_title:string,created_at:string};
 type FailedEvent={id:string,kind:string,attempts:number,last_error_code:string,dead_at:string};
 type OutboxStats={pending:number,dead:number,model_errors:number,oldest_pending_at:string|null};
 type ModelConfig={provider:'server'|'openai'|'deepseek',model:string,
-  style:'responses'|'chat-completions',reasoning:'auto'|'low'|'medium'|'high',
+  style:'responses'|'chat-completions',reasoning:'auto'|'none'|'low'|'medium'|'high'|'max',
   maxOutputTokens:number,contextChars:number,hasKey:boolean};
 type AiRun={source_message_id:string,kind:string,status:string,
   model_name:string|null,error_code:string|null,created_at:string};
 const defaultModel:ModelConfig={provider:'server',model:'',style:'responses',
-  reasoning:'auto',maxOutputTokens:2048,contextChars:6500,hasKey:false};
+  reasoning:'auto',maxOutputTokens:8192,contextChars:32768,hasKey:false};
 const API='/api';
 
-function browserLocalDateTime(iso:string|null):string {
+function browserDate(iso:string|null,timezone='Asia/Shanghai'):string {
   if(!iso)return '';
-  const date=new Date(iso);
-  const pad=(n:number)=>String(n).padStart(2,'0');
-  return date.getFullYear()+'-'+pad(date.getMonth()+1)+'-'+pad(date.getDate())+
-    'T'+pad(date.getHours())+':'+pad(date.getMinutes());
+  if(/^\d{4}-\d{2}-\d{2}$/.test(iso))return iso;
+  return new Date(iso).toLocaleDateString('sv-SE',{timeZone:timezone});
 }
 
 async function request<T>(path:string,options?:RequestInit):Promise<T>{
@@ -53,6 +54,7 @@ export default function Home(){
   const [members,setMembers]=useState<Member[]>([]),[messages,setMessages]=useState<Message[]>([]);
   const [tasks,setTasks]=useState<Task[]>([]),[proposals,setProposals]=useState<Proposal[]>([]);
   const [reports,setReports]=useState<Report[]>([]),[risks,setRisks]=useState<Risk[]>([]);
+  const [progress,setProgress]=useState<Progress[]>([]);
   const [failedEvents,setFailedEvents]=useState<FailedEvent[]>([]);
   const [outboxStats,setOutboxStats]=useState<OutboxStats|null>(null);
   const [chat,setChat]=useState(''),[newProject,setNewProject]=useState(''),
@@ -92,13 +94,14 @@ export default function Home(){
 
   const refresh=useCallback(async(id:string)=>{
     const base='/projects/'+id;
-    const [ms,ts,ps,rs,people,risk]=await Promise.all([
+    const [ms,ts,ps,rs,people,risk,updates]=await Promise.all([
       request<{messages:Message[]}>(base+'/messages?after='+cursor.current),
       request<{tasks:Task[]}>(base+'/tasks'),
       request<{proposals:Proposal[]}>(base+'/proposals'),
       request<{reports:Report[]}>(base+'/reports'),
       request<{members:Member[]}>(base+'/members'),
       request<{risks:Risk[]}>(base+'/risks'),
+      request<{updates:Progress[]}>(base+'/progress'),
     ]);
     if(activeProject.current!==id)return;
     if(ms.messages.length){
@@ -110,13 +113,13 @@ export default function Home(){
       });
     }
     setTasks(ts.tasks);setProposals(ps.proposals);
-    setReports(rs.reports);setMembers(people.members);setRisks(risk.risks);
+    setReports(rs.reports);setMembers(people.members);setRisks(risk.risks);setProgress(updates.updates);
   },[]);
   useEffect(()=>{
     if(!selected)return;
     const id=selected;
     activeProject.current=id;cursor.current=0;
-    setMessages([]);setTasks([]);setProposals([]);setReports([]);setFailedEvents([]);setOutboxStats(null);
+    setMessages([]);setTasks([]);setProposals([]);setProgress([]);setReports([]);setFailedEvents([]);setOutboxStats(null);
     const update=()=>void refresh(id).catch(e=>setNotice(e.message));
     update();
     const timer=setInterval(update,5000);
@@ -186,7 +189,7 @@ export default function Home(){
     await action(async()=>{
       await request('/projects/'+selected+'/tasks',{method:'POST',
         body:JSON.stringify({title:newTask,detail:'',
-          dueAt:newTaskDue?new Date(newTaskDue).toISOString():null,
+          dueDate:newTaskDue||null,
           assigneeId:newTaskOwner||null})});
       setNewTask('');setNewTaskDue('');setNewTaskOwner('');await refresh(selected);
     });
@@ -212,9 +215,17 @@ export default function Home(){
     await action(async()=>{
       const assigneeId=accepted&&p.kind==='task'?proposalOwners[p.id]||null:null;
       const dueText=proposalDates[p.id];
-      const dueAt=dueText===undefined?undefined:dueText?new Date(dueText).toISOString():null;
+      const dueDate=dueText===undefined?undefined:dueText||null;
       await request('/projects/'+selected+'/proposals/'+p.id+'/decision',{
-        method:'POST',body:JSON.stringify({decision:accepted?'accepted':'rejected',assigneeId,dueAt})});
+        method:'POST',body:JSON.stringify({decision:accepted?'accepted':'rejected',assigneeId,dueDate})});
+      await refresh(selected);
+    });
+  }
+  async function reviewProgress(item:Progress,accepted:boolean){
+    if(!selected)return;
+    await action(async()=>{
+      await request('/projects/'+selected+'/progress/'+item.id+'/decision',{
+        method:'POST',body:JSON.stringify({decision:accepted?'accepted':'rejected'})});
       await refresh(selected);
     });
   }
@@ -356,7 +367,7 @@ export default function Home(){
       </div><form className="composer" onSubmit={send}>
         <textarea rows={3} placeholder="讨论进度、风险与任务；输入 @AI 提问或回复 AI 的澄清…" value={chat}
           onChange={e=>setChat(e.target.value)}
-          onKeyDown={e=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();void send(e as unknown as FormEvent);}}}/>
+          onKeyDown={e=>{if(e.key==='Enter'&&!e.shiftKey&&!e.nativeEvent.isComposing){e.preventDefault();void send(e as unknown as FormEvent);}}}/>
         <button disabled={working||!chat.trim()}>发送</button>
       </form></>:<div className="empty">尚无项目，请从左侧创建。</div>}
     </section>
@@ -370,6 +381,20 @@ export default function Home(){
       </div>
       {!selected?<div className="empty">暂无项目内容</div>:<div className="detail-content">
         {tab==='tasks'&&<>
+          <h3>已有任务的进度证据 <span className="count">
+            {progress.filter(u=>u.status==='pending').length}</span></h3>
+          <p className="hint">聊天中识别出的进展/阻塞需要核对；确认仅保留证据，不会自动把任务标记为已完成。</p>
+          {progress.filter(u=>u.status==='pending').map(u=><article className="item" key={u.id}>
+            <strong>{u.task_title}</strong>
+            <small>{u.kind==='blocker'?'可能阻塞':u.kind==='completion_claim'?'声称完成':'阶段进展'}</small>
+            <p>{u.summary}</p>
+            {current?.role==='owner'&&<div className="actions">
+              <button disabled={working} onClick={()=>void reviewProgress(u,true)}>确认进展</button>
+              <button className="secondary" disabled={working}
+                onClick={()=>void reviewProgress(u,false)}>忽略</button>
+            </div>}
+          </article>)}
+
           <h3>任务列表 <span className="count">{tasks.length}</span></h3>
           {current?.role==='owner'&&<form className="stack" onSubmit={createTask}>
             <input placeholder="任务名称" required value={newTask}
@@ -380,14 +405,14 @@ export default function Home(){
                 <option value="">负责人待定</option>
                 {members.map(m=><option key={m.id} value={m.id}>{m.display_name}</option>)}
               </select>
-              <input aria-label="截止日期（浏览器本地时间）" type="datetime-local" value={newTaskDue}
+              <input aria-label="截止日期" type="date" value={newTaskDue}
                 onChange={e=>setNewTaskDue(e.target.value)}/>
             </div>
             <button disabled={working}>＋ 创建任务</button>
           </form>}
           {tasks.map(t=><article className="item" key={t.id}>
             <strong>{t.title}</strong><small>负责人：{t.assignee||'待指定'}</small>
-            <div className="between"><small>{t.due_at?new Date(t.due_at).toLocaleDateString('zh-CN'):'无截止日期'}</small>
+            <div className="between"><small>{t.due_date||'无截止日期'}</small>
               <select aria-label={'任务状态：'+t.title} value={t.status}
                 onChange={e=>void changeStatus(t,e.target.value)}>
                 <option value="todo">待开始</option><option value="doing">进行中</option>
@@ -403,13 +428,13 @@ export default function Home(){
                 </select>
               </label>
               <label>截止时间
-                <input key={t.id+':'+t.version} type="datetime-local"
-                  aria-label={'调整截止日期（浏览器本地时间）：'+t.title}
-                  defaultValue={browserLocalDateTime(t.due_at)}
+                <input key={t.id+':'+t.version} type="date"
+                  aria-label={'调整截止日期：'+t.title}
+                  defaultValue={browserDate(t.due_date)}
                   onBlur={e=>{const value=e.target.value;
-                    const next=value?new Date(value).toISOString():null;
-                    if(next!==(t.due_at?new Date(t.due_at).toISOString():null))
-                      void changePlan(t,{dueAt:next});}}/>
+                    const next=value||null;
+                    if(next!==(t.due_date||null))
+                      void changePlan(t,{dueDate:next});}}/>
               </label>
             </div>}
           </article>)}
@@ -437,9 +462,9 @@ export default function Home(){
                 <option value="">负责人待指定</option>
                 {members.map(m=><option key={m.id} value={m.id}>{m.display_name}</option>)}
               </select>}
-            {current?.role==='owner'&&p.kind==='task'&&<label>确认截止时间（可修改 AI 建议）
-              <input type="datetime-local" key={p.id+':'+(p.clarified_due_at||p.due_at||'none')}
-                defaultValue={browserLocalDateTime(p.clarified_due_at||p.due_at)}
+            {current?.role==='owner'&&p.kind==='task'&&<label>确认截止日期（可修改 AI 建议）
+              <input type="date" key={p.id+':'+(p.clarified_due_at||p.due_at||'none')}
+                defaultValue={browserDate(p.clarified_due_at||p.due_at,current?.timezone)}
                 onChange={e=>setProposalDates(old=>({...old,[p.id]:e.target.value}))}/>
             </label>}
             {current?.role==='owner'&&<div className="actions">
@@ -505,23 +530,24 @@ export default function Home(){
                 </label>
               </>}
               <label>推理强度（只有支持该参数的服务生效）
-                <select value={model.reasoning} disabled={model.provider==='deepseek'}
+                <select value={model.reasoning}
                   onChange={e=>setModel({...model,
                   reasoning:e.target.value as ModelConfig['reasoning']})}>
                   <option value="auto">由模型决定</option>
+                  <option value="none">关闭推理（DeepSeek）</option>
                   <option value="low">低</option><option value="medium">中</option>
-                  <option value="high">高</option>
+                  <option value="high">高</option><option value="max">最大（DeepSeek）</option>
                 </select>
               </label>
-              <label>最大输出 Token（512–8192）
-                <input type="number" min="512" max="8192" value={model.maxOutputTokens}
+              <label>最大输出 Token（512–131072）
+                <input type="number" min="512" max="131072" value={model.maxOutputTokens}
                   onChange={e=>setModel({...model,maxOutputTokens:Number(e.target.value)})}/>
               </label>
-              <label>输入预算（字符，2000–16000）
-                <input type="number" min="2000" max="16000" value={model.contextChars}
+              <label>输入预算（字符，2000–250000）
+                <input type="number" min="2000" max="250000" value={model.contextChars}
                   onChange={e=>setModel({...model,contextChars:Number(e.target.value)})}/>
               </label>
-              <p className="hint">输入预算不是模型的 Token 窗口，较早聊天被确定性裁剪。正式项目事实保存在数据库中，模型不会自动替团队修改任务。</p>
+              <p className="hint">输入预算是字符数，不等于模型的 Token 窗口；任务分析建议从 32768 字符起按需扩大，旧聊天被有界裁剪。正式项目事实保存在数据库中，模型不会自动替团队修改任务。</p>
               <div className="actions">
                 <button disabled={working} onClick={()=>void saveModel()}>保存模型配置</button>
                 <button className="secondary" disabled={working||Boolean(modelKey)}

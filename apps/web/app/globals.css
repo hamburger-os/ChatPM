@@ -15,3 +15,17 @@ label{display:grid;gap:7px;font-size:13px;color:#536174}label.check{display:flex
 .tabs{grid-template-columns:repeat(5,minmax(0,1fr))}
 .tabs button{white-space:nowrap;min-width:0}
 @media(max-width:640px){.composer{padding:12px;gap:8px}.composer button{min-width:72px}.detail-content{padding:8px 12px 22px}}
+.shell{height:100dvh;min-height:0}
+.sidebar,.chat-pane,.details{min-height:0}
+.sidebar{overflow-y:auto}
+.chat-pane{overflow:hidden}
+.messages,.detail-content{flex:1 1 0;min-height:0;overflow-y:auto;overscroll-behavior:contain}
+.row-form{align-items:center}
+.row-form input{flex:1 1 auto;min-width:0}
+.row-form button{flex:0 0 80px;height:40px;white-space:nowrap}
+@media(max-width:1020px){
+  .shell{height:auto;min-height:100dvh;overflow:visible}
+  .chat-pane{overflow:visible}
+  .details{min-height:500px}
+  .detail-content{min-height:300px;max-height:70dvh;overflow-y:auto}
+}
