@@ -81,3 +81,5 @@ Windows 11 WinSW LocalService ACL、Linux 关机重启恢复、数据库隔离�
 - Win11 浏览器滚动、输入法和邀请按钮验证；DeepSeek 真正使用自定义推理与长上下文需真实 API 测试。
 - 核对最新 Head 的 Product verification、Documentation governance、Docker deployment smoke、Cross-platform native builds、Security scanning，未通过不合并。
 
+### ADR-022 Worker 实际链路集成
+CI 新增 `tools/test/task-linkage-smoke.mjs`：PostgreSQL 创建正式任务与聊天消息，真实启动 Worker 连接本地非敏感 HTTP 模拟模型，断言同项目任务 ID 进入模型上下文、进度证据落库、没有新建重复候选、正式任务状态未被更改，并对模型只调用一次。此测试不包含真实 DeepSeek 服务体验或生产 Token 费用验证。
