@@ -6,7 +6,7 @@ type Project={id:string,name:string,role:'owner'|'member',ai_enabled:boolean,
   timezone:string,work_start:number|null,work_end:number|null,cooldown_hours:number|null};
 type Member={id:string,email:string,display_name:string,role:string};
 type Tenant={id:string,name:string,role:'admin'|'member'};
-type Message={id:string,seq:number,kind:string,content:string,author:string|null,created_at:string};
+type Message={id:string,seq:number,kind:string,content:string,client_nonce?:string,author:string|null,created_at:string};
 type Task={id:string,title:string,status:string,version:number,assignee_id:string|null,
   assignee:string|null,due_at:string|null};
 type Proposal={id:string,kind:'task'|'risk',title:string,detail:string,assignee_hint:string|null,
@@ -18,6 +18,13 @@ type Report={id:string,kind:'week'|'month',period_key:string,content:string,
 type Risk={id:string,title:string,status:string};
 type FailedEvent={id:string,kind:string,attempts:number,last_error_code:string,dead_at:string};
 type OutboxStats={pending:number,dead:number,model_errors:number,oldest_pending_at:string|null};
+type ModelConfig={provider:'server'|'openai'|'deepseek',model:string,
+  style:'responses'|'chat-completions',reasoning:'auto'|'low'|'medium'|'high',
+  maxOutputTokens:number,contextChars:number,hasKey:boolean};
+type AiRun={source_message_id:string,kind:string,status:string,
+  model_name:string|null,error_code:string|null,created_at:string};
+const defaultModel:ModelConfig={provider:'server',model:'',style:'responses',
+  reasoning:'auto',maxOutputTokens:2048,contextChars:6500,hasKey:false};
 const API='/api';
 
 function browserLocalDateTime(iso:string|null):string {
@@ -55,8 +62,12 @@ export default function Home(){
   const [proposalDates,setProposalDates]=useState<Record<string,string>>({});
   const [settings,setSettings]=useState({aiEnabled:false,workStart:null as number|null,
     workEnd:null as number|null,cooldownHours:null as number|null});
+  const [model,setModel]=useState<ModelConfig>(defaultModel);
+  const [modelKey,setModelKey]=useState('');
+  const [modelFeedback,setModelFeedback]=useState('');
+  const [aiRuns,setAiRuns]=useState<AiRun[]>([]);
   const [notice,setNotice]=useState(''),[working,setWorking]=useState(false);
-  const [tab,setTab]=useState<'tasks'|'proposals'|'reports'|'settings'>('tasks');
+  const [tab,setTab]=useState<'tasks'|'proposals'|'reports'|'settings'|'model'>('tasks');
   const bottom=useRef<HTMLDivElement>(null);
   const cursor=useRef(0);
   const activeProject=useRef<string|null>(null);
@@ -111,6 +122,16 @@ export default function Home(){
     const timer=setInterval(update,5000);
     return ()=>clearInterval(timer);
   },[selected,refresh]);
+  useEffect(()=>{
+    if(!selected||current?.role!=='owner')return;
+    const id=selected;
+    setModel(defaultModel);setModelKey('');setModelFeedback('');setAiRuns([]);
+    request<{model:ModelConfig}>('/projects/'+id+'/model')
+      .then(x=>{if(activeProject.current===id)setModel(x.model);})
+      .catch(e=>{if(activeProject.current===id)setNotice(e.message);});
+    request<{runs:AiRun[]}>('/projects/'+id+'/ai/runs')
+      .then(x=>{if(activeProject.current===id)setAiRuns(x.runs);}).catch(()=>{});
+  },[selected,current?.role]);
   useEffect(()=>{ if(current) setSettings({
     aiEnabled:current.ai_enabled,workStart:current.work_start,
     workEnd:current.work_end,cooldownHours:current.cooldown_hours});
@@ -204,6 +225,28 @@ export default function Home(){
       await loadProjects();setNotice('已保存项目设置');
     });
   }
+  async function saveModel(){
+    if(!selected)return;
+    await action(async()=>{
+      const data=await request<{model:ModelConfig}>('/projects/'+selected+'/model',{
+        method:'PUT',body:JSON.stringify({...model,
+          ...(modelKey?{apiKey:modelKey}:{})})});
+      setModel(data.model);setModelKey('');setModelFeedback('模型配置已保存。');
+    });
+  }
+  async function testModel(){
+    if(!selected)return;
+    await action(async()=>{
+      const result=await request<{ok:boolean;latencyMs:number;model:string}>(
+        '/projects/'+selected+'/model/test',{method:'POST'});
+      setModelFeedback('连接测试成功 · '+result.latencyMs+' ms · '+result.model);
+    });
+  }
+  async function refreshAiRuns(){
+    if(!selected)return;
+    const x=await request<{runs:AiRun[]}>('/projects/'+selected+'/ai/runs');
+    setAiRuns(x.runs);
+  }
   async function inviteMember(e:FormEvent){
     e.preventDefault();if(!selected)return;
     await action(async()=>{
@@ -291,18 +334,18 @@ export default function Home(){
     <section className="chat-pane">
       <header><div>
         <h2>{current?.name||'请选择项目'}</h2>
-        <small>{current?'项目聊天室 · '+(current.ai_enabled?'AI 已启用':'AI 未启用'):'创建项目后开始协作'}</small>
+        <small>{current?'项目聊天室 · '+(current.ai_enabled?'AI 消息分析已启用':'AI 消息分析未启用'):'创建项目后开始协作'}</small>
       </div><div className="user-avatar">{user.display_name.slice(0,1)}</div></header>
       {selected?<><div className="messages">
         {messages.length===0&&<div className="empty">发送一条消息，开始讨论工作、任务与风险。</div>}
         {messages.map(m=><article key={m.id} className={'bubble '+(m.kind==='ai'?'ai':'')}>
-          <div className="msg-header"><strong>{m.kind==='ai'?'✳ AI 项目经理':m.author||'项目成员'}</strong>
+          <div className="msg-header"><strong>{m.kind==='ai'?(m.client_nonce?.startsWith('followup:')?'◷ 自动任务提醒':'✳ AI 项目经理'):m.author||'项目成员'}</strong>
             <time>{new Date(m.created_at).toLocaleString('zh-CN')}</time></div>
           <p>{m.content}</p>
         </article>)}
         <div ref={bottom}/>
       </div><form className="composer" onSubmit={send}>
-        <textarea rows={3} placeholder="讨论进度、风险和待办事项…" value={chat}
+        <textarea rows={3} placeholder="讨论进度、风险与任务；输入 @AI 提问或回复 AI 的澄清…" value={chat}
           onChange={e=>setChat(e.target.value)}
           onKeyDown={e=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();void send(e as unknown as FormEvent);}}}/>
         <button disabled={working||!chat.trim()}>发送</button>
@@ -310,10 +353,10 @@ export default function Home(){
     </section>
     <aside className="details">
       <div className="tabs">
-        {(['tasks','proposals','reports','settings'] as const).map(t=>
-          <button key={t} className={tab===t?'active':''} onClick={()=>{setTab(t);if(t==='settings'&&selected&&current?.role==='owner')
+        {(['tasks','proposals','reports','model','settings'] as const).map(t=>
+          <button key={t} className={tab===t?'active':''} onClick={()=>{setTab(t);if((t==='settings'||t==='model')&&selected&&current?.role==='owner')
             void loadDeadEvents(selected).catch(e=>setNotice(e.message));}}>
-            {({tasks:'任务',proposals:'AI 待确认',reports:'汇报',settings:'设置'})[t]}
+            {({tasks:'任务',proposals:'AI 待确认',reports:'汇报',model:'AI 模型',settings:'设置'})[t]}
           </button>)}
       </div>
       {!selected?<div className="empty">暂无项目内容</div>:<div className="detail-content">
