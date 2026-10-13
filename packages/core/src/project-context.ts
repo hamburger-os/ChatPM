@@ -27,7 +27,7 @@ export async function projectAnalysisContext(projectId:string,messageId:string,b
     risks.rows.map(r=>'- 风险 '+String(r.title).slice(0,120)+' ['+r.status+']').join('\n');
   const keptFacts=facts.slice(0,factsMax);
   const historyMax=Math.max(0,available-keptFacts.length);
-  const history=messagesAsc.map(m=>m.kind+': '+String(m.content).slice(0,650))
-    .join('\n').slice(-historyMax);
+  const history=historyMax>0?messagesAsc.map(m=>m.kind+': '+String(m.content).slice(0,650))
+    .join('\n').slice(-historyMax):'';
   return head+keptFacts+middle+history+tail;
 }

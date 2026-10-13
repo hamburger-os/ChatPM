@@ -35,7 +35,14 @@ export async function processClarification(reply:Reply):Promise<boolean>{
   if(processed.rowCount)return true; // A redelivered event never spends budget twice.
   const result=await new ConfiguredLLMProvider(reply.projectId).clarify(reply.projectName,rows[0].title,reply.content);
   const suggestion=result.value;
-  if(!suggestion.assignee_hint&&!suggestion.due_at)return true;
+  if(!suggestion.assignee_hint&&!suggestion.due_at){
+    await transaction(db=>insertMessage(db,{
+      projectId:reply.projectId,authorId:null,kind:'ai',
+      content:'我收到了【候选:'+proposalId+'】的回复，但还无法确认具体负责人或包含年份、时区的截止时间。请补充明确日期，例如 2026-11-30 18:00（北京时间），我不会猜测。',
+      nonce:'clarification-needs-detail:'+reply.id,
+    }).then(()=>{}));
+    return true;
+  }
   await transaction(async db=>{
     const {rows:written}=await db.query(`INSERT INTO clarification_responses(
       project_id,proposal_id,message_id,model_name,prompt_version,assignee_hint,due_at,confidence)

@@ -47,10 +47,10 @@ async function reserveCall(projectId:string){
 
 export class ConfiguredLLMProvider implements LLMProvider{
   constructor(private readonly projectId:string){}
-  private async request<T>(input:string,schema:object,output:z.ZodType<T>,promptVersion:string):Promise<ModelResult<T>>{
+  private async request<T>(input:string,schema:object,output:z.ZodType<T>,promptVersion:string,mode:'analysis'|'reply'='analysis'):Promise<ModelResult<T>>{
     const settings=await resolveProjectModel(this.projectId);
     await reserveCall(this.projectId);
-    const data=await callStructuredLLM(settings,input,schema);
+    const data=await callStructuredLLM(settings,input,schema,fetch,mode);
     return {value:output.parse(data),modelName:modelAuditIdentity(settings),promptVersion};
   }
 
@@ -76,7 +76,7 @@ export class ConfiguredLLMProvider implements LLMProvider{
       properties:{reply:{type:'string'}}};
     return this.request('你是项目协作助手，只根据以下正式项目事实与已给出的消息回答。'+
       '不得假装修改任务、指派人员或完成审批，未知信息明确说明。\n项目：'+project+'\n'+context,
-      schema,assistantReply,REPLY_PROMPT_VERSION);
+      schema,assistantReply,REPLY_PROMPT_VERSION,'reply');
   }
 
   async clarify(project:string,title:string,message:string){
