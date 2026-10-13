@@ -19,6 +19,9 @@ import { deadEvents, outboxSummary } from '../../../packages/core/src/outbox.ts'
 const port = serverConfig.API_PORT;
 const origin = serverConfig.WEB_ORIGIN;
 const uuid = z.string().uuid();
+const dateOnly=z.string().regex(/^\d{4}-\d{2}-\d{2}$/).refine(
+  v=>!Number.isNaN(Date.parse(v+'T00:00:00Z')) &&
+  new Date(v+'T00:00:00Z').toISOString().slice(0,10)===v,'Invalid calendar date');
 const text = z.string().trim().min(1).max(10000);
 const app = Fastify({ logger: true, bodyLimit: 128 * 1024 });
 
@@ -238,9 +241,9 @@ const modelSchema=z.object({
   provider:z.enum(['server','openai','deepseek']),
   model:z.string().trim().max(150),
   style:z.enum(['responses','chat-completions']),
-  reasoning:z.enum(['auto','low','medium','high']),
-  maxOutputTokens:z.number().int().min(512).max(8192),
-  contextChars:z.number().int().min(2000).max(16000),
+  reasoning:z.enum(['auto','none','low','medium','high','max']),
+  maxOutputTokens:z.number().int().min(512).max(131072),
+  contextChars:z.number().int().min(2000).max(250000),
   apiKey:z.string().min(1).max(500).regex(/^[^\r\n]+$/).optional(),
   clearKey:z.boolean().optional(),
 });
@@ -342,7 +345,7 @@ app.get('/projects/:id/tasks',async req=>{
   const projectId=uuid.parse((req.params as {id:string}).id);
   await member(await authenticated(req),projectId);
   const {rows}=await pool.query(
-    `SELECT t.*,u.display_name AS assignee FROM tasks t LEFT JOIN users u ON u.id=t.assignee_id
+    `SELECT t.*,t.due_date::text AS due_date,u.display_name AS assignee FROM tasks t LEFT JOIN users u ON u.id=t.assignee_id
      WHERE t.project_id=$1 ORDER BY t.created_at DESC LIMIT 300`,[projectId]);
   return {tasks:rows};
 });
@@ -351,13 +354,13 @@ app.post('/projects/:id/tasks',async(req,reply)=>{
   const userId=await authenticated(req);
   owner(await member(userId,projectId));
   const v=z.object({title:z.string().trim().min(1).max(250),detail:z.string().max(5000).default(''),
-    assigneeId:uuid.nullable().default(null),dueAt:z.string().datetime({offset:true}).nullable().default(null)}).parse(req.body);
+    assigneeId:uuid.nullable().default(null),dueDate:dateOnly.nullable().default(null)}).parse(req.body);
   const row=await transaction(async db=>{
     if(v.assigneeId) await ensureAssignee(db,projectId,v.assigneeId);
     const task=(await db.query(
-      `INSERT INTO tasks(project_id,title,detail,assignee_id,due_at)
+      `INSERT INTO tasks(project_id,title,detail,assignee_id,due_date)
        VALUES($1,$2,$3,$4,$5) RETURNING *`,
-      [projectId,v.title,v.detail,v.assigneeId,v.dueAt])).rows[0];
+      [projectId,v.title,v.detail,v.assigneeId,v.dueDate])).rows[0];
     await syncFollowup(db,projectId,task.id);
     await audit(db,projectId,userId,'task.created',task.id);
     return task;
@@ -379,14 +382,14 @@ app.patch('/projects/:id/tasks/:taskId',async req=>{
     status:z.enum(['todo','doing','blocked','done','cancelled']).optional(),
     title:z.string().trim().min(1).max(250).optional(),
     assigneeId:uuid.nullable().optional(),
-    dueAt:z.string().datetime({offset:true}).nullable().optional(),
+    dueDate:dateOnly.nullable().optional(),
   }).refine(x=>x.status!==undefined||x.title!==undefined||
-    x.assigneeId!==undefined||x.dueAt!==undefined,
+    x.assigneeId!==undefined||x.dueDate!==undefined,
     '至少修改一个字段').parse(req.body);
-  const changesMetadata=v.title!==undefined||v.assigneeId!==undefined||v.dueAt!==undefined;
+  const changesMetadata=v.title!==undefined||v.assigneeId!==undefined||v.dueDate!==undefined;
   if(changesMetadata && m.role!=='owner') fail(403,'只有项目负责人能调整任务计划');
   return transaction(async db=>{
-    const row=(await db.query('SELECT * FROM tasks WHERE id=$1 AND project_id=$2 FOR UPDATE',
+    const row=(await db.query('SELECT *,due_date::text AS due_date FROM tasks WHERE id=$1 AND project_id=$2 FOR UPDATE',
       [taskId,projectId])).rows[0];
     if(!row) fail(404,'任务不存在');
     if(m.role!=='owner' && row.assignee_id!==userId) fail(403,'只有负责人或被指派者可更新状态');
@@ -398,22 +401,57 @@ app.patch('/projects/:id/tasks/:taskId',async req=>{
       status:v.status??row.status,
       title:v.title??row.title,
       assigneeId:v.assigneeId===undefined?row.assignee_id:v.assigneeId,
-      dueAt:v.dueAt===undefined?row.due_at:v.dueAt,
+      dueDate:v.dueDate===undefined?row.due_date:v.dueDate,
     };
     // A completed task may retain a former member for history, but reopening
     // or reassigning active work requires a currently authorized member.
     if(next.assigneeId && !['done','cancelled'].includes(next.status))
       await ensureAssignee(db,projectId,next.assigneeId);
     const t=(await db.query(
-      `UPDATE tasks SET status=$1,title=$2,assignee_id=$3,due_at=$4,
+      `UPDATE tasks SET status=$1,title=$2,assignee_id=$3,due_date=$4,
        version=version+1,updated_at=NOW()
        WHERE id=$5 AND project_id=$6 RETURNING *`,
-      [next.status,next.title,next.assigneeId,next.dueAt,taskId,projectId])).rows[0];
+      [next.status,next.title,next.assigneeId,next.dueDate,taskId,projectId])).rows[0];
     await syncFollowup(db,projectId,taskId);
     await audit(db,projectId,userId,'task.updated',taskId,
-      {before:{status:row.status,title:row.title,assigneeId:row.assignee_id,dueAt:row.due_at},
+      {before:{status:row.status,title:row.title,assigneeId:row.assignee_id,dueDate:row.due_date},
        after:next,version:t.version});
     return {task:t};
+  });
+});
+app.get('/projects/:id/progress',async req=>{
+  const id=uuid.parse((req.params as {id:string}).id);
+  await member(await authenticated(req),id);
+  const {rows}=await pool.query(`SELECT u.id,u.task_id,u.source_message_id,
+    u.summary,u.kind,u.status,u.created_at,t.title AS task_title
+    FROM task_progress_updates u JOIN tasks t ON t.id=u.task_id AND t.project_id=u.project_id
+    WHERE u.project_id=$1 ORDER BY u.created_at DESC LIMIT 150`,[id]);
+  return {updates:rows};
+});
+app.post('/projects/:id/progress/:progressId/decision',async req=>{
+  const {id,progressId}=req.params as {id:string,progressId:string};
+  const projectId=uuid.parse(id),progress=uuid.parse(progressId);
+  const userId=await authenticated(req);
+  owner(await member(userId,projectId));
+  const {decision}=z.object({decision:z.enum(['accepted','rejected'])}).parse(req.body);
+  return transaction(async db=>{
+    const {rows}=await db.query(`UPDATE task_progress_updates
+      SET status=$3,reviewed_by=$4,reviewed_at=NOW()
+      WHERE id=$1 AND project_id=$2 AND status='pending' RETURNING task_id`,
+      [progress,projectId,decision,userId]);
+    if(!rows.length)fail(409,'进度建议已处理或不存在');
+    await audit(db,projectId,userId,'task.progress_'+decision,progress,{taskId:rows[0].task_id});
+    // A newly accepted blocker should be checked promptly, without bypassing
+    // the reminder policy's existing last-successful-send cooldown.
+    if(decision==='accepted'){
+      await db.query(`UPDATE followup_plans fp SET next_at=GREATEST(
+        LEAST(fp.next_at,NOW()+INTERVAL '1 minute'),
+        COALESCE(fp.last_sent_at+(p.cooldown_hours*INTERVAL '1 hour'),NOW()))
+        FROM projects p JOIN task_progress_updates u ON u.project_id=p.id
+        WHERE u.id=$1 AND fp.project_id=$2 AND fp.task_id=u.task_id
+          AND u.kind='blocker' AND fp.active`,[progress,projectId]);
+    }
+    return {ok:true};
   });
 });
 app.get('/projects/:id/proposals',async req=>{
@@ -435,7 +473,7 @@ app.post('/projects/:id/proposals/:proposalId/decision',async req=>{
   owner(await member(userId,projectId));
   const v=z.object({decision:z.enum(['accepted','rejected']),
     assigneeId:uuid.nullable().default(null),
-    dueAt:z.string().datetime({offset:true}).nullable().optional()}).parse(req.body);
+    dueDate:dateOnly.nullable().optional()}).parse(req.body);
   return transaction(async db=>{
     const p=(await db.query(
       `SELECT pc.*,ct.due_at AS clarified_due_at FROM proposed_changes pc
@@ -448,9 +486,14 @@ app.post('/projects/:id/proposals/:proposalId/decision',async req=>{
     if(v.decision==='accepted') {
       if(p.kind==='task') {
         const t=(await db.query(
-          `INSERT INTO tasks(project_id,title,detail,assignee_id,due_at,source_proposal_id)
-           VALUES($1,$2,$3,$4,$5,$6) RETURNING id`,
-          [projectId,p.title,p.detail,v.assigneeId,v.dueAt===undefined?(p.clarified_due_at??p.due_at):v.dueAt,p.id])).rows[0];
+          `INSERT INTO tasks(project_id,title,detail,assignee_id,due_date,source_proposal_id)
+           VALUES($1,$2,$3,$4,
+             CASE WHEN $5::boolean THEN $6::date
+             ELSE (COALESCE($7::timestamptz,$8::timestamptz)
+               AT TIME ZONE (SELECT timezone FROM projects WHERE id=$1))::date END,
+             $9) RETURNING id`,
+          [projectId,p.title,p.detail,v.assigneeId,v.dueDate!==undefined,
+            v.dueDate??null,p.clarified_due_at,p.due_at,p.id])).rows[0];
         await syncFollowup(db,projectId,t.id);
       } else {
         await db.query(

@@ -58,3 +58,14 @@ export function nextReminderAt(earliest: Date, policy: WorkingPolicy): Date {
   }
   throw new Error('No eligible reminder time within 15 days');
 }
+
+/** Risk-aware, bounded follow-up cadence. Date strings are project-local YYYY-MM-DD. */
+export function followupIntervalDays(dueDate:string,today:string,status:string):number{
+  const remaining=Math.round((Date.parse(dueDate+'T12:00:00Z')-
+    Date.parse(today+'T12:00:00Z'))/86400000);
+  if(!Number.isFinite(remaining))throw new Error('Invalid project-local due date');
+  if(status==='blocked'||remaining<=3)return 1;
+  if(remaining<=7)return 2;
+  if(remaining<=14)return 3;
+  return 7;
+}

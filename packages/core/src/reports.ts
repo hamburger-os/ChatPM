@@ -37,13 +37,13 @@ export async function generateReport(
          'done', COUNT(*) FILTER (WHERE status='done'),
          'cancelled', COUNT(*) FILTER (WHERE status='cancelled'),
          'overdue', COUNT(*) FILTER (
-           WHERE due_at < NOW() AND status NOT IN ('done','cancelled'))
+           WHERE due_date < (NOW() AT TIME ZONE p.timezone)::date AND status NOT IN ('done','cancelled'))
        ) FROM tasks WHERE project_id=p.id) AS counts,
        (SELECT COALESCE(json_agg(item), '[]'::json)
         FROM (SELECT id,title,status FROM tasks
               WHERE project_id=p.id AND (
-                status='blocked' OR (due_at < NOW() AND status NOT IN ('done','cancelled')))
-              ORDER BY due_at ASC NULLS LAST, created_at DESC LIMIT 200) AS item
+                status='blocked' OR (due_date < (NOW() AT TIME ZONE p.timezone)::date AND status NOT IN ('done','cancelled')))
+              ORDER BY due_date ASC NULLS LAST, created_at DESC LIMIT 200) AS item
        ) AS attention_tasks,
        (SELECT COALESCE(json_agg(item), '[]'::json)
         FROM (SELECT id,title FROM risks

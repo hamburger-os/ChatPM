@@ -69,7 +69,7 @@ try{
   const forbidden=await api('/projects/'+pid+'/messages',{cookie:cookieB});
   assert.equal(forbidden.status,404,'Cross-project read must not be allowed');
   const denied=await api('/projects/'+pid+'/tasks',{method:'POST',cookie:cookieB,
-    body:{title:'越权任务',assigneeId:null,dueAt:null}});
+    body:{title:'越权任务',assigneeId:null,dueDate:null}});
   assert.equal(denied.status,404,'Cross-project write must not be allowed');
   const unauthorizedTenant=await api('/projects',{method:'POST',cookie:cookieB,body:{
     name:'不能创建的项目',tenantId,timezone:'Asia/Shanghai'}});
@@ -164,9 +164,31 @@ try{
     if(!unlocked)await db.query('ROLLBACK');
   }
   const task=await api('/projects/'+pid+'/tasks',{method:'POST',
-    body:{title:'正式任务',detail:'',assigneeId:uid,dueAt:null}});
+    body:{title:'正式任务',detail:'',assigneeId:uid,dueDate:null}});
   assert.equal(task.status,201,JSON.stringify(task.data));
   const tid=task.data.task.id;
+  const progressSource=await api('/projects/'+pid+'/messages',{method:'POST',
+    body:{content:'方案初稿已完成，请核对评审',nonce:randomUUID()}});
+  assert.equal(progressSource.status,201);
+  const taskForProgress=(await db.query('SELECT id FROM tasks WHERE project_id=$1 LIMIT 1',[pid])).rows[0];
+  assert.ok(taskForProgress);
+  const progressInsert=(await db.query(`INSERT INTO task_progress_updates(
+    project_id,task_id,source_message_id,summary,kind,model_name,prompt_version)
+    VALUES($1,$2,$3,'方案初稿完成','progress','mock','p1') RETURNING id`,
+    [pid,taskForProgress.id,progressSource.data.message.id])).rows[0];
+  const progressMember=await api('/projects/'+pid+'/progress',{cookie:cookieB});
+  assert.equal(progressMember.status,200);
+  assert.ok(progressMember.data.updates.some(x=>x.id===progressInsert.id));
+  const progressForbidden=await api('/projects/'+pid+'/progress/'+progressInsert.id+'/decision',{
+    method:'POST',cookie:cookieB,body:{decision:'accepted'}});
+  assert.equal(progressForbidden.status,403);
+  const progressAccepted=await api('/projects/'+pid+'/progress/'+progressInsert.id+'/decision',{
+    method:'POST',body:{decision:'accepted'}});
+  assert.equal(progressAccepted.status,200);
+  const progressAgain=await api('/projects/'+pid+'/progress/'+progressInsert.id+'/decision',{
+    method:'POST',body:{decision:'accepted'}});
+  assert.equal(progressAgain.status,409);
+
   const changed=await api('/projects/'+pid+'/tasks/'+tid,{method:'PATCH',
     body:{status:'doing',version:1}});
   assert.equal(changed.status,200);
@@ -174,7 +196,7 @@ try{
     body:{status:'done',version:1}});
   assert.equal(stale.status,409,'Stale versions must not overwrite task state');
   const edited=await api('/projects/'+pid+'/tasks/'+tid,{method:'PATCH',body:{
-    version:2,assigneeId:uid,dueAt:new Date(Date.now()+86400000).toISOString(),
+    version:2,assigneeId:uid,dueDate:new Date(Date.now()+86400000).toISOString().slice(0,10),
   }});
   assert.equal(edited.status,200,'Owner may edit task plan');
   const configured=await api('/projects/'+pid+'/settings',{method:'PATCH',body:{
@@ -195,7 +217,7 @@ try{
     [tid]);
   const replanned=await api('/projects/'+pid+'/tasks/'+tid,{method:'PATCH',
     body:{version:edited.data.task.version,
-      dueAt:new Date(Date.now()+3*3600000).toISOString()}});
+      dueDate:new Date(Date.now()+3*86400000).toISOString().slice(0,10)}});
   assert.equal(replanned.status,200,'Replanning should succeed');
   const cooldown=await db.query(
     "SELECT next_at >= last_sent_at + INTERVAL '24 hours' AS preserved FROM followup_plans WHERE task_id=$1",
@@ -239,9 +261,9 @@ try{
     method:'POST',body:{decision:'accepted',assigneeId:uid}});
   assert.equal(approved2.status,200);
   const saved2=await db.query(
-    'SELECT due_at,assignee_id FROM tasks WHERE source_proposal_id=$1',[candidate2.id]);
+    'SELECT due_date,assignee_id FROM tasks WHERE source_proposal_id=$1',[candidate2.id]);
   assert.equal(saved2.rows[0].assignee_id,uid);
-  assert.ok(saved2.rows[0].due_at,'Approved clarification should supply the confirmed date');
+  assert.ok(saved2.rows[0].due_date,'Approved clarification should supply the confirmed date');
   const closed=await db.query('SELECT status FROM clarification_threads WHERE proposal_id=$1',[candidate2.id]);
   assert.equal(closed.rows[0].status,'closed');
 
@@ -278,7 +300,7 @@ try{
   assert.ok(report.data.report.content.includes('总数：'+beforeCount+'；'),
     'Report counts must not be truncated to 200');
   const changedTask=await api('/projects/'+pid+'/tasks',{method:'POST',
-    body:{title:'晚于草稿新增的任务',assigneeId:null,dueAt:null}});
+    body:{title:'晚于草稿新增的任务',assigneeId:null,dueDate:null}});
   assert.equal(changedTask.status,201);
   const refreshed=await api('/projects/'+pid+'/reports',{method:'POST',body:{kind:'week'}});
   assert.equal(refreshed.data.report.id,report.data.report.id);
@@ -298,7 +320,7 @@ try{
     method:'PATCH',body:{version:1,assigneeId:uid}});
   assert.equal(reassigned.status,200,'Owner can reassign unfinished work before removing a member');
   const historical=await api('/projects/'+pid+'/tasks',{method:'POST',body:{
-    title:'保留历史负责人',assigneeId:second.data.user.id,dueAt:null}});
+    title:'保留历史负责人',assigneeId:second.data.user.id,dueDate:null}});
   assert.equal(historical.status,201);
   const markDone=await api('/projects/'+pid+'/tasks/'+historical.data.task.id,{
     method:'PATCH',body:{version:historical.data.task.version,status:'done'}});

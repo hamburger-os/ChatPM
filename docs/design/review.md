@@ -71,3 +71,19 @@ Windows 11 WinSW LocalService ACL、Linux 关机重启恢复、数据库隔离�
 ## ADR-021 /review 验收结论（待运行）
 
 审查关注端到端连续协作中的真实缺口：模型配置与测试、鉴权加密、密钥/URL 泄露、输入长度有界及多租户隔离、普通回复唯一性及错误透明度、规则提醒和 AI 开关分离、发送按钮宽度。验证优先覆盖 API owner/member/tenant、多次事件、模型测试限频与结构化输出、跨平台构建和 Docker SQL migration。未获得真实供应商凭证的端到端调用、AI Agent 工具环以及 Token 精确压缩不视为已通过，不能伪称生产验收。
+
+## ADR-022 /review 待核验检查点
+
+- 一次性时区日期迁移：已有任务仍存在，跨时区期限不提前/延后，无 `dueAt` 旧接口。
+- AI 进度建议关联的任务 ID 必须属于同一项目；成员可读、Owner 可审核，重复审核冲突；进度提议绝不能绕过正式状态。
+- 消息分析 JSON Schema 确保 `items/progress` 均存在，模型误给未知任务 ID 应忽略；新任务标题规范化判重不能假装实现语义检索。
+- 规则提前跟进、临期/阻塞优先、冷却及工作时段保证；确定性 MODEL_SCHEMA 错误隔离，不再八次重复计费。
+- Win11 浏览器滚动、输入法和邀请按钮验证；DeepSeek 真正使用自定义推理与长上下文需真实 API 测试。
+- 核对最新 Head 的 Product verification、Documentation governance、Docker deployment smoke、Cross-platform native builds、Security scanning，未通过不合并。
+
+### ADR-022 Worker 实际链路集成
+CI 新增 `tools/test/task-linkage-smoke.mjs`：PostgreSQL 创建正式任务与聊天消息，真实启动 Worker 连接本地非敏感 HTTP 模拟模型，断言同项目任务 ID 进入模型上下文、进度证据落库、没有新建重复候选、正式任务状态未被更改，并对模型只调用一次。此测试不包含真实 DeepSeek 服务体验或生产 Token 费用验证。
+
+## ADR-022 最终整体 /review 检查范围
+
+代码和测试覆盖消息意图与正式任务进度关联、规范化标题判重、同项目外键、Owner 进度证据审批、未审证据不能更改正式任务、日期迁移/时区边界、阶段催办及阻塞优先、工作时间与冷却保护、DeepSeek 提供商预算/推理参数、Schema 失败隔离以及 Windows 11 布局问题。保护规则要求完整 CI 和未解决线程清零才能合并。真实 DeepSeek Key 和 Windows 11 交互仍由目标环境验收，不能因模拟 CI 成功而声称通过。
