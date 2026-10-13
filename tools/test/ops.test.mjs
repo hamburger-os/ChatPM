@@ -6,7 +6,7 @@ const template = [
   'NODE_ENV=development',
   'SESSION_SECRET=replace-with-a-long-random-secret-at-least-32-characters',
   'WEB_ORIGIN=http://localhost:3000',
-  'OPENAI_API_KEY=',
+  'LLM_API_KEY=',
   '',
 ].join('\n');
 
@@ -18,7 +18,7 @@ test('new install generates both independent high-entropy secrets without touchi
   assert.ok(session);
   assert.ok(postgres);
   assert.notEqual(session, postgres);
-  assert.match(text, /^OPENAI_API_KEY=$/m);
+  assert.match(text, /^LLM_API_KEY=$/m);
   assert.match(text, /^WEB_ORIGIN=http:\/\/localhost:3000$/m);
 });
 
@@ -160,7 +160,7 @@ test('wrong token cannot shut down the manager',async()=>{
     const state=JSON.parse(readFileSync(join(dir,'.chatpm-run.json'),'utf8'));
     const message=await new Promise((resolve,reject)=>{
       const socket=connect({host:'127.0.0.1',port:state.port});
-      socket.on('connect',()=>socket.write('0'.repeat(64)+'\\n'));
+      socket.on('connect',()=>socket.write('0'.repeat(64)+'\n'));
       socket.once('data',buffer=>{resolve(buffer.toString('utf8'));socket.destroy();});
       socket.once('error',reject);
     });

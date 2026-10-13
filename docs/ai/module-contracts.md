@@ -104,3 +104,7 @@ Web 端从 `GET /projects` 初始化项目列表和设置面板。该接口返�
 - Docker 仅 API、Worker、迁移任务读取服务端 LLM 变量，Web 独立配置无 Key；原生从项目根目录环境读取。变更模型后重启 Worker。
 
 **开启 AI 的统一校验**：`PATCH /projects/:id/settings` 对 `aiEnabled=true` 调用与 Worker 一致的 `readLLMSettings`；`model_name` 保存模型/端点主机/协议/端点指纹复合身份（密钥和 URL path 不落库）。所有模型请求必须 `redirect:'error'`。
+
+## 原生前台一键停止（ADR-020）
+
+`npm start` 和 `npm run dev` 使用 `run.mjs` 同目录实例独占的回环控制服务；`npm run stop` 是一个不依赖 npm 已安装模块的 Node.js 内置工具，读取私有 `.chatpm-run.json` 中的端口/随机令牌，向当前受控管理器申请停止，等 Web、API、Worker 子进程退出才返回成功。Windows Worker 沿用现有 IPC 关闭。PID 仅用来确认状态是否陈旧，禁止按 PID 自动杀进程。Docker Compose / WinSW / systemd 使用各自停止命令，启动之前的旧版进程无法通过新控制协议停止。

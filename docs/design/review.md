@@ -63,3 +63,7 @@ Windows 11 WinSW LocalService ACL、Linux 关机重启恢复、数据库隔离�
 - 只记录模型名称无法明确供应商 → 记录主机/协议/配置指纹，同时隐藏 Key 与 URL path。
 - 隐私文档的 OpenAI 限定描述 → 改为实际配置的第三方模型接收方。
 - 上述修改须以最新 Head SHA 通过全部 CI 后方可解决线程与合并。
+
+## 原生一键停止 /review（ADR-020）
+
+设计保留 API/Worker/Web 独立进程，由原有前台管理器注册安全的本地控制通道并在第二个终端执行 `npm run stop`。不引入全机 PID 枚举、杀死其他应用进程、PM2 或 Docker 和系统服务跨模式控制。审查要求覆盖运行状态独占、令牌认证、停止成功确认、陈旧状态、Windows Worker 关闭、无 Node 依赖时可执行 CLI；Windows/Linux 实机异常退出和防病毒锁仍须验证。
