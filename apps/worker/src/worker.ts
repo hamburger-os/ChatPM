@@ -1,6 +1,6 @@
 import 'dotenv/config';
 import { pool, transaction, audit } from '../../../packages/core/src/db.ts';
-import { canSendReminder, localClock, nextReminderAt } from '../../../packages/core/src/policy.ts';
+import { canSendReminder, localClock, nextReminderAt, followupIntervalDays } from '../../../packages/core/src/policy.ts';
 import { generateScheduledReport } from '../../../packages/core/src/reports.ts';
 import { insertMessage } from '../../../packages/core/src/messages.ts';
 import { ConfiguredLLMProvider } from '../../../packages/core/src/ai-provider.ts';
@@ -49,19 +49,49 @@ async function runAnalysis(event:EventRow):Promise<AnalysisResult|null> {
     content:msg.content,projectName:msg.name}))
     return {kind:'clarify',status:'clarified'};
   const existing=await pool.query(
-    'SELECT 1 FROM proposed_changes WHERE project_id=$1 AND source_message_id=$2 LIMIT 1',
+    `SELECT 1 FROM proposed_changes WHERE project_id=$1 AND source_message_id=$2
+     UNION ALL SELECT 1 FROM task_progress_updates
+     WHERE project_id=$1 AND source_message_id=$2 LIMIT 1`,
     [event.project_id,event.message_id]);
   if(existing.rowCount)return {kind:'extract',status:'proposal'};
   const settings=await resolveProjectModel(event.project_id);
   const context=await projectAnalysisContext(event.project_id,event.message_id,
     settings.contextChars??6500);
-  const output=await new ConfiguredLLMProvider(event.project_id).extractCandidates(msg.name,context);
-  const suggestions=output.value;
-  if(!suggestions.length)return {kind:'extract',status:'no_change',modelName:output.modelName};
+  const output=await new ConfiguredLLMProvider(event.project_id).analyzeWork(msg.name,context);
+  const suggestions=output.value.items;
+  const progress=output.value.progress;
+  if(!suggestions.length&&!progress.length)return {kind:'extract',status:'no_change',modelName:output.modelName};
+  const known=await pool.query(`SELECT id,title FROM tasks
+    WHERE project_id=$1 AND status NOT IN ('done','cancelled')`,[event.project_id]);
+  const matching=new Map(known.rows.map(r=>[r.id as string,r.title as string]));
+  const normalized=(value:string)=>value.normalize('NFKC')
+    .replace(/[\\p{P}\\p{S}\\s]/gu,'').toLowerCase();
   await transaction(async db=>{
-    let added=0;
+    let added=0,progressAdded=0;
     const questions:string[]=[];
+    const usedTasks=new Set<string>();
+    for(const suggestion of progress){
+      if(!matching.has(suggestion.task_id)||usedTasks.has(suggestion.task_id))continue;
+      const inserted=await db.query(`INSERT INTO task_progress_updates(
+        project_id,task_id,source_message_id,summary,kind,model_name,prompt_version)
+        SELECT $1,t.id,$3,$4,$5,$6,$7 FROM tasks t
+        WHERE t.project_id=$1 AND t.id=$2 AND t.status NOT IN ('done','cancelled')
+        ON CONFLICT(project_id,task_id,source_message_id) DO NOTHING RETURNING id`,
+        [event.project_id,suggestion.task_id,event.message_id,suggestion.summary,
+          suggestion.kind,output.modelName,output.promptVersion]);
+      progressAdded+=inserted.rowCount??0;
+      usedTasks.add(suggestion.task_id);
+    }
     for(const item of suggestions) {
+      // Exact/contained normalized titles cannot create a second active task.
+      // Ambiguous semantic matches stay human-reviewed; never auto-merge by fuzzy score.
+      if(item.kind==='task'){
+        const n=normalized(item.title);
+        if(n.length>=5&&[...matching.values()].some(title=>{
+          const existing=normalized(title);
+          return existing===n || (n.length>=8 && existing.includes(n));
+        }))continue;
+      }
       const result=await db.query(
         `INSERT INTO proposed_changes(
            project_id,source_message_id,kind,title,detail,due_at,assignee_hint,confidence,
@@ -83,16 +113,16 @@ async function runAnalysis(event:EventRow):Promise<AnalysisResult|null> {
       }
       added+=result.rowCount??0;
     }
-    if(added) {
-      const content='我从刚才的讨论中提取了 '+added+
-        ' 项待确认的任务或风险，负责人可在「AI 待确认」中审核。'+
+    if(added||progressAdded) {
+      const content=(progressAdded?'已将 '+progressAdded+' 条进展关联到已有任务，等待负责人在「任务」中核对。':'')+
+        (added?'另有 '+added+' 项新任务或风险候选，负责人可在「AI 待确认」中审核。':'')+
         (questions.length?'\n'+questions.slice(0,2).join('\n'):'');
       await insertMessage(db,{
         projectId:event.project_id,authorId:null,kind:'ai',
         content,nonce:'analysis:'+event.id,
       });
       await audit(db,event.project_id,null,'ai.proposals_created',event.id,
-        {sourceMessageId:event.message_id,count:added});
+        {sourceMessageId:event.message_id,count:added,progressCount:progressAdded});
     }
   });
   return {kind:'extract',status:'proposal',modelName:output.modelName};
@@ -124,7 +154,7 @@ async function processReminders() {
   await transaction(async db=>{
     const {rows:plans}=await db.query(
       `SELECT fp.id,fp.project_id,fp.task_id,fp.task_version,
-        t.title,t.status,t.version,t.due_at,t.assignee_id,
+        t.title,t.status,t.version,t.due_date::text AS due_date,t.assignee_id,
         u.display_name,p.timezone,p.work_start,p.work_end,p.cooldown_hours
        FROM followup_plans fp
        JOIN tasks t ON t.id=fp.task_id
@@ -134,7 +164,7 @@ async function processReminders() {
        ORDER BY fp.next_at LIMIT 30 FOR UPDATE OF fp SKIP LOCKED`);
     for(const p of plans) {
       const current=p.status!=='done'&&p.status!=='cancelled'&&
-        p.version===p.task_version&&p.assignee_id&&p.due_at;
+        p.version===p.task_version&&p.assignee_id&&p.due_date;
       if(!current){
         await db.query('UPDATE followup_plans SET active=FALSE WHERE id=$1',[p.id]);
         continue;
@@ -142,8 +172,13 @@ async function processReminders() {
       const now=new Date();
       const eligible=canSendReminder(now,p);
       if(eligible) {
-        const content='@'+p.display_name+'，任务「'+p.title+
-          '」尚未标记完成。请确认当前进度、阻塞与预计完成时间。';
+        const remaining=Math.round((Date.parse(p.due_date+'T12:00:00Z')-
+          Date.parse(localClock(now,p.timezone).date+'T12:00:00Z'))/86400000);
+        const content='@'+p.display_name+'，'+
+          (p.status==='blocked'?'【阻塞需关注】':remaining<0?'【已逾期】':
+            remaining<=3?'【临近截止】':'【阶段进展检查】')+
+          '任务「'+p.title+'」距截止还有 '+Math.max(0,remaining)+' 天。'+
+          '请更新已完成成果、剩余工作、阻塞和预计交付日期。';
         const key='followup:'+p.task_id+':v'+p.version+':'+
           new Date().toISOString().slice(0,13);
         const inserted=await insertMessage(db,{
@@ -157,7 +192,8 @@ async function processReminders() {
       }
       // Quiet time is not a sent reminder: resume at the next allowed instant.
       const earliest=eligible
-        ? new Date(now.getTime() + (p.cooldown_hours ?? 24)*3600000)
+        ? new Date(now.getTime() + Math.max(p.cooldown_hours??24,
+            followupIntervalDays(p.due_date,localClock(now,p.timezone).date,p.status)*24)*3600000)
         : new Date(now.getTime()+60000);
       await db.query('UPDATE followup_plans SET next_at=$2 WHERE id=$1',
         [p.id,nextReminderAt(earliest,p)]);

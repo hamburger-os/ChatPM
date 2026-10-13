@@ -389,7 +389,7 @@ app.patch('/projects/:id/tasks/:taskId',async req=>{
   const changesMetadata=v.title!==undefined||v.assigneeId!==undefined||v.dueDate!==undefined;
   if(changesMetadata && m.role!=='owner') fail(403,'只有项目负责人能调整任务计划');
   return transaction(async db=>{
-    const row=(await db.query('SELECT * FROM tasks WHERE id=$1 AND project_id=$2 FOR UPDATE',
+    const row=(await db.query('SELECT *,due_date::text AS due_date FROM tasks WHERE id=$1 AND project_id=$2 FOR UPDATE',
       [taskId,projectId])).rows[0];
     if(!row) fail(404,'任务不存在');
     if(m.role!=='owner' && row.assignee_id!==userId) fail(403,'只有负责人或被指派者可更新状态');

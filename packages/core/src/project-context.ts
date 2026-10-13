@@ -10,7 +10,7 @@ export async function projectAnalysisContext(projectId:string,messageId:string,b
     pool.query(`SELECT t.id,t.title,t.status,t.due_date,u.display_name AS assignee
       FROM tasks t LEFT JOIN users u ON u.id=t.assignee_id
       WHERE t.project_id=$1 AND t.status NOT IN ('done','cancelled')
-      ORDER BY t.updated_at DESC LIMIT 15`,[projectId]),
+      ORDER BY t.updated_at DESC LIMIT 40`,[projectId]),
     pool.query(`SELECT title,status FROM risks WHERE project_id=$1 AND status='open'
       ORDER BY created_at DESC LIMIT 10`,[projectId]),
   ]);
