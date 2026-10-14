@@ -34,21 +34,38 @@ export function registerAdminModelRoutes(app:FastifyInstance,
   });
   app.post('/admin/ai/models',async(req,reply)=>{
     const actor=await admin(req),v=inputSchema.parse(req.body);
-    const model=await transaction(db=>saveModelConfig(db,null,v));
+    const model=await transaction(async db=>{
+      const saved=await saveModelConfig(db,null,v);
+      await db.query(`INSERT INTO system_audit_entries(actor_id,action,target_id,metadata)
+        VALUES($1,'ai.model_created',$2,$3)`,[actor,saved.id,JSON.stringify({
+        name:saved.name,model:saved.model,style:saved.style})]);
+      return saved;
+    });
     app.log.info({actor,modelId:model.id},'Admin added AI model config');
     return reply.code(201).send({model});
   });
   app.put('/admin/ai/models/:id',async req=>{
-    await admin(req);
+    const actor=await admin(req);
     const id=uuid.parse((req.params as {id:string}).id);
     const v=inputSchema.parse(req.body);
-    const model=await transaction(db=>saveModelConfig(db,id,v));
+    const model=await transaction(async db=>{
+      const saved=await saveModelConfig(db,id,v);
+      await db.query(`INSERT INTO system_audit_entries(actor_id,action,target_id,metadata)
+        VALUES($1,'ai.model_updated',$2,$3)`,[actor,id,JSON.stringify({
+        model:saved.model,enabled:saved.enabled,isDefault:saved.isDefault})]);
+      return saved;
+    });
     return {model};
   });
   app.delete('/admin/ai/models/:id',async req=>{
-    await admin(req);
+    const actor=await admin(req);
     const id=uuid.parse((req.params as {id:string}).id);
-    const deleted=await transaction(db=>deleteModelConfig(db,id));
+    const deleted=await transaction(async db=>{
+      const removed=await deleteModelConfig(db,id);
+      if(removed)await db.query(`INSERT INTO system_audit_entries(actor_id,action,target_id)
+        VALUES($1,'ai.model_deleted',$2)`,[actor,id]);
+      return removed;
+    });
     if(!deleted)denied(404,'模型不存在');
     return {ok:true};
   });
