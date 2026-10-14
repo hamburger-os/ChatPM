@@ -18,6 +18,7 @@ export default function OrganizationPanel({tenantId}:{tenantId:string}){
   const [members,setMembers]=useState<Member[]>([]);
   const [allocations,setAllocations]=useState<Allocation[]>([]);
   const [kind,setKind]=useState<'departments'|'portfolios'|'programs'>('departments');
+  const [tab,setTab]=useState<'people'|'structure'|'resources'>('people');
   const [name,setName]=useState('');
   const [portfolio,setPortfolio]=useState('');
   const [projectId,setProjectId]=useState('');
@@ -60,9 +61,17 @@ export default function OrganizationPanel({tenantId}:{tenantId:string}){
           portfolioId:programId?null:directPortfolio||null})});
     });
   };
-  return <section className="stack">
-    <h3>组织管理</h3>
-    <p className="hint">部门管理人员与资源；项目集协调关联项目；项目组合管理战略与投入。部门成员不会自动获得项目聊天访问权限。</p>
+  return <section className="organization-workspace">
+    <header className="management-heading"><div><h2>组织管理</h2>
+      <p className="hint">部门管理人员与资源；项目集协调关联项目；项目组合管理战略与投入。成员加入部门不等于获得项目聊天权限。</p>
+    </div></header>
+    <nav className="management-tabs" aria-label="组织管理分类">
+      {(['people','structure','resources'] as const).map(t=><button key={t} type="button"
+        className={tab===t?'active':''} onClick={()=>setTab(t)}>
+        {({people:'组织人员',structure:'部门与项目结构',resources:'资源投入'})[t]}
+      </button>)}
+    </nav>
+    {tab==='people'&&<div className="stack organization-section">
     <h3>组织人员（{members.length}）</h3>
     {members.map(m=><div className="member" key={m.id}>
       <strong>{m.display_name}</strong><small>{m.email}</small>
@@ -76,6 +85,8 @@ export default function OrganizationPanel({tenantId}:{tenantId:string}){
       <input type="email" placeholder="将已注册人员加入组织" required value={email} onChange={e=>setEmail(e.target.value)}/>
       <button disabled={busy}>加入</button>
     </form>
+    </div>}
+    {tab==='structure'&&<div className="stack organization-section">
     <h3>部门 / 项目组合 / 项目集</h3>
     {(['departments','portfolios','programs'] as const).map(k=><div key={k} className="item">
       <strong>{({departments:'部门',portfolios:'项目组合',programs:'项目集'})[k]} ({data[k].length})</strong>
@@ -112,6 +123,8 @@ export default function OrganizationPanel({tenantId}:{tenantId:string}){
       </select></label>}
       <button disabled={busy||!projectId}>保存归属</button>
     </form>
+    </div>}
+    {tab==='resources'&&<div className="stack organization-section">
     <h3>跨项目资源投入计划</h3>
     <form className="stack" onSubmit={e=>{e.preventDefault();void run(async()=>{
       await api(base+'/allocations',{method:'POST',body:JSON.stringify({
@@ -133,6 +146,7 @@ export default function OrganizationPanel({tenantId}:{tenantId:string}){
       {members.find(x=>x.id===a.user_id)?.display_name||a.user_id} · {data.projects.find(x=>x.id===a.project_id)?.name||a.project_id} ·
       {a.percentage}% · {a.start_date} ~ {a.end_date}
     </p>)}
+    </div>}
     {notice&&<p role="status" className="notice">{notice}</p>}
   </section>;
 }
