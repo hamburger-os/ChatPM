@@ -150,8 +150,9 @@ try{
     assert.deepEqual(discovered.data.models.map(m=>m.id),
       ['smoke-discovered-a','smoke-discovered-b']);
     assert.ok(!JSON.stringify(discovered.data).includes('smoke-catalog-secret'));
-    const throttled=await api('/admin/ai/providers/'+connectionId+'/discover',{method:'POST'});
-    assert.equal(throttled.status,429,'Directory should be throttled across API processes');
+    const repeated=await api('/admin/ai/providers/'+connectionId+'/discover',{method:'POST'});
+    assert.equal(repeated.status,200,'Catalog must refresh again immediately');
+    assert.deepEqual(repeated.data.models,discovered.data.models);
     const selection={providerId:connectionId,models:discovered.data.models.map(
       ({id,name})=>({id,name}))};
     const deniedImport=await api('/admin/ai/models/import',{
@@ -169,10 +170,20 @@ try{
     assert.equal(found.length,2);
     assert.ok(found.every(m=>!m.enabled&&!m.isDefault));
     assert.equal(new Set(found.map(m=>m.name)).size,2);
-    const testedInactive=await api('/admin/ai/models/'+found[0].id+'/test',{method:'POST'});
+    const testedInactive=await api('/admin/ai/models/'+found[0].id+'/test',{
+      method:'POST',body:{mode:'quick'}});
     assert.equal(testedInactive.status,200,JSON.stringify(testedInactive.data));
     assert.equal(testedInactive.data.ok,true,
       'Disabled provider and model must be testable before production enablement');
+    assert.equal(testedInactive.data.mode,'quick');
+    assert.equal(testedInactive.data.textOk,null,'Quick test skips a second text request');
+    assert.equal(testedInactive.data.structuredOk,true);
+    const full=await api('/admin/ai/models/'+found[1].id+'/test',{
+      method:'POST',body:{mode:'full'}});
+    assert.equal(full.status,200,JSON.stringify(full.data));
+    assert.equal(full.data.mode,'full');
+    assert.equal(full.data.textOk,true);
+    assert.equal(full.data.structuredOk,true);
   }finally{await new Promise(resolve=>catalogServer.close(resolve));}
   const deniedConnection=await api('/admin/ai/providers',{cookie:cookieB});
   assert.equal(deniedConnection.status,403,'Non-administrators cannot read provider configuration');
