@@ -138,7 +138,7 @@ Web 端从 `GET /projects` 初始化项目列表和设置面板。该接口返�
 
 ## ADR-026 · AI 模型目录与批量注册契约
 
-- `POST /admin/ai/providers/:id/discover`：只允许系统管理员读取已持久化供应商，服务端使用解密的 Key 向其 Base URL 下的 `/models` 发起受限 GET；返回最多 500 条规范化的 ID、name、ownedBy、latencyMs、truncated。目录发现错误不泄漏上游响应体或 Key，10 秒内同连接限频。
+- `POST /admin/ai/providers/:id/discover`：只允许系统管理员读取已持久化供应商，服务端使用解密的 Key 向其 Base URL 下的 `/models` 发起受限 GET；返回最多 500 条规范化的 ID、name、ownedBy、latencyMs、truncated。目录发现错误不泄漏上游响应体或 Key，允许完成后立即再次刷新，由上游自身控制限频。
 - `POST /admin/ai/models/import`：只允许系统管理员，以 `{providerId,models:[{id,name?}]}` 输入 1–50 个模型，数据库事务插入，唯一约束保证同连接 ID 幂等。返回 created/skipped，新增项禁用，不能自动成为平台默认。
 - `POST /admin/ai/models/:id/test`：允许尚未启用的连接/模型进行匿名 JSON 探测，不改变实际业务调用的启用条件。实际业务继续只使用已启用的默认模型和已启用的供应商，不能隐式切换目标。
 - SSRF：目录 discovery 使用 DNS/IP 私网预检，禁止跟随重定向，流式响应限制 512 KB；管理员目标网络访问仍受生产出站防火墙控制，不能将解析预检当成连接级目标固定。
@@ -151,3 +151,11 @@ Web 端从 `GET /projects` 初始化项目列表和设置面板。该接口返�
 - HTTP 200 测试结果包括 `ok`、`textOk`、`structuredOk`、`latencyMs`、可选 `textLatencyMs`、以及失败时的 `errorCode`。允许 `textOk=true` 且 `structuredOk=false`，此状态不得赋予模型“已测试可用于 AI 抽取”的结论。身份仍只有系统管理员可访问，网络请求仍不带项目数据。
 - Responses 提取优先读取 `output[].content[].type=output_text` 文本；仅对代理历史不标准的消息对象接受字符串 `content`，禁止使用 `reasoning` 输出作为最终答案。协议格式不匹配、推理独占输出与真正空响应为不同错误。响应不合规则仍必须失败。
 - Base URL 按用户配置精确拼接，不猜测供应商品牌：例如若需要 /v1/models，管理员需保存以 /v1 结尾的前缀。错误提示可以建议该路径，但不会静默改写端点。
+
+
+## ADR-028 · 目录刷新与快速测试接口契约
+
+- `POST /admin/ai/providers/:id/discover`：管理员专属，完成前 UI 防重入，完成后允许立刻重复刷新；不再落库目录检查时间，DB 迁移 011 删除历史 `ai_provider_checks` 表。目录发现保留 HTTPS/回环地址限制、重定向拒绝、10 秒超时、512 KB 响应上限及上游 429 诊断，禁止自动高速轮询。
+- `POST /admin/ai/models/:id/test` 请求体严格校验 `{mode:'quick'|'full'}`，缺省 quick。quick 仅执行结构化抽取探测；full 执行匿名文本与结构化测试各一次，两者均有实际推理费用。响应带 `mode`、`ok`、`textOk:boolean|null`、`structuredOk`、`latencyMs`、可选 `textLatencyMs` 和脱敏 `errorCode`。quick 未单独测试文本时 `textOk=null`，不得报文本测试通过；不能以 quick/完整模式选择影响业务推理适配器。
+- 模型测试仍保持管理员授权和每模型 30 秒数据库限频；只有结构化返回符合 `{ok:true}` 才把本会话模型标注为测试通过。成功后未自动启用或设为平台默认。
+- Web 目录刷新失败仍呈现旧候选项并保留选择；成功时保留与新目录仍匹配的选择，防止管理员重新选择大量模型。禁止在请求执行时重入。
