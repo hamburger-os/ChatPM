@@ -12,7 +12,7 @@ const template = [
 
 test('new install generates both independent high-entropy secrets without touching unrelated settings', () => {
   const { text, generated } = prepareDockerEnv(template);
-  assert.deepEqual(generated, ['SESSION_SECRET', 'POSTGRES_PASSWORD']);
+  assert.deepEqual(generated, ['SESSION_SECRET', 'MODEL_ENCRYPTION_KEY', 'POSTGRES_PASSWORD']);
   const session = text.match(/^SESSION_SECRET=([a-f0-9]{64})$/m)?.[1];
   const postgres = text.match(/^POSTGRES_PASSWORD=([a-f0-9]{64})$/m)?.[1];
   assert.ok(session);
