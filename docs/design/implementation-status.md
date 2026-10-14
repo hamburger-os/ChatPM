@@ -38,3 +38,7 @@
 
 ## ADR-025 · 管理交互与多人试运行改进
 系统 AI 供应商新建采用显式空白模式和表单聚焦；桌面导航、登录页改用自有 ChatPM 标志，窄屏消息/任务工作台切换；后台标签页减少请求，工作台 15 秒刷新并暂停隐藏页面；API 对签名会话按登录主体配额分桶（登录注册继续基于服务所见源 IP 严格限流）。生产级 SSE、端到端移动设备测试、QNAP IPv6/HTTPS/证书与容器内网络联通实测、SSRF/DNS 出站隔离、公众注册策略及规模压测**仍未完成**。
+
+## ADR-029 · 本次合并切片
+
+已落地：V2 模块/命令/AI 授权/Playbook 目标设计与 ADR；组织管理的全部现有写入路径使用事务命令，在事务内复核管理员身份，与组织审计同成败；新增数据库集成回归。尚未落地：全域 CommandReceipt/DomainEvent、正式 Goal/Deliverable/Issue/Decision/Change、WorkItem 验收流程、独立 Worker runner、ModelInvocation 账本、可执行版本 Playbook、正式 V2 数据转换与全量 E2E。上述目标详见 [分期路线图](v2-delivery-plan.md)，不应按设计文档数量计为完成。

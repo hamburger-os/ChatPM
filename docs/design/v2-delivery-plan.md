@@ -1,0 +1,23 @@
+# V2 分期实施、迁移与 /review 验收
+
+## 现实边界
+
+整体 PM Runtime 涉及新的领域数据库、跨 API/Worker 重构、模型评测和真实部署，不应声称一次简单 PR 就全部完成。本计划将“实施中”“已实现”“有 CI 证据”“实机验收”分开管理。旧 migration 有校验和保护，**不得直接篡改已发布 SQL**；不维护客户端兼容层也不等于允许静默删除真实业务数据。
+
+## 交付切片
+
+| 阶段 | 产出 | 验收门槛 |
+|---|---|---|
+| P0 设计冻结与安全基线 | ADR、边界、领域术语、行为策略、组织治理写入/审计原子化 | 文档同步；组织权限与事务回滚回归 |
+| P1 正式领域/命令 | Goal、WorkItem、Acceptance、Dependency、Risk/Issue/Decision/Change；CommandReceipt/Event | 新库 clean install、约束隔离、幂等/并发/审批 |
+| P2 API/Worker 解耦 | 薄路由、模块应用服务、Worker 独立 runner | 无跨模块直接 SQL、重试/故障隔离 |
+| P3 PM AI 运行时 | AI 授权版本、EvidenceSpan、Run/Invocation、Playbook/Intervention | 真实模型黄金集、权限和提示注入 |
+| P4 交付验收 | 历史报告、Windows/Linux/Docker、备份恢复、隐私、安全和性能 | 可重复 E2E 和发布风险签署 |
+
+## 数据和切换
+
+如果是**空开发库**，可在独立分支基于 V2 baseline 重新初始化，明确拒绝旧 schema 和兼容层。如果存在用户、聊天或审计记录，先备份并在隔离库按映射完成一次性数据转换，校验计数、项目引用、UUID、消息顺序和 hash；不允许 catch 后丢失未识别记录。新消费者不得读取尚未排空的旧 outbox；失败恢复数据库快照及对应旧 commit。迁移完成前不能删除可用历史。
+
+## /review 协议
+
+逐个 PR 固定 head SHA，检查领域语义、租户/项目隔离、服务端授权、事务审计、命令重放、DB FK、模型出站、凭据脱敏、Worker 崩溃/重试、AI 质量与文档真实性。出现严重缺陷则不得合并。验证以最新 SHA 的 GitHub CI 为准，不以“未运行”的手工命令或前一 SHA 的绿色结果替代。生产实机不符合门槛时可以合并被明确标记为实验性的局部改进，但不得标注 V2 或生产全量完成。

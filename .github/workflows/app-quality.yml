@@ -51,6 +51,8 @@ jobs:
         run: npm run db:migrate
       - name: Verify migrations are repeatable
         run: npm run db:migrate
+      - name: Organization governance transaction integration
+        run: node --import tsx packages/core/test/organization.integration.ts
       - name: Outbox reliability integration
         run: node --import tsx packages/core/test/outbox.integration.ts
       - name: Mock AI conversation integration

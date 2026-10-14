@@ -78,6 +78,44 @@ try{
   const addOrgMember=await api('/tenants/'+tenantId+'/members',{
     method:'POST',body:{email:'second+'+suffix2+'@example.com'}});
   assert.equal(addOrgMember.status,200,'Tenant administrator must enroll person first');
+  // Organization governance: route-level authorization, classification and audit.
+  const forbiddenPortfolio=await api('/tenants/'+tenantId+'/portfolios',{
+    method:'POST',cookie:cookieB,body:{name:'Forbidden Portfolio'}});
+  assert.equal(forbiddenPortfolio.status,403,'Tenant members cannot manage portfolios');
+  const dep=await api('/tenants/'+tenantId+'/departments',{
+    method:'POST',body:{name:'Engineering '+suffix,parentId:null}});
+  assert.equal(dep.status,201,JSON.stringify(dep.data));
+  const portfolio=await api('/tenants/'+tenantId+'/portfolios',{
+    method:'POST',body:{name:'Delivery '+suffix,description:'Portfolio for smoke'}});
+  assert.equal(portfolio.status,201,JSON.stringify(portfolio.data));
+  const program=await api('/tenants/'+tenantId+'/programs',{
+    method:'POST',body:{name:'Integration '+suffix,description:'Program for smoke',
+      portfolioId:portfolio.data.portfolio.id}});
+  assert.equal(program.status,201,JSON.stringify(program.data));
+  const classification=await api('/tenants/'+tenantId+'/projects/'+pid+'/classification',{
+    method:'PATCH',body:{departmentId:dep.data.department.id,
+      programId:program.data.program.id,portfolioId:null}});
+  assert.equal(classification.status,200,JSON.stringify(classification.data));
+  assert.equal(classification.data.project.program_id,program.data.program.id);
+  const structure=await api('/tenants/'+tenantId+'/structure');
+  assert.equal(structure.status,200,JSON.stringify(structure.data));
+  assert.ok(structure.data.projects.some(p=>p.id===pid&&p.program_id===program.data.program.id));
+  const assignDepartment=await api('/tenants/'+tenantId+'/departments/'+
+    dep.data.department.id+'/members',{
+    method:'POST',body:{userId:second.data.user.id,role:'member'}});
+  assert.equal(assignDepartment.status,200,JSON.stringify(assignDepartment.data));
+  const allocation=await api('/tenants/'+tenantId+'/allocations',{method:'POST',body:{
+    projectId:pid,userId:uid,percentage:30,startDate:'2026-10-01',endDate:'2026-10-31'}});
+  assert.equal(allocation.status,201,JSON.stringify(allocation.data));
+  const auditRows=await db.query(
+    'SELECT action FROM organization_audit_entries WHERE tenant_id=$1',[tenantId]);
+  const audited=new Set(auditRows.rows.map(x=>x.action));
+  for(const action of ['tenant.member_added','department.created','portfolio.created',
+    'program.created','project.classification_changed','department.member_assigned',
+    'allocation.recorded']){
+    assert.ok(audited.has(action),'Missing organization audit: '+action);
+  }
+
   const invited=await api('/projects/'+pid+'/members',{method:'POST',body:{
     email:'second+'+suffix2+'@example.com',
   }});
