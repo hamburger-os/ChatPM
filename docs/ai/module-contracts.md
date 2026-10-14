@@ -186,3 +186,7 @@ AI 事件、规则提醒与周期报告 Runner 的应用入口分别归 `package
 ## ADR-034 · Bootstrap / Operations Boundary
 
 `apps/worker/src/worker.ts` 仅管理进程生命周期、定时 tick 和业务 Runner 调度。`recordWorkerHeartbeat` 由 `packages/core/src/operations/worker-heartbeat.ts` 实现，保存工作进程健康遥测而非领域事实。CI 的 `tools/test/architecture-boundaries.test.mjs` 保证该入口不含 SQL、仍分别调用 processEvents/processReminders/processReports；不可借本规则宣称整个 API/Worker 已完全领域解耦。
+
+## ADR-035 · 黄金评测契约
+
+`activity schema`、`buildActivityPrompt` 必须与 `ConfiguredLLMProvider.analyzeWork` 实际生产请求同源，不允许评测用的是另一个更容易的 Prompt；可执行 evaluator 的 input 标记 schemaVersion/promptVersion、caseId、coverage 和 expectedKinds，评分绝不执行领域写入。CI 的 `npm run test:ai-evals` 仅校验 Fixtures 与 Scorer/安全反例；真实效果必须通过显式 `PM_EVAL_LIVE=1 npm run eval:pm:live` 生成匿名化汇总。未覆盖的关键领域能力要在评测结果中标识为 unsupported，不得计入 passed。

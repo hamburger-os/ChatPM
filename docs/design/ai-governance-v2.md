@@ -27,3 +27,11 @@ Golden fixtures 应包含：承诺 vs 计划、Risk vs Issue、完成声明 vs �
 `ai_model_invocations` 记录每次实际尝试的模型身份（脱敏）、Prompt 版本、授权版本、隐私保护的输入指纹、耗时与通过/失败状态。每次重试保留独立行；输入/响应正文、供应商 Key、URL path 和原始上游错误不得落库。上游没有标准化提供真实 token usage 时输入/输出 token 为空，不能估算冒充精确计费。现有 `ai_analysis_runs` 继续表达消息最终分析状态，两者不是同一对象。
 
 当前阶段不宣称已有细粒度 capabilities、组织敏感数据出站策略、KMS、全量 Playbook 或 AI 成本计费；后续依黄金集与运行安全评测扩展。
+
+## ADR-035 · AI 项目经理黄金评测集与能力缺口（2026-10-15）
+
+**决定：** 维护版本化的合成数据黄金用例（项目目标、显式新任务、既有任务进度/阻塞/完成声称、预期风险、日期歧义、重复提议、提示注入、跨项目 ID、无行动闲聊），明确标记当前 `items(task/risk)+progress(progress/blocker/completion_claim)` Schema 能覆盖的情景。项目承诺（Commitment）、正式 Issue/Decision/Change/Acceptance、重复干预属于**现阶段 Schema 未支持的能力**，必须单独计为 Coverage Gap，不能把返回空数组判作成功。
+
+每个可覆盖用例公开输入、已知任务 ID、期望种类及安全约束；使用独立的纯函数评分器记录通过/失败与具体原因。CI 只校验黄金数据、评分器和 Prompt/Schema 版本一致性（无真实模型联网，不形成准确率证据）。要测模型效果，人工显式传入可信管理员提供的 `LLM_*` 环境变量及 `PM_EVAL_LIVE=1` 后逐例实际调用，记录模型版本及匿名化分数；不泄露项目真实资料，任何合成用例只用于 QA。
+
+**不能做的推断：** 黄金集存在并不表示项目已具备风险管理全链路、准确率 90% 或已获得真实 DeepSeek/任意供应商兼容认证。只有运行真实模型并留下版本化记录才可填写精确的 Evaluation KPI。后续按业务场景扩展分类 Schema 并维护不同 Playbook/Policy 的回归评测。

@@ -73,3 +73,9 @@ English: The Worker process owns scheduling and health checks, while message eve
 中文：后台进程入口只负责启动、定时调度和健康状态；项目消息、跟进与报告由对应核心模块处理。CI 会防止 Worker 入口重新引入业务 SQL。现有 API 仍逐步模块化，不能认为已经拥有完整模块化单体的强制边界。
 
 English: The background-process entrypoint now owns only startup, scheduling and lifecycle. Domain runners handle project events, follow-up and reports, while a CI boundary test rejects direct SQL in the Worker bootstrap. Legacy API routes are still being migrated; this does not assert that every module boundary is fully enforced.
+
+### AI 黄金用例与模型实测 / AI golden evaluation
+
+中文：ChatPM 使用合成项目协作示例检验 AI 对任务、进度、阻塞、风险、模糊日期和提示注入的理解，并明确列出当前尚未支持的管理能力。GitHub 自动化只检查测试数据和评分程序；真正模型质量需管理员主动使用模型密钥进行评测并保存结果。没有真实评测结果时，不会展示虚构的准确率。
+
+English: Synthetic project conversations form a versioned golden set for task/progress/blocker/risk extraction, ambiguous dates and prompt-injection safety. Unsupported PM features remain explicit coverage gaps. CI checks the corpus and scorer only; live model quality requires a deliberate administrator-triggered run with real model access. No accuracy number is claimed without actual results.

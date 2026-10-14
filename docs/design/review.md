@@ -107,3 +107,7 @@ CI 新增 `tools/test/task-linkage-smoke.mjs`：PostgreSQL 创建正式任务与
 ## ADR-033 · Worker 重构专项 /review
 
 核对原 Worker 的 processEvents/processReminders/processReports 移入独立核心 Runner 后无业务 SQL 变更；保留 Outbox claim_token/错误重试/撤权后放弃、项目消息 nonce、提醒工作时间与冷却、周月报幂等和快照一致性；启动、15s Tick、健康心跳、IPC/Windows 优雅关闭不改变；新增纯函数回归覆盖逾期、当天和阻塞文案。不得声称 API 已完成整体薄路由重构或生产多 Worker 扩缩容验收。合并门禁为最终 PR SHA 五项 CI，未解决 Review 线程清零。
+
+## ADR-035 · PM 模型质量评测 /review 门禁
+
+黄金测试和生产模型必须共用 Prompt Builder/Schema；离线评分器应针对 Schema 失效、错误事项类别、外项目任务 ID、虚构负责人/截止日和诱导 AI 越权创建任务主动失败；Issue/Decision/Change/Acceptance/Commitment/重复干预未覆盖不得作为“正确空回复”算进成功率；CI 只验证数据与评分器而非厂商模型本身。真实模型需要显式的环境许可和真实 API，按 Prompt/模型版本保存不可暴露 Key/原始输出的报告。不改动原生配置、项目外部模型授权边界或数据库迁移；最新 PR Head 五项工作流通过、无未解决 Review 线程才合并。
