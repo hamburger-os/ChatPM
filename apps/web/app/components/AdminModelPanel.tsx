@@ -13,6 +13,22 @@ type ProviderForm={name:string;baseUrl:string;style:Wire;enabled:boolean;apiKey:
 type ModelForm=Omit<Model,'id'>;
 type CatalogModel={id:string;name:string;ownedBy:string|null};
 type Catalog={models:CatalogModel[];latencyMs:number;truncated:boolean};
+type TestOutcome={ok:boolean;textOk:boolean;structuredOk:boolean;
+  errorCode?:string;latencyMs:number;textLatencyMs?:number};
+const testHelp:Record<string,string>={
+  MODEL_HTTP_404:'接口不存在。检查基础地址是否遗漏 /v1，并确认所选协议和代理实际路由一致。',
+  MODEL_HTTP_401:'密钥验证失败，请检查代理中的 API Key。',
+  MODEL_HTTP_403:'代理拒绝了访问，请核对服务权限。',
+  MODEL_HTTP_429:'触发了代理限流，请稍后重试。',
+  MODEL_EMPTY_OUTPUT:'上游返回成功状态，但没有可读文本。请检查代理日志、模型 ID 和协议。',
+  MODEL_REASONING_ONLY_OUTPUT:'响应中只有推理内容，没有最终答案。请检查模型推理设置或提高输出 Token 预算。',
+  MODEL_RESPONSE_FORMAT_MISMATCH:'服务返回的响应结构与所选请求协议不一致。请尝试匹配的 Chat Completions 或 Responses 协议。',
+  MODEL_INCOMPLETE_OUTPUT:'生成未完成或被截断，建议检查模型参数和输出 Token 上限。',
+  MODEL_INVALID_JSON:'模型返回了文本但不是有效 JSON，暂不满足 ChatPM 的结构化输出要求。',
+  MODEL_TEST_CONTENT_MISMATCH:'模型响应未包含预期的结构化测试字段。',
+  MODEL_REFUSED:'模型拒绝了测试请求。',
+  MODEL_INVALID_RESPONSE:'代理返回的内容不是符合要求的 JSON API 响应。',
+};
 const emptyProvider=():ProviderForm=>({name:'',baseUrl:'',style:'chat-completions',enabled:false,apiKey:''});
 const fromProvider=(p:Provider):ProviderForm=>({name:p.name,baseUrl:p.baseUrl,style:p.style,
   enabled:p.enabled,apiKey:''});
@@ -42,6 +58,7 @@ export default function AdminModelPanel(){
   const [busy,setBusy]=useState('');
   const [notice,setNotice]=useState('');
   const [tested,setTested]=useState<Record<string,number>>({});
+  const [testResults,setTestResults]=useState<Record<string,TestOutcome>>({});
   const nameInput=useRef<HTMLInputElement>(null);
 
   const refresh=async(initial=false)=>{
@@ -121,7 +138,7 @@ export default function AdminModelPanel(){
       setSelected(saved.id);setCreating(false);setProviderEditing(false);
       const next=fromProvider(saved);setDraft(next);
       providerBaseline.current=JSON.stringify(next);
-      resetCatalog();setTested({});await refresh();
+      resetCatalog();setTested({});setTestResults({});await refresh();
       setNotice('连接已保存，可获取模型目录并批量注册。');
       setTab('models');
       // Try discovery as the next step, but a missing /models endpoint never
@@ -168,6 +185,7 @@ export default function AdminModelPanel(){
       await refresh();setEditingModel(null);setModelDraft(null);
       setNotice('模型配置已保存；修改配置后应重新进行兼容性测试。');
       setTested(old=>{const next={...old};delete next[editingModel];return next;});
+      setTestResults(old=>{const next={...old};delete next[editingModel];return next;});
     }catch(e){setNotice(errorMessage(e));}
     finally{setBusy('');}
   };
@@ -189,10 +207,19 @@ export default function AdminModelPanel(){
   const testModel=async(m:Model)=>{
     if(busy)return;setBusy('test:'+m.id);setNotice('');
     try{
-      const result=await request<{latencyMs:number}>('/admin/ai/models/'+m.id+'/test',
+      const result=await request<TestOutcome>('/admin/ai/models/'+m.id+'/test',
         {method:'POST'});
-      setTested(old=>({...old,[m.id]:Date.now()}));
-      setNotice(m.name+' 兼容性测试通过，耗时 '+result.latencyMs+' ms。测试可能产生少量调用费用。');
+      setTestResults(old=>({...old,[m.id]:result}));
+      if(result.ok){
+        setTested(old=>({...old,[m.id]:Date.now()}));
+        setNotice(m.name+'：基础调用和结构化输出均通过，用时 '+
+          result.latencyMs+' ms。测试产生两次匿名模型调用，可能计费。');
+      }else{
+        setTested(old=>{const next={...old};delete next[m.id];return next;});
+        const stage=result.textOk?'基础调用通过，但结构化输出失败':'基础调用未通过';
+        setNotice(m.name+'：'+stage+'（'+result.errorCode+'）。'+
+          (testHelp[result.errorCode??'']??'请检查代理地址、协议及模型配置。'));
+      }
     }catch(e){setNotice(m.name+'：'+errorMessage(e));}
     finally{setBusy('');}
   };
@@ -276,7 +303,7 @@ export default function AdminModelPanel(){
               <label>API 请求基础地址<input required type="url" value={draft.baseUrl}
                 placeholder="https://api.example.com/v1"
                 onChange={e=>setDraft({...draft,baseUrl:e.target.value})}/>
-                <small className="hint">填写模型接口地址，不是服务商官网；无需包含 /models 或 /chat/completions。</small>
+                <small className="hint">填写 API 前缀，ChatPM 会在末尾添加 /models、/chat/completions 或 /responses。OpenAI 风格代理通常需要以 /v1 结尾，例如 http://127.0.0.1:8045/v1。</small>
                 {/^(http:\/\/)(localhost|127\.0\.0\.1|\[::1\])(?=[:/]|$)/i.test(draft.baseUrl)&&
                   <small className="hint">本机地址属于 ChatPM 服务器或容器，不一定是浏览器所在电脑。</small>}
               </label>
@@ -304,7 +331,7 @@ export default function AdminModelPanel(){
         </section>}
         {tab==='models'&&<section className="management-editor">
           <div className="between">
-            <div><h3>模型管理</h3><p className="hint">添加模型默认不启用，请先测试模型的结构化输出能力。</p></div>
+            <div><h3>模型管理</h3><p className="hint">添加模型默认不启用。分级测试会先验证普通文本调用，再验证结构化 JSON 输出，最多产生两次匿名计费请求。</p></div>
             <button type="button" className="secondary" disabled={!!busy||!selected}
               onClick={()=>void discover()}>{busy==='discover'?'正在获取…':'↻ 获取模型列表'}</button>
           </div>
@@ -360,11 +387,17 @@ export default function AdminModelPanel(){
             <div className="model-card-info">
               <strong>{m.name}</strong><p className="hint">{m.model}</p>
               <p className="hint">{m.enabled?'已启用':'未启用'}{m.isDefault?' · 平台默认':''}
-                {tested[m.id]?' · 本次会话测试通过':''}</p>
+                {tested[m.id]?' · 本次会话结构化测试通过':''}</p>
+              {testResults[m.id]&&<p className="hint" role="status">
+                基础文本：{testResults[m.id].textOk?'通过':'未通过'} · 结构化 JSON：
+                {testResults[m.id].structuredOk?'通过':testResults[m.id].textOk?'未通过':'未测试'}
+                {testResults[m.id].errorCode?' · '+testResults[m.id].errorCode:''}
+                {testResults[m.id].errorCode&&<span> — {testHelp[testResults[m.id].errorCode??'']??'请检查模型设置。'}</span>}
+              </p>}
             </div>
             <div className="actions">
               <button type="button" className="secondary" disabled={!!busy}
-                onClick={()=>void testModel(m)}>{busy==='test:'+m.id?'测试中…':'测试模型'}</button>
+                onClick={()=>void testModel(m)}>{busy==='test:'+m.id?'测试中…':'分级测试'}</button>
               <button type="button" className="secondary" disabled={!!busy}
                 onClick={()=>{if(busy||!confirmLeave())return;setEditingModel(m.id);
                   const next=fromModel(m);setModelDraft(next);
