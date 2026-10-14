@@ -57,3 +57,13 @@ The platform encrypts provider API keys using AES-256-GCM and exposes only a `ha
 
 ### Limitations
 Experimental software. Production deployments still require HTTPS, DNS/SSRF and egress protections, key rotation procedures, real vendor interoperability, Windows 11 browser acceptance, and operations/security reviews.
+
+## ADR-025 补充 / Provider create and mobile workspace update
+
+### 中文
+
+管理员在已有连接页面点「＋ 添加供应商」将进入清空且可辨识的新建模式：原连接不再高亮，焦点进入连接名称输入框，可取消返回编辑原连接。保存成功后才选中新记录。手机窄屏在「消息」与「工作台」间切换，工作台包含任务、AI 待确认、报告、项目设置；桌面仍保持多栏。左上 ChatPM 标识统一使用应用图标。后端数据仍需权限审查。多用户使用时应关注 API 配额；目前消息仍使用轮询，并非实时推送。
+
+### English
+
+When an administrator clicks “Add Provider” while editing an existing connection, the UI enters a visibly distinct blank creation mode, removes the existing selection highlight and focuses the name input. Cancel returns to the previously selected connection, and only a successful save selects the new provider. On narrow phones, switch between Conversation and Workspace (tasks, AI proposals, reports and project settings); desktop retains its multi-column layout. The ChatPM navigation mark uses the application icon. Server-side authorization remains mandatory. Messaging still uses polling rather than real-time push.
