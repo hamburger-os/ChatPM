@@ -20,10 +20,13 @@ if (result.status !== 0) {
 const changed = result.stdout.split(/\r?\n/).filter(Boolean);
 const set = new Set(changed);
 // Deployment entry points and runtime configuration are product behavior too.
+// Next.js rewrites this generated type-reference file; it is not product behavior.
+const generatedOnly = new Set(['apps/web/next-env.d.ts']);
 const productCode = changed.some((name) =>
+  !generatedOnly.has(name) && (
   /^(apps|packages|infra|database)\//.test(name) ||
   /^(tools\/ops|tools\/build)\//.test(name) ||
-  ['package.json', '.env.example'].includes(name));
+  ['package.json', '.env.example'].includes(name)));
 const errors = [];
 
 if (productCode) {
