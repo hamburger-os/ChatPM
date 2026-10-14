@@ -195,11 +195,11 @@ export async function importModelConfigs(
     if(visited.has(item.id)){skipped++;continue;}
     visited.add(item.id);
     const result=await db.query(
-      \`INSERT INTO ai_model_configs
+      `INSERT INTO ai_model_configs
         (name,model_id,provider_id,reasoning,reasoning_format,
          max_output_tokens,context_chars,enabled,is_default)
        VALUES($1,$2,$3,'auto','none',8192,32768,FALSE,FALSE)
-       ON CONFLICT (provider_id,model_id) DO NOTHING RETURNING id\`,
+       ON CONFLICT (provider_id,model_id) DO NOTHING RETURNING id`,
       [importModelName(item),item.id,providerId],
     );
     if(result.rowCount)created++;else skipped++;
