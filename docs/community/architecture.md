@@ -9,7 +9,7 @@
 ### 主要模块
 - 项目与权限：成员、租户、项目作用域。
 - 群聊（当前：消息持久化、增量轮询与断线补拉；实时推送、引用消息 UI 尚未交付）。
-- 任务与风险（当前：任务/风险记录及候选审批；完整决策工作流待实现）。
+- 任务与风险（当前：目标、里程碑、交付物独立验收、问题、决策/变更登记、任务依赖与候选审批；完整基线联动与专项 PM 界面仍待实现）。
 - AI 编排：从上下文提出有证据的候选变更。
 - 提醒和报告：后台执行、去重、可核查汇报。
 - 知识资料（规划：带版本与权限的附件及索引，当前尚未交付）。
@@ -22,7 +22,7 @@
 
 ## English
 
-The proposed architecture uses a **TypeScript monorepo, modular monolith, and a separate worker process**. Next.js provides the UI, Fastify the API, PostgreSQL stores authoritative records, and a PostgreSQL Outbox and polling worker handle asynchronous analysis and reminders. AI supports configurable Responses / Chat Completions HTTP transports. Live DeepSeek/local-model verification, a settings UI and notification adapters are not shipped. Reminders are built into ChatPM.
+The proposed architecture uses a **TypeScript monorepo, modular monolith, and a separate worker process**. Next.js provides the UI, Fastify the API, PostgreSQL stores authoritative records, and a PostgreSQL Outbox and polling worker handle asynchronous analysis and reminders. AI supports configurable Responses / Chat Completions HTTP transports. The centralized model settings UI is available; live DeepSeek/local-model verification and external notification adapters are not shipped. Reminders are built into ChatPM.
 
 ### Core modules
 - Project and access control: membership, tenants, project scopes.

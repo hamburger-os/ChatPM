@@ -91,3 +91,7 @@ CI 新增 `tools/test/task-linkage-smoke.mjs`：PostgreSQL 创建正式任务与
 ## ADR-029 · 组织事务化专项 /review 核对项
 
 本轮已针对组织管理路由复核：读取结构不再存在无用的第四条 SQL；创建、分类、人员、资源等管理写入必须在事务内二次验证 admin；组织业务事实与 organization_audit_entries 同事务；撤权后不得凭进入路由时的旧管理员身份写入；审计错误必须导致回滚。新增 integration 检验业务中断、审计 UUID 约束失败和成员越权。此处是检查项目定义，不等于 CI/实机检查已通过，实际结果以 PR head SHA 关联的工作流为准。
+
+## ADR-030 · 正式 PM 登记簿的 /review 检查点
+
+审查独立领域表的同项目 FK、合法状态转移、project_members/tenant_members 在事务内的 role 撤权同步、owner/manager/member 对执行/提交/验收/基线审批权限、提交人和审核人职责分离、幂等键重放返回及 payload hash 冲突、事件与审计与正式写入原子回滚、数据库迁移重跑、防跨项目依赖和有向图环、未知事件失败/合法 domain.changed 无 AI 副作用、HTTP 访问隔离、报告/旧任务回归、Docker/native/安全/文档质量。运行结果以最新 PR Head CI 实测证据为准，实际 Windows/真实模型/生产安全尚未覆盖。
