@@ -203,4 +203,5 @@ export function registerAdminModelRoutes(app:FastifyInstance,
         ...(textLatencyMs!==undefined?{textLatencyMs}:{}),
         latencyMs:Date.now()-started,model:identity};
     }
-  });}
+  });
+}
