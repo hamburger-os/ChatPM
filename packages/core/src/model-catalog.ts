@@ -14,7 +14,7 @@ for(const [subnet,prefix] of [
 ] as const)forbidden.addSubnet(subnet,prefix,'ipv4');
 for(const [subnet,prefix] of [
   ['::',128],['::1',128],['fc00::',7],['fe80::',10],
-  ['ff00::',8],['2001:db8::',32],['::ffff:0:0',96],
+  ['ff00::',8],['2001:db8::',32],
   ['2002::',16],['2001::',32],['64:ff9b::',96],
 ] as const)forbidden.addSubnet(subnet,prefix,'ipv6');
 
