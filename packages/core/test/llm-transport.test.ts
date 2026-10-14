@@ -144,3 +144,16 @@ test('chat-completions respects configured context instead of hidden 6500-charac
       message:{content:json}}]}),{status:200});
   });
 });
+
+test('reasoning is declared by the model, never inferred from endpoint brand',async()=>{
+  const config={...settings({LLM_BASE_URL:'https://model-gateway.example/v1'}),
+    reasoning:'high' as const,reasoningFormat:'responses-effort' as const};
+  await callStructuredLLM(config,'task',schema,async(_input,init)=>{
+    const body=JSON.parse(String(init?.body));
+    assert.equal(body.reasoning.effort,'high');
+    return new Response(JSON.stringify({status:'completed',
+      output:[{content:[{type:'output_text',text:json}]}]}),{status:200});
+  });
+  await assert.rejects(callStructuredLLM({...config,reasoningFormat:'none'},'task',schema),
+    /MODEL_REASONING_UNSUPPORTED/);
+});
