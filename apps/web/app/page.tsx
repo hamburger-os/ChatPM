@@ -262,7 +262,7 @@ export default function Home(){
           <button disabled={working||!chat.trim()}>发送</button>
         </form>}</>:<div className="empty">尚无项目，请从左侧创建或加入。</div>}
       </section>
-      {showDetails&&<WorkspaceDetails key={selected||'empty'} project={current} user={user}/>}
+      {showDetails&&<WorkspaceDetails key={selected||'empty'} project={current} user={user} messages={messages}/>}
     </>:<section className="workspace-main" aria-label="管理工作区">
       {view==='organization'&&tenantId&&<OrganizationPanel tenantId={tenantId}/>}
       {view==='organization'&&!tenantId&&<div className="empty">你尚未管理任何组织。</div>}
