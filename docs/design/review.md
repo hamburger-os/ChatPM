@@ -115,3 +115,7 @@ CI 新增 `tools/test/task-linkage-smoke.mjs`：PostgreSQL 创建正式任务与
 ## ADR-036 · Issue 正式关闭/复发与历史 /review
 
 检查：已发生问题与未来风险不混为一谈；仅 owner/manager 可以 resolve/reopen；新解决或重新打开必须满足当前项目+组织成员身份、行锁、合法当前状态、乐观版本和非空处理说明；项目生命周期内不可因后续 reopen 覆盖先前处理说明。历史不可跨项目查看；分页带明确 nextBeforeVersion；相同 key 重放不增加历史，同 key 不同 payload 409；业务写入、历史、Audit、DomainEvent、Outbox、Receipt 同事务，异常全回滚。Win11 实机、长生命周期数据删除政策和全量 RAID 仍是外部验收范围。以 PR 最终 Head 五项 CI 和 /review 结果决定合并。
+
+## ADR-037 · P1/P2 依赖与权限竞态 /review
+
+审查任务关闭与依赖新增是否按同一项目 advisory lock 串行、锁顺序是否统一，前置状态 todo/doing/blocked/cancelled 均不能满足 done，已完成任务不可加未完成前置，跨项目 UUID 不可引用。旧 Task 创建/状态/负责人调整是否在事务内重新验证当前项目与组织成员（FOR SHARE of pm,tm），并发撤权的真实 PostgreSQL 锁测试必须失败于错误操作而非在已撤权状态下提交。既有 followup 冷却、task optimistic version、审计及 Worker 不可回退。测试覆盖未经满足的依赖拒绝、独立任务完结、完成前置后的成功、目标已完成时新建依赖的拒绝以及角色撤销的竞态。实际结果仅由最终 PR Head 的 CI 证明。

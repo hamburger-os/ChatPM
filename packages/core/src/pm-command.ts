@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 import { audit, transaction, type DbClient } from './db.ts';
 import { assertProject, type ProjectAction, type ProjectRole } from './permissions.ts';
+import { lockProjectAccess } from './identity/project-access.ts';
 
 function deny(statusCode:number,message:string):never {
   throw Object.assign(new Error(message),{statusCode});
@@ -26,15 +27,7 @@ export type PmCommand<T> = {
 /** All official PM state changes and their receipts/events/audit share one transaction. */
 export async function executePmCommand<T>(command:PmCommand<T>):Promise<T> {
   return transaction(async db=>{
-    // Prevent role revocation between authorization and commit.
-    const scope=await db.query<{tenant_id:string;role:ProjectRole}>(`
-      SELECT p.tenant_id,pm.role FROM projects p
-      JOIN project_members pm ON pm.project_id=p.id AND pm.user_id=$2
-      JOIN tenant_members tm ON tm.tenant_id=p.tenant_id AND tm.user_id=$2
-      WHERE p.id=$1 FOR SHARE OF pm,tm
-    `,[command.projectId,command.actorId]);
-    const member=scope.rows[0];
-    if(!member)deny(404,'项目不存在或无权限');
+    const member=await lockProjectAccess(db,command.projectId,command.actorId);
     assertProject(member.role,command.action);
     const hash=createHash('sha256').update(JSON.stringify(command.payload)).digest('hex');
     const inserted=await db.query<{id:string}>(`
@@ -43,7 +36,7 @@ export async function executePmCommand<T>(command:PmCommand<T>):Promise<T> {
       VALUES($1,$2,$3,$4,$5,$6)
       ON CONFLICT(project_id,actor_id,kind,idempotency_key) DO NOTHING
       RETURNING id
-    `,[member.tenant_id,command.projectId,command.actorId,
+    `,[member.tenantId,command.projectId,command.actorId,
       command.kind,command.idempotencyKey,hash]);
     if(!inserted.rowCount){
       const old=await db.query<{payload_hash:string;result:T}>(`
@@ -62,7 +55,7 @@ export async function executePmCommand<T>(command:PmCommand<T>):Promise<T> {
         aggregate_id,aggregate_version,command_receipt_id,payload)
       VALUES($1,$2,$3,$4,$5,$6,$7,$8)
       RETURNING id
-    `,[member.tenant_id,command.projectId,command.kind,
+    `,[member.tenantId,command.projectId,command.kind,
       created.aggregateType,created.aggregateId,created.aggregateVersion,
       inserted.rows[0].id,JSON.stringify({actorId:command.actorId})]);
     await db.query(`
