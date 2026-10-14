@@ -72,10 +72,10 @@ When an administrator clicks “Add Provider” while editing an existing connec
 ## ADR-026 模型目录发现 / Model catalog discovery
 
 ### 中文
-标准 OpenAI 风格的 GET /models 可自动获取模型 ID 与可选名称。目录发现只意味着端点能列出模型，不保证请求协议、推理能力、JSON 输出或 Token 上限兼容。服务端使用加密保存的 Key 发起请求，支持手工 ID 兜底、每次至多 50 条幂等批量注册；管理员可在模型高级设置中调整预算和推理参数。新模型默认禁用，测试可在启用前进行。目录限频和响应上限保护服务稳定性；部署人员仍需用网络出站策略隔离内网地址，不能仅依赖 URL 与 DNS 预检。
+标准 OpenAI 风格的 GET /models 可自动获取模型 ID 与可选名称。目录发现只意味着端点能列出模型，不保证请求协议、推理能力、JSON 输出或 Token 上限兼容。服务端使用加密保存的 Key 发起请求，支持手工 ID 兜底、每次至多 50 条幂等批量注册；管理员可在模型高级设置中调整预算和推理参数。新模型默认禁用，测试可在启用前进行。目录请求超时和响应上限保护服务稳定性；部署人员仍需用网络出站策略隔离内网地址，不能仅依赖 URL 与 DNS 预检。
 
 ### English
-Compatible OpenAI-style GET /models endpoints provide discoverable model IDs and optional display names. A successful catalog lookup does not prove model inference, structured JSON output, reasoning options or token budgets. The server uses the encrypted provider credential; administrators can manually enter IDs and idempotently import up to 50 models per request. New models start disabled; run the anonymous compatibility test before enabling. Advanced settings expose request budgets and explicit reasoning mappings. Catalog rate limits and bounded responses reduce abuse, but production egress network rules remain necessary to protect internal services.
+Compatible OpenAI-style GET /models endpoints provide discoverable model IDs and optional display names. A successful catalog lookup does not prove model inference, structured JSON output, reasoning options or token budgets. The server uses the encrypted provider credential; administrators can manually enter IDs and idempotently import up to 50 models per request. New models start disabled; run the anonymous compatibility test before enabling. Advanced settings expose request budgets and explicit reasoning mappings. Bounded catalog requests and responses reduce abuse, but production egress network rules remain necessary to protect internal services.
 
 
 ## ADR-027 代理地址与模型测试 / Proxy paths and model diagnostics
@@ -91,3 +91,18 @@ Compatible OpenAI-style GET /models endpoints provide discoverable model IDs and
 For Antigravity Tools' OpenAI-compatible API, the typical base prefix is `http://127.0.0.1:8045/v1`. ChatPM appends `/models`, `/chat/completions` or `/responses` itself; other providers may have different valid paths, and ChatPM does not silently rewrite them.
 
 The two-stage test first makes an anonymous plain-text request without structured-output settings, then tests strict JSON output. It may incur two model calls. A connectivity check passing in CC Switch does not establish that a model can produce the structured JSON required for ChatPM's task and risk extraction. The interface distinguishes both test stages and reports stable, sanitized error codes. Never share private keys or raw upstream payloads in support requests.
+
+
+## ADR-028 即时刷新与快速测试 / Immediate catalog refresh and fast checks
+
+### 中文
+
+管理员可以在上次目录获取结束后立即点击“刷新模型列表”，不再固定等待 10 秒。接口仍只允许系统管理员使用，远端服务若限流仍会提示；刷新失败时保留现有模型列表和勾选内容，不会自动频繁重试。新连接保存后仍会尝试首次目录发现。
+
+“快速测试”只发起一次真实结构化 JSON 推理，更适合日常验证；“完整诊断”包含普通文本及结构化 JSON 两次测试，适合故障排查。两种模式都可能计费且共享每模型 30 秒防误触限制。快速测试不会声称已经单独验证文本输出。成功只表示该次匿名结构化请求可用，并不自动启用模型或保证所有项目负载都成功。
+
+### English
+
+Administrators can refresh the model catalog immediately after the previous request completes; there is no fixed 10-second waiting period. Admin authorization and upstream rate limits still apply. When refreshing fails, the last catalog and current selections remain available; there is no automatic rapid retry.
+
+“Quick Test” runs one billable structured JSON inference request for routine checks. “Full Diagnostics” runs a basic text request followed by the structured JSON request for compatibility troubleshooting, possibly incurring two charges. Both modes share the per-model 30-second safeguard against accidental repeated billing. A quick test does not claim that plain text was separately tested. Success does not automatically enable the model or guarantee all production workloads.
