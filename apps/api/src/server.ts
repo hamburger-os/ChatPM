@@ -47,9 +47,15 @@ app.setErrorHandler((err, _req, reply) => {
   const error=err as Error & {statusCode?:number,code?:string};
   let code=error.statusCode||500;
   if (err instanceof ZodError) code=400;
-  if (error.code==='23505') code=409;
+  if (error.code==='23505'||error.code==='23503') code=409;
+  if (['MODEL_NOT_FOUND','PROVIDER_NOT_FOUND'].includes(error.message)) code=404;
+  if (/^MODEL_(?:INVALID_URL|INVALID_MODEL|INVALID_STYLE|KEY_REQUIRED|DEFAULT_UNAVAILABLE|REASONING_UNSUPPORTED|REASONING_STYLE_MISMATCH)$/.test(error.message))
+    code=400;
   if (code>=500) app.log.error(err);
-  reply.code(code).send({error:code>=500?'Internal server error':error.message});
+  const message=code>=500?'Internal server error':
+    error.code==='23505'?'记录已存在或名称重复':
+    error.code==='23503'?'数据仍被使用或关联关系无效':error.message;
+  reply.code(code).send({error:message});
 });
 
 async function authenticated(req: { cookies: Record<string,string|undefined>, headers: {authorization?:string} }) {

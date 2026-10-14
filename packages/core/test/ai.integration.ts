@@ -34,10 +34,13 @@ try{
   const project=(await pool.query(
     "INSERT INTO projects(tenant_id,name,owner_id) VALUES($1,'AI mocked project',$2) RETURNING id",
     [tenant.id,user.id])).rows[0];
+  const provider=(await pool.query(`INSERT INTO ai_provider_connections
+    (name,base_url,api_style,api_key_ciphertext,enabled)
+    VALUES($1,'https://api.openai.com/v1','responses',$2,TRUE) RETURNING id`,
+    ['integration-provider-'+id,encryptModelKey('fake-key-for-mocked-requests')])).rows[0];
   await pool.query(`INSERT INTO ai_model_configs
-    (name,model_id,base_url,api_style,api_key_ciphertext,enabled,is_default)
-    VALUES($1,'mock-project-model','https://api.openai.com/v1','responses',$2,TRUE,TRUE)`,
-    ['integration-'+id,encryptModelKey('fake-key-for-mocked-requests')]);
+    (name,model_id,provider_id,enabled,is_default)
+    VALUES($1,'mock-project-model',$2,TRUE,TRUE)`,['integration-'+id,provider.id]);
   const source=await transaction(db=>insertMessage(db,{
     projectId:project.id,authorId:user.id,kind:'user',
     content:'需要发布接口，负责人和时间还没有确定',nonce:randomUUID(),

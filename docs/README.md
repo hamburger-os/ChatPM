@@ -15,4 +15,6 @@
 
 组织和 AI 管理专项：[设计](design/organization-governance.md) · [工程契约](ai/organization-governance.md) · [中英使用指南](community/organization-governance.md)。
 
+全局导航与供应商中心：[设计](design/navigation-provider-center.md) · [双语部署指南](community/navigation-provider-center.md)。
+
 工程变更需同步当前设计和契约，并执行 [文档检查](../.agents/skills/docs-sync/SKILL.md)。贡献者从 [CONTRIBUTING](../CONTRIBUTING.md) 开始。

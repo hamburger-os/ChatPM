@@ -17,6 +17,7 @@
 11. [架构决策记录](decision-log.md)
 12. [实施状态与剩余差距](implementation-status.md)
 13. [组织与项目治理、系统 AI 管理](organization-governance.md)
+14. [分层导航与供应商连接中心](navigation-provider-center.md)
 
 [仓库审查与验收结论](review.md) 聚合当前未关闭的风险。历史审查记录可从 GitHub PR 与提交记录查阅，不在当前设计索引重复列出。
 

@@ -6,10 +6,11 @@ const schema={type:'object',additionalProperties:false,required:['items'],
   properties:{items:{type:'array',items:{type:'string'}}}};
 const json=JSON.stringify({items:['task']});
 const settings=(extra:Record<string,string>={})=>readLLMSettings({
-  LLM_API_KEY:'private-test-key',...extra,
+  LLM_API_KEY:'private-test-key',LLM_BASE_URL:'https://api.openai.com/v1',
+  LLM_MODEL:'gpt-4.1-mini',LLM_API_STYLE:'responses',...extra,
 });
 
-test('defaults to OpenAI Responses; private key stays only in request header',async()=>{
+test('explicit Responses configuration keeps private key only in request header',async()=>{
   const got:string[]=[];
   const mocked:typeof fetch=async(input,init)=>{
     got.push(String(input));
@@ -106,7 +107,7 @@ test('fetch explicitly forbids redirecting POST chat contents and model keys',as
 });
 
 test('read-only PM replies use a separate system role and respect configured budgets',async()=>{
-  const config={...settings(),maxOutputTokens:900,contextChars:2000,reasoning:'high' as const};
+  const config={...settings(),maxOutputTokens:900,contextChars:2000,reasoning:'high' as const,reasoningFormat:'responses-effort' as const};
   const data=await callStructuredLLM(config,'project status',schema,async(_url,init)=>{
     const body=JSON.parse(String(init?.body));
     assert.equal(body.max_output_tokens,900);
@@ -121,7 +122,7 @@ test('read-only PM replies use a separate system role and respect configured bud
 
 test('DeepSeek Responses uses selected reasoning and output budget',async()=>{
   const cfg={...settings({LLM_BASE_URL:'https://api.deepseek.com'}),
-    reasoning:'max' as const,maxOutputTokens:16000,contextChars:45000};
+    reasoning:'max' as const,reasoningFormat:'responses-effort' as const,maxOutputTokens:16000,contextChars:45000};
   const result=await callStructuredLLM(cfg,'short request',schema,async(_url,init)=>{
     const body=JSON.parse(String(init?.body));
     assert.equal(body.reasoning.effort,'max');
@@ -134,7 +135,7 @@ test('DeepSeek Responses uses selected reasoning and output budget',async()=>{
 test('chat-completions respects configured context instead of hidden 6500-character cap',async()=>{
   const cfg={...settings({LLM_BASE_URL:'https://api.deepseek.com',
       LLM_API_STYLE:'chat-completions'}),contextChars:11000,
-    reasoning:'high' as const};
+    reasoning:'high' as const,reasoningFormat:'chat-completions-effort' as const};
   await callStructuredLLM(cfg,'x'.repeat(9500),schema,async(_url,init)=>{
     const body=JSON.parse(String(init?.body));
     assert.equal(body.messages[1].content.length,9500);
@@ -142,4 +143,17 @@ test('chat-completions respects configured context instead of hidden 6500-charac
     return new Response(JSON.stringify({choices:[{finish_reason:'stop',
       message:{content:json}}]}),{status:200});
   });
+});
+
+test('reasoning is declared by the model, never inferred from endpoint brand',async()=>{
+  const config={...settings({LLM_BASE_URL:'https://model-gateway.example/v1'}),
+    reasoning:'high' as const,reasoningFormat:'responses-effort' as const};
+  await callStructuredLLM(config,'task',schema,async(_input,init)=>{
+    const body=JSON.parse(String(init?.body));
+    assert.equal(body.reasoning.effort,'high');
+    return new Response(JSON.stringify({status:'completed',
+      output:[{content:[{type:'output_text',text:json}]}]}),{status:200});
+  });
+  await assert.rejects(callStructuredLLM({...config,reasoningFormat:'none'},'task',schema),
+    /MODEL_REASONING_UNSUPPORTED/);
 });

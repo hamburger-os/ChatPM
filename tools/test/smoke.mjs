@@ -91,14 +91,31 @@ try{
   const memberModel=await api('/admin/ai/models',{cookie:cookieB});
   assert.equal(memberModel.status,403,'Regular members cannot read global AI model registry');
   await db.query('UPDATE users SET is_system_admin=TRUE WHERE id=$1',[uid]);
+  const provider=await api('/admin/ai/providers',{method:'POST',body:{
+    name:'Smoke provider',baseUrl:'https://api.openai.com/v1',style:'responses',
+    enabled:true,apiKey:'smoke-private-test-key',
+  }});
+  assert.equal(provider.status,201,JSON.stringify(provider.data));
+  assert.equal(provider.data.provider.hasKey,true);
+  assert.ok(!JSON.stringify(provider.data).includes('smoke-private-test-key'));
   const adminModel=await api('/admin/ai/models',{method:'POST',body:{
-    name:'Smoke default model',model:'mock-model',baseUrl:'https://api.openai.com/v1',
-    style:'responses',reasoning:'auto',maxOutputTokens:8192,contextChars:32768,
-    enabled:true,isDefault:true,apiKey:'smoke-private-test-key',
+    name:'Smoke default model',model:'mock-model',providerId:provider.data.provider.id,
+    reasoning:'auto',reasoningFormat:'none',maxOutputTokens:8192,contextChars:32768,
+    enabled:true,isDefault:true,
   }});
   assert.equal(adminModel.status,201,JSON.stringify(adminModel.data));
-  assert.equal(adminModel.data.model.hasKey,true);
-  assert.ok(!JSON.stringify(adminModel.data).includes('smoke-private-test-key'));
+  assert.equal(adminModel.data.model.isDefault,true);
+  const providerModels=await api('/admin/ai/models');
+  assert.equal(providerModels.status,200);
+  assert.equal(providerModels.data.models[0].providerId,provider.data.provider.id);
+  const secondModel=await api('/admin/ai/models',{method:'POST',body:{
+    name:'Smoke alternative',model:'mock-secondary',providerId:provider.data.provider.id,
+    reasoning:'auto',reasoningFormat:'none',maxOutputTokens:8192,contextChars:32768,
+    enabled:false,isDefault:false,
+  }});
+  assert.equal(secondModel.status,201,'A provider must support multiple models');
+  const deniedConnection=await api('/admin/ai/providers',{cookie:cookieB});
+  assert.equal(deniedConnection.status,403,'Non-administrators cannot read provider configuration');
   const forbidWrite=await api('/admin/ai/models',{method:'POST',cookie:cookieB,
     body:{name:'denied'}});
   assert.equal(forbidWrite.status,403);

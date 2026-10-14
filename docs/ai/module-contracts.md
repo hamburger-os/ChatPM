@@ -125,3 +125,12 @@ Web 端从 `GET /projects` 初始化项目列表和设置面板。该接口返�
 - `syncFollowup` 在有效正式任务建立后计划首次检查，Worker 根据项目日期差、阻塞与冷却及工作时间安排下一次，长期任务默认间隔 7 天；临近到期/阻塞可更频繁。不是发送外部通知，不对无负责人/期限任务催办。
 - 模型配置迁移 007 将输入字符预算提升至 250000、输出 Token 上限 131072，默认 32768 字符/8192 Token；DeepSeek 官方 Responses 走 provider-specific `reasoning.effort`，Chat Completions 走 `reasoning_effort`；模型/供应商实际最大能力不等于本应用的每次预算。
 
+
+## ADR-024 · 导航与供应商连接工程契约
+
+- 主 Web 页面维护 `projects | organization | system | account` 一级状态。项目工作面板 `WorkspaceDetails` **仅**负责项目详情；组织和系统配置不得通过项目右侧加载。
+- 系统管理员仍由 `users.is_system_admin` 和 `requireSystemAdmin` 服务端校验，统一登录无独立管理员密码入口，术语为「系统管理员」。初始化授权通过本机 `npm run admin:grant`，不得提供公开提权 API。
+- `ai_provider_connections` 管理连接地址、协议及密钥；`ai_model_configs` 管理模型、预算和默认选择，`provider_id` 不可为空。模型配置 API 不能修改供应商密钥，供应商 API 从不返回明文或密文。
+- 受支持协议：Responses、Chat Completions；不支持 Anthropic Messages 原生格式与自动目录发现。管理员指定模型显示名称和请求 ID；推理参数使用显式 `reasoning_format`，不能以域名推断。非管理员请求必须 403。
+- 009 迁移为既有模型配置搬迁密钥，并删除旧列。Worker 调用默认已启用模型与已启用提供商的组合；没有可用连接则拒绝模型调用。无自动向其他模型的隐式降级。
+- 文档、单元、数据库、API、Worker、部署和前端构建必须共同验收；生产级网络 egress、DNS 防重绑定、实际供应商兼容性与本地 Windows 端 E2E 仍属于发布风险。

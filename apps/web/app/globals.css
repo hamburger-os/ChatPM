@@ -29,3 +29,146 @@ label{display:grid;gap:7px;font-size:13px;color:#536174}label.check{display:flex
   .details{min-height:500px}
   .detail-content{min-height:300px;max-height:70dvh;overflow-y:auto}
 }
+
+
+/* ADR-024: the global workspace switcher owns navigation; project context remains local. */
+.app-shell{display:grid;grid-template-columns:72px 252px minmax(400px,1fr);
+  height:100dvh;min-height:0;overflow:hidden;background:#f7f9fd}
+.app-shell.has-details{grid-template-columns:72px 252px minmax(400px,1fr) minmax(310px,370px)}
+.app-rail{background:#14233d;color:#b9c9e6;display:flex;flex-direction:column;
+  align-items:center;padding:18px 8px;gap:8px;min-height:0}
+.rail-logo{display:grid;place-items:center;width:42px;height:42px;border-radius:13px;
+  background:#2563eb;color:#fff;font-weight:800;font-size:29px;margin-bottom:20px}
+.rail-action{display:flex;flex-direction:column;align-items:center;justify-content:center;
+  gap:5px;background:transparent;color:#a7bbdd;border-radius:12px;font-size:10px;
+  line-height:1.2;font-weight:500;width:55px;min-height:57px;padding:6px 4px}
+.rail-action.active{background:#2b4671;color:#fff}
+.rail-action:focus-visible,.project:focus-visible,.pane-toggle:focus-visible{
+  outline:2px solid #6697ff;outline-offset:2px}
+.rail-account{margin-top:auto}
+.app-sidebar{background:#f5f7fb;border-right:1px solid #e3e9f2;display:flex;
+  flex-direction:column;min-width:0;min-height:0;padding:0 13px 18px}
+.app-sidebar-title{display:grid;gap:6px;padding:25px 10px 16px}
+.app-sidebar-title .brand{font-size:20px;color:#172238}
+.app-sidebar-title small{font-size:12px;color:#8795a9}
+.app-sidebar .section-label{color:#79879a;display:flex;justify-content:space-between;
+  margin:17px 8px 8px;letter-spacing:.4px}
+.app-sidebar .project{color:#38465b;display:flex;align-items:center;gap:10px;
+  border-radius:9px;padding:12px 10px;text-align:left}
+.app-sidebar .project.selected{background:#e3ecfd;color:#2055b7;font-weight:700}
+.app-sidebar .project-symbol{font-size:18px;font-weight:600;color:#6985bb}
+.project-menu{min-height:0;overflow-y:auto;flex:1}
+.sidebar-search{padding:0 4px}
+.sidebar-search input{background:#fff;border-color:#e1e6ef}
+.app-sidebar .new-project{padding:0 3px;margin:10px 0 0;border-top:1px solid #e0e6f0}
+.app-sidebar .new-project label{color:#536174}
+.app-sidebar .new-project input{background:#fff;color:#172238;border-color:#d9dfeb}
+.app-sidebar .new-project button{width:100%}
+.app-sidebar .sidebar-footer{color:#1c2a3f;border-top:1px solid #e1e6ee;
+  padding:15px 8px 0;gap:4px}
+.app-sidebar .sidebar-footer small{color:#8493aa}
+.app-sidebar .text-button{color:#2b64c6}
+.sidebar-menu{display:grid;align-content:start;gap:5px;min-height:0;overflow-y:auto}
+.sidebar-menu .hint{margin:12px}
+.app-shell .chat-pane,.app-shell .details,.workspace-main{min-width:0;min-height:0}
+.app-shell .chat-pane{background:#fff;overflow:hidden}
+.app-shell .chat-pane header{padding:21px 25px;gap:10px}
+.pane-toggle{background:#f0f4fd;color:#47658c;font-weight:500;font-size:12px;white-space:nowrap}
+.app-shell .details{background:#f9fbff;border-left:1px solid #e3e8f1}
+.app-shell .details .tabs{grid-template-columns:repeat(4,minmax(0,1fr))}
+.app-shell .details .tabs button{padding:19px 4px}
+.app-shell .details .detail-content{padding:10px 19px 25px}
+.workspace-main{grid-column:3/-1;overflow-y:auto;background:#fff;padding:28px clamp(22px,4vw,58px)}
+.management-layout{max-width:1180px;margin:0 auto}
+.management-heading{display:flex;align-items:center;justify-content:space-between;gap:25px;
+  border-bottom:1px solid #e5eaf2;padding:0 0 24px;margin-bottom:25px}
+.management-heading h2{font-size:22px;color:#172238}
+.management-heading p{margin:6px 0 0}
+.management-heading button{white-space:nowrap}
+.provider-workspace{display:grid;grid-template-columns:minmax(200px,255px) minmax(0,1fr);
+  border:1px solid #e3e9f2;border-radius:15px;overflow:hidden;min-height:480px}
+.provider-list{padding:16px 11px;background:#f7f9fd;border-right:1px solid #e5eaf2}
+.provider-list h3{margin:5px 8px 15px;font-size:13px}
+.provider-list-item{display:flex;align-items:center;gap:11px;width:100%;
+  text-align:left;background:transparent;color:#26364b;padding:10px;border-radius:11px;
+  margin:4px 0}
+.provider-list-item.is-active{background:#e7efff}
+.provider-avatar{display:grid;place-items:center;flex:0 0 40px;width:40px;height:40px;
+  border-radius:11px;background:#d8e5fe;color:#2761bd;font-size:18px}
+.provider-list-text{display:grid;gap:5px;min-width:0}
+.provider-list-text strong{font-size:13px;overflow-wrap:anywhere}
+.provider-list-text small{font-size:11px;color:#8290a4;font-weight:400}
+.provider-main{min-width:0;background:#fff}
+.management-tabs{display:flex;gap:25px;padding:0 25px;border-bottom:1px solid #e6ebf2}
+.management-tabs button{border-radius:0;background:none;color:#68778c;padding:16px 4px;
+  font-size:13px;border-bottom:2px solid transparent}
+.management-tabs button.active{color:#2563eb;border-color:#2563eb}
+.management-editor{padding:15px 28px 28px}
+.management-editor h3{font-size:16px;margin:16px 0 19px}
+.management-editor .between{margin-bottom:18px;align-items:center}
+.management-editor .between h3{margin:0}
+.management-form{display:grid;gap:17px;max-width:760px}
+.management-form label{font-size:13px;color:#435269}
+.management-form label .hint{font-size:11px;margin:0}
+.management-form .check{display:flex;margin:0}
+.management-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
+.model-card{display:flex;justify-content:space-between;align-items:center;gap:14px;
+  border:1px solid #e6eaf2;border-radius:11px;padding:13px 15px;margin:10px 0}
+.model-card strong{font-size:14px}
+.model-card p{margin:5px 0 0}
+.model-card .actions{margin:0}
+.model-card .actions button{padding:7px 10px;font-size:12px}
+.account-settings{max-width:700px;margin:0 auto}
+.account-settings h2{font-size:22px}
+.profile-card{display:flex;gap:18px;align-items:center;border:1px solid #e4e9f1;
+  border-radius:16px;padding:24px;margin:24px 0}
+.profile-card .user-avatar{width:56px;height:56px;font-size:20px}
+.global-notice{position:fixed;bottom:18px;left:50%;transform:translateX(-50%);z-index:50;
+  background:#243452;color:#fff;border-radius:10px;padding:12px 17px;max-width:90vw;
+  display:flex;gap:14px;align-items:center;font-size:13px;box-shadow:0 8px 30px #12234c29}
+.global-notice button{padding:0 4px;background:none;font-size:20px}
+@media(max-width:1170px){
+  .app-shell,.app-shell.has-details{grid-template-columns:64px 215px minmax(0,1fr);
+    height:auto;min-height:100dvh;overflow:visible}
+  .app-rail{grid-row:1/span 2}
+  .app-sidebar{grid-row:1/span 2}
+  .app-shell .chat-pane{grid-column:3;grid-row:1;min-height:67dvh}
+  .app-shell .details{grid-column:3;grid-row:2;min-height:400px}
+  .app-shell .details .detail-content{max-height:66dvh}
+  .workspace-main{grid-column:3;min-height:100dvh}
+}
+@media(max-width:760px){
+  .app-shell,.app-shell.has-details{display:flex;flex-direction:column;min-height:100dvh}
+  .app-rail{order:5;position:sticky;bottom:0;z-index:30;flex-direction:row;
+    justify-content:space-around;min-height:65px;padding:7px 10px;flex:0 0 auto}
+  .rail-logo{display:none}.rail-account{margin-top:0}
+  .rail-action{min-height:48px;max-width:90px;width:25%;gap:3px}
+  .app-sidebar{order:0;min-height:0;padding-bottom:10px}
+  .app-sidebar-title{padding:10px}
+  .app-sidebar .sidebar-footer{display:none}
+  .app-sidebar .new-project{margin-bottom:6px}
+  .project-menu{display:flex;gap:7px;overflow-x:auto;flex:0 0 auto;padding:2px}
+  .app-sidebar .project{white-space:nowrap;flex:0 0 auto}
+  .app-shell .chat-pane{order:1;min-height:62dvh;height:65dvh}
+  .app-shell .details{order:2;min-height:440px}
+  .workspace-main{order:1;min-height:60dvh;padding:18px 14px}
+  .management-heading{align-items:flex-start}
+  .provider-workspace{grid-template-columns:1fr}
+  .provider-list{border-right:0;border-bottom:1px solid #e5eaf2}
+  .provider-list-item{max-width:100%}
+  .management-editor{padding:12px 15px 22px}
+  .management-tabs{padding:0 14px}
+  .model-card{align-items:flex-start;flex-direction:column}
+  .management-grid{grid-template-columns:1fr}
+}
+
+.organization-workspace{max-width:1100px;margin:0 auto}
+.organization-workspace>.management-tabs{margin-bottom:22px}
+.organization-section{max-width:860px}
+.organization-section .item{margin:0}
+.organization-section .stack{max-width:740px}
+.organization-section>.row-form{max-width:740px}
+
+.login-help{margin-top:20px;font-size:12px;color:#627187;line-height:1.6}
+.login-help summary{cursor:pointer;font-weight:600}
+.auth-card .login-help p{font-size:12px;margin:9px 0 0}
