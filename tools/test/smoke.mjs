@@ -74,6 +74,9 @@ try{
   const unauthorizedTenant=await api('/projects',{method:'POST',cookie:cookieB,body:{
     name:'不能创建的项目',tenantId,timezone:'Asia/Shanghai'}});
   assert.equal(unauthorizedTenant.status,403,'Cannot create projects in another tenant');
+  const addOrgMember=await api('/tenants/'+tenantId+'/members',{
+    method:'POST',body:{email:'second+'+suffix2+'@example.com'}});
+  assert.equal(addOrgMember.status,200,'Tenant administrator must enroll person first');
   const invited=await api('/projects/'+pid+'/members',{method:'POST',body:{
     email:'second+'+suffix2+'@example.com',
   }});
@@ -83,37 +86,24 @@ try{
   const ownerOnly=await api('/projects/'+pid+'/settings',{method:'PATCH',cookie:cookieB,
     body:{aiEnabled:false,workStart:9,workEnd:18,cooldownHours:24}});
   assert.equal(ownerOnly.status,403,'Project members cannot change AI or reminder policy');
-  const memberModel=await api('/projects/'+pid+'/model',{cookie:cookieB});
-  assert.equal(memberModel.status,403,'Only owner may view project model settings');
-  const initialModel=await api('/projects/'+pid+'/model');
-  assert.equal(initialModel.status,200);
-  assert.equal(initialModel.data.model.provider,'server');
-  const rejectUrl=await api('/projects/'+pid+'/model',{method:'PUT',body:{
-    provider:'http://127.0.0.1:80',model:'unsafe',style:'responses',reasoning:'auto',
-    maxOutputTokens:2048,contextChars:6500,
+  const deniedModel=await api('/admin/ai/models');
+  assert.equal(deniedModel.status,403,'Tenant owner is not a platform system administrator');
+  const memberModel=await api('/admin/ai/models',{cookie:cookieB});
+  assert.equal(memberModel.status,403,'Regular members cannot read global AI model registry');
+  await db.query('UPDATE users SET is_system_admin=TRUE WHERE id=$1',[uid]);
+  const adminModel=await api('/admin/ai/models',{method:'POST',body:{
+    name:'Smoke default model',model:'mock-model',baseUrl:'https://api.openai.com/v1',
+    style:'responses',reasoning:'auto',maxOutputTokens:8192,contextChars:32768,
+    enabled:true,isDefault:true,apiKey:'smoke-private-test-key',
   }});
-  assert.equal(rejectUrl.status,400,'Project members cannot configure arbitrary model URLs');
-  const savedModel=await api('/projects/'+pid+'/model',{method:'PUT',body:{
-    provider:'deepseek',model:'deepseek-flash',style:'responses',reasoning:'auto',
-    maxOutputTokens:2048,contextChars:6500,apiKey:'test-project-private-key',
-  }});
-  assert.equal(savedModel.status,200,JSON.stringify(savedModel.data));
-  assert.equal(savedModel.data.model.hasKey,true);
-  assert.equal(JSON.stringify(savedModel.data).includes('test-project-private-key'),false);
-  const modelDenied=await api('/projects/'+pid+'/model',{method:'PUT',cookie:cookieB,body:{
-    provider:'server',model:'',style:'responses',reasoning:'auto',
-    maxOutputTokens:2048,contextChars:6500,
-  }});
-  assert.equal(modelDenied.status,403,'Members cannot rotate owner model secrets');
-  const runsDenied=await api('/projects/'+pid+'/ai/runs',{cookie:cookieB});
-  assert.equal(runsDenied.status,403);
-  const runs=await api('/projects/'+pid+'/ai/runs');
-  assert.equal(runs.status,200);
-  const resetModel=await api('/projects/'+pid+'/model',{method:'PUT',body:{
-    provider:'server',model:'',style:'responses',reasoning:'auto',
-    maxOutputTokens:2048,contextChars:6500,
-  }});
-  assert.equal(resetModel.status,200);
+  assert.equal(adminModel.status,201,JSON.stringify(adminModel.data));
+  assert.equal(adminModel.data.model.hasKey,true);
+  assert.ok(!JSON.stringify(adminModel.data).includes('smoke-private-test-key'));
+  const forbidWrite=await api('/admin/ai/models',{method:'POST',cookie:cookieB,
+    body:{name:'denied'}});
+  assert.equal(forbidWrite.status,403);
+  const adminListing=await api('/admin/ai/models');
+  assert.equal(adminListing.status,200);
   const before=await api('/projects/'+pid+'/messages');
   assert.equal(before.status,200);
   const nonce=randomUUID();

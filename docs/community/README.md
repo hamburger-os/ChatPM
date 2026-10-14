@@ -6,6 +6,7 @@ ChatPM 是可运行的实验性 AI 项目经理应用，尚未完成生产验收
 
 | 主题 / Topic | 中文 | English |
 |---|---|---|
+| 组织治理与 AI 管理 / Governance | [中文](organization-governance.md#中文) | [English](organization-governance.md#english) |
 | 项目概述 / Overview | [中文](overview.md#中文) | [English](overview.md#english) |
 | 架构 / Architecture | [中文](architecture.md#中文) | [English](architecture.md#english) |
 | 开发与部署 / Development | [中文](development.md#中文) | [English](development.md#english) |

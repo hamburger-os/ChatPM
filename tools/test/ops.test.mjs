@@ -12,7 +12,7 @@ const template = [
 
 test('new install generates both independent high-entropy secrets without touching unrelated settings', () => {
   const { text, generated } = prepareDockerEnv(template);
-  assert.deepEqual(generated, ['SESSION_SECRET', 'POSTGRES_PASSWORD']);
+  assert.deepEqual(generated, ['SESSION_SECRET', 'MODEL_ENCRYPTION_KEY', 'POSTGRES_PASSWORD']);
   const session = text.match(/^SESSION_SECRET=([a-f0-9]{64})$/m)?.[1];
   const postgres = text.match(/^POSTGRES_PASSWORD=([a-f0-9]{64})$/m)?.[1];
   assert.ok(session);
@@ -29,7 +29,7 @@ test('rerun is idempotent and keeps user-provided secrets', () => {
   assert.deepEqual(twice.generated, []);
   const custom = prepareDockerEnv('SESSION_SECRET=' + 'a'.repeat(40) +
     '\nPOSTGRES_PASSWORD=my-password\nWEB_ORIGIN=https://chatpm.example\n');
-  assert.deepEqual(custom.generated, []);
+  assert.deepEqual(custom.generated, ['MODEL_ENCRYPTION_KEY']);
   assert.match(custom.text, /^POSTGRES_PASSWORD=my-password$/m);
   assert.match(custom.text, /^WEB_ORIGIN=https:\/\/chatpm.example$/m);
 });
@@ -82,6 +82,7 @@ test('native installer generates secret but never accepts template database pass
     'WEB_ORIGIN=http://localhost:3000\n';
   const prepared = prepareNativeEnv(template);
   assert.match(prepared, /^SESSION_SECRET=[a-f0-9]{64}$/m);
+  assert.match(prepared, /^MODEL_ENCRYPTION_KEY=[a-f0-9]{64}$/m);
   assert.ok(validateNativeEnv(prepared).some(x => x.includes('DATABASE_URL')));
   const valid = prepared.replace('chatpm:chatpm@', 'chatpm:uniqueStrongPassword@');
   assert.deepEqual(validateNativeEnv(valid), []);

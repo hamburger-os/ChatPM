@@ -5,14 +5,13 @@ import { insertMessage } from '../src/messages.ts';
 import { processClarification } from '../src/clarification.ts';
 import { projectAnalysisContext } from '../src/project-context.ts';
 import { DailyAIBudgetExceeded } from '../src/ai-provider.ts';
+import { encryptModelKey } from '../src/project-model.ts';
 
 const id=randomUUID();
 const previousFetch=globalThis.fetch;
-const previousKey=process.env.LLM_API_KEY;
 const previousLimit=process.env.AI_DAILY_REQUEST_LIMIT;
 let providerCalls=0;
 try{
-  process.env.LLM_API_KEY='fake-key-for-mocked-requests';
   process.env.AI_DAILY_REQUEST_LIMIT='4';
   globalThis.fetch=async(_input,init)=>{
     providerCalls++;
@@ -35,6 +34,10 @@ try{
   const project=(await pool.query(
     "INSERT INTO projects(tenant_id,name,owner_id) VALUES($1,'AI mocked project',$2) RETURNING id",
     [tenant.id,user.id])).rows[0];
+  await pool.query(`INSERT INTO ai_model_configs
+    (name,model_id,base_url,api_style,api_key_ciphertext,enabled,is_default)
+    VALUES($1,'mock-project-model','https://api.openai.com/v1','responses',$2,TRUE,TRUE)`,
+    ['integration-'+id,encryptModelKey('fake-key-for-mocked-requests')]);
   const source=await transaction(db=>insertMessage(db,{
     projectId:project.id,authorId:user.id,kind:'user',
     content:'需要发布接口，负责人和时间还没有确定',nonce:randomUUID(),
@@ -138,8 +141,6 @@ try{
   console.log('AI integration passed: source-bound multi-turn evidence, replay, budget and no automatic task updates');
 }finally{
   globalThis.fetch=previousFetch;
-  if(previousKey===undefined)delete process.env.LLM_API_KEY;
-  else process.env.LLM_API_KEY=previousKey;
   if(previousLimit===undefined)delete process.env.AI_DAILY_REQUEST_LIMIT;
   else process.env.AI_DAILY_REQUEST_LIMIT=previousLimit;
   await pool.end();

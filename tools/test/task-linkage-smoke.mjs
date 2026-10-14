@@ -4,6 +4,7 @@ import { spawn } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import { setTimeout as sleep } from 'node:timers/promises';
 import pg from 'pg';
+import { encryptModelKey } from '../../packages/core/src/project-model.ts';
 
 // End-to-end bounded Worker integration with a local mock model. No actual vendor key.
 const db=new pg.Client({connectionString:process.env.DATABASE_URL});
@@ -45,9 +46,13 @@ try{
     VALUES($1,'message.created',$2)`,[project.id,source.id]);
   await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));
   const port=server.address().port;
+  await db.query('UPDATE ai_model_configs SET is_default=FALSE WHERE is_default=TRUE');
+  await db.query(`INSERT INTO ai_model_configs(name,model_id,base_url,api_style,
+    api_key_ciphertext,enabled,is_default) VALUES($1,$2,$3,'responses',$4,TRUE,TRUE)`,
+    ['worker-'+suffix,'mock-project-model','http://127.0.0.1:'+port,
+      encryptModelKey('mock-worker-key')]);
   worker=spawn(process.execPath,['--import','tsx','apps/worker/src/worker.ts'],{
-    env:{...process.env,LLM_API_KEY:'mock-worker-key',LLM_BASE_URL:'http://127.0.0.1:'+port,
-      LLM_MODEL:'mock-project-model',LLM_API_STYLE:'responses'},
+    env:{...process.env},
     stdio:'ignore',
   });
   let done=false;

@@ -128,15 +128,23 @@ Docker 不是必需组件。`npm run start:web` 默认只监听回环地址，�
 
 GitHub Actions 的 `Cross-platform native builds` 工作流会为 Windows 和 Linux 生成包含 `dist/`、Next.js 构建结果、SQL、配置模板与运维工具的实验性 Artifact，不携带数据库或私有密钥。取出与目标系统匹配的 Artifact 后，仍需 Node.js/npm 和 PostgreSQL；执行 `npm ci --omit=dev`、配置本机 `.env`、`npm run db:migrate:prod`，然后 `npm start` 或安装系统服务。它不是经过签名验证的 Windows MSI/Linux DEB/RPM 安装包，也不意味着已完成开机或恢复验收。
 
-## 选择模型提供商
+## 系统管理员统一配置 AI 模型
 
-默认不配置模型密钥，也不发送项目消息。部署管理员在根目录 `.env` 设置 `LLM_API_KEY`、`LLM_BASE_URL`、`LLM_MODEL` 和 `LLM_API_STYLE`（旧 `OPENAI_API_KEY`/`OPENAI_MODEL` 不再读取）。默认是 OpenAI Responses（`https://api.openai.com/v1`）；DeepSeek 示例：`https://api.deepseek.com`、`responses`、`deepseek-flash`。具备 JSON Object 支持的兼容服务可改用 `chat-completions`，但真实模型能力仍需联调；本地模型需自行部署和保护。改配置后重启 Worker 或重新执行 Docker 部署，并由项目负责人显式启用 AI。详细步骤：[中英双语部署指南](docs/community/development.md)。
+项目负责人及普通成员不再维护模型地址、密钥、DeepSeek/OpenAI 等供应商专属参数；系统 AI 管理由**系统总管理员**统一执行，项目负责人仅在项目设置中决定是否启用 AI。
+
+首次启动时执行迁移，在本地完成账号注册，再由持有服务器数据库访问权限的运营人员运行：
+
+```bash
+npm run admin:grant -- --email=admin@example.com --confirm
+```
+
+随后重新登录（或刷新页面），在「系统 AI」配置模型名称、模型 ID、可信 API 地址、协议、API Key，并启用设为默认。模型凭据在服务端用独立 `MODEL_ENCRYPTION_KEY` 加密，不得与 `SESSION_SECRET` 复用；初次 Docker/原生安装流程会各自生成强随机密钥。自定义模型与本地代理需要真实端到端兼容性验证，支持两种协议并不代表兼容任意供应商。详情见 [组织与 AI 管理指南](docs/community/organization-governance.md)。
 
 ## 本地演示路线
 
-1. 注册账号并创建团队/项目，按邮箱直接添加已注册成员（当前没有邮件邀请和接受流程）。
+1. 注册账号并创建团队/项目，先由组织管理员将已注册用户加入组织，再由项目负责人添加至项目（当前没有邮件邀请和接受流程）。
 2. 在项目聊天室中讨论可交付事项；未配置模型时可以手动创建任务。
-3. 可选择配置服务端 API Key 并由项目负责人显式开启外部 AI，将讨论转为有依据的**候选任务/风险**。
+3. 可选择配置服务端 API Key 并由项目负责人在管理员配置全局默认模型后显式开启 AI，将讨论转为有依据的**候选任务/风险**。
 4. 由负责人审批候选、确认任务负责人和期限，配置工作时间与提醒冷却。
 5. 在「报告」中生成并审核当前项目状态的周/月报草稿。
 
@@ -171,14 +179,14 @@ npm run check:docs
 
 **English:** ChatPM is an experimental, chat-centered AI project management tool. It keeps evidence-linked proposals separate from approved project facts. Cloud and self-hosted deployment with cloud/local model options are product goals; they are not all shipped today. See the [English guide](docs/community/development.md#english).
 
-## 本地测试反馈：模型与对话操作
+## 本地测试：组织治理与 AI 配置
 
-登录并创建项目后，打开「AI 模型」设置服务商、模型、Key、输入字符预算与最大输出 Token，点击「保存模型配置」和「测试连接」。再到「设置」启用「AI 助手」。输入 `@AI 请概览当前项目` 可触发只读回复。AI 自动候选与后续澄清仍需项目负责人审批，AI 处理记录可查看模型执行状态；规则式到期任务提醒在「设置」独立开启，不需要 AI 模型。内置 DeepSeek/OpenAI 使用固定 URL；自定义模型 URL 只能由部署管理员在服务器 .env 中配置。更多详情见 [开发部署指南](docs/community/development.md)。
+组织管理员可以建立部门、项目集与项目组合，将人员分配到多个项目并登记资源投入。项目负责人可以授权 manager、member、observer 角色，任务创建、计划变更与进度报告遵循服务端动作权限。系统总管理员独立维护模型凭据。已注册用户先加入组织，之后才能加入项目。上述能力属于实验性阶段，不包含完整 SSO、邮件邀请与历史资源计划分析。
 
 ## 项目进度闭环升级（ADR-022）
 
 - **正式任务**：只填写到期日期，不需要小时或上午/下午；旧截止时间由迁移脚本按项目时区映射为日期。
 - **AI 关联已有任务**：正常聊天中的阶段进展、阻塞与完成声明优先关联正式任务，以证据建议待项目负责人审阅；新增任务/风险仍走候选审批，不会自动批准。
 - **主动催办**：正式任务登记后安排阶段性检查，提前于截止日收集进度；临期与阻塞增加关注，同时遵循提醒时间及冷却。
-- **模型能力**：DeepSeek 兼容推理等级的协议映射，扩大可配置上下文字符与输出 Token 预算；大模型能力不代表每次默认输入其完整 1M Token 窗口。
+- **模型能力**：模型传输预算可由系统管理员统一调整；不同服务商的推理参数需按实际能力联调；大模型能力不代表每次默认输入其完整 1M Token 窗口。
 更多部署/测试与限制见 [开发指南](docs/community/development.md)。
