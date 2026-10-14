@@ -3,9 +3,10 @@ import { z } from 'zod';
 import { pool, transaction } from '../../../packages/core/src/db.ts';
 import { requireSystemAdmin } from '../../../packages/core/src/permissions.ts';
 import {
-  deleteModelConfig,deleteProvider,listModelConfigs,listProviders,
-  resolveModelConfig,saveModelConfig,saveProvider,
+  deleteModelConfig,deleteProvider,importModelConfigs,listModelConfigs,listProviders,
+  resolveModelConfig,resolveProviderCatalogConfig,saveModelConfig,saveProvider,
 } from '../../../packages/core/src/project-model.ts';
+import { discoverProviderModels } from '../../../packages/core/src/model-catalog.ts';
 import { callStructuredLLM, modelAuditIdentity } from '../../../packages/core/src/llm-transport.ts';
 
 const uuid=z.string().uuid();
@@ -77,6 +78,54 @@ export function registerAdminModelRoutes(app:FastifyInstance,
     if(!removed)denied(404,'供应商不存在');
     return {ok:true};
   });
+
+  app.post('/admin/ai/providers/:id/discover',async req=>{
+    await admin(req);
+    const id=uuid.parse((req.params as {id:string}).id);
+    // A DB-backed throttle also works across multiple API processes.
+    const allowed=await pool.query(\`INSERT INTO ai_provider_checks(provider_id,last_checked_at)
+      VALUES($1,NOW()) ON CONFLICT(provider_id) DO UPDATE SET last_checked_at=NOW()
+      WHERE ai_provider_checks.last_checked_at<NOW()-INTERVAL '10 seconds'
+      RETURNING provider_id\`,[id]);
+    if(!allowed.rowCount)denied(429,'请等待 10 秒再重新获取模型目录');
+    const connection=await resolveProviderCatalogConfig(id);
+    try{return await discoverProviderModels(connection);}
+    catch(error){
+      const code=error instanceof Error?error.message:'';
+      const messages:Record<string,string>={
+        MODEL_CATALOG_HTTP_401:'模型目录鉴权失败（401），请检查 API Key',
+        MODEL_CATALOG_HTTP_403:'无权访问模型目录（403），请检查密钥权限',
+        MODEL_CATALOG_HTTP_404:'该连接没有标准 /models 接口（404），可以手动注册模型',
+        MODEL_CATALOG_HTTP_405:'模型目录接口不支持 GET（405），可以手动注册模型',
+        MODEL_CATALOG_HTTP_429:'服务端限制了请求频率（429），请稍后再试',
+        MODEL_CATALOG_DNS_FAILED:'模型地址的 DNS 解析失败',
+        MODEL_CATALOG_UNSAFE_ENDPOINT:'模型目录连接到受限网络目标；请检查服务器安全策略',
+        MODEL_CATALOG_TOO_LARGE:'模型目录响应超过 512 KB 安全上限',
+        MODEL_CATALOG_INVALID_RESPONSE:'服务返回的模型目录不是受支持的 JSON 格式',
+        MODEL_CATALOG_NETWORK_ERROR:'模型目录请求超时、重定向或网络连接失败',
+      };
+      denied(422,messages[code]??'获取模型目录失败，请检查接口兼容性后手动注册');
+    }
+  });
+  app.post('/admin/ai/models/import',async(req,reply)=>{
+    const actor=await admin(req);
+    const input=z.object({
+      providerId:uuid,
+      models:z.array(z.object({
+        id:z.string().trim().min(1).max(150).regex(/^[^\r\n]+$/),
+        name:z.string().trim().min(1).max(100).optional(),
+      }).strict()).min(1).max(50),
+    }).strict().parse(req.body);
+    const result=await transaction(async db=>{
+      const imported=await importModelConfigs(db,input.providerId,input.models);
+      await db.query(\`INSERT INTO system_audit_entries(actor_id,action,target_id,metadata)
+        VALUES($1,'ai.models_imported',$2,$3)\`,[actor,input.providerId,
+        JSON.stringify({...imported,count:input.models.length})]);
+      return imported;
+    });
+    return reply.code(201).send(result);
+  });
+
   app.get('/admin/ai/models',async req=>{
     await admin(req);return {models:await listModelConfigs()};
   });
@@ -118,7 +167,7 @@ export function registerAdminModelRoutes(app:FastifyInstance,
   app.post('/admin/ai/models/:id/test',async req=>{
     await admin(req);
     const id=uuid.parse((req.params as {id:string}).id);
-    const config=await resolveModelConfig(id).catch(()=>denied(400,'模型配置不可用'));
+    const config=await resolveModelConfig(id,true).catch(()=>denied(400,'模型配置不可用'));
     const check=await pool.query(`INSERT INTO ai_model_checks(model_config_id,last_test_at)
       VALUES($1,NOW()) ON CONFLICT(model_config_id) DO UPDATE SET
       last_test_at=NOW() WHERE ai_model_checks.last_test_at<NOW()-INTERVAL '30 seconds'
