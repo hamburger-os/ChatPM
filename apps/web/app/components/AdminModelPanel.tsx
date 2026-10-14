@@ -11,25 +11,38 @@ type Model={id:string;name:string;model:string;providerId:string;
   maxOutputTokens:number;contextChars:number;enabled:boolean;isDefault:boolean};
 type ProviderForm={name:string;baseUrl:string;style:Wire;enabled:boolean;apiKey:string};
 type ModelForm=Omit<Model,'id'>;
-const newProvider=():ProviderForm=>({name:'',baseUrl:'',style:'chat-completions',enabled:false,apiKey:''});
-const newModel=(providerId:string):ModelForm=>({name:'',model:'',providerId,
-  reasoning:'auto',reasoningFormat:'none',maxOutputTokens:8192,contextChars:32768,
-  enabled:false,isDefault:false});
+type CatalogModel={id:string;name:string;ownedBy:string|null};
+type Catalog={models:CatalogModel[];latencyMs:number;truncated:boolean};
+const emptyProvider=():ProviderForm=>({name:'',baseUrl:'',style:'chat-completions',enabled:false,apiKey:''});
+const fromProvider=(p:Provider):ProviderForm=>({name:p.name,baseUrl:p.baseUrl,style:p.style,
+  enabled:p.enabled,apiKey:''});
+const fromModel=(m:Model):ModelForm=>{const {id,...form}=m;return form;};
+const wireName=(wire:Wire)=>wire==='responses'?'Responses API':'Chat Completions';
+const errorMessage=(e:unknown)=>e instanceof Error?e.message:'操作失败，请重试';
 
 export default function AdminModelPanel(){
   const [providers,setProviders]=useState<Provider[]>([]);
   const [models,setModels]=useState<Model[]>([]);
   const [selected,setSelected]=useState<string|null>(null);
-  const [providerEditing,setProviderEditing]=useState<string|null>(null);
   const [creating,setCreating]=useState(false);
-  const previousSelection=useRef<string|null>(null);
-  const nameInput=useRef<HTMLInputElement>(null);
-  const [modelEditing,setModelEditing]=useState<string|null>(null);
-  const [providerForm,setProviderForm]=useState(newProvider);
-  const [modelForm,setModelForm]=useState<ModelForm>(()=>newModel(''));
-  const [panel,setPanel]=useState<'providers'|'models'>('providers');
-  const [busy,setBusy]=useState(false);
+  const [providerEditing,setProviderEditing]=useState(false);
+  const [draft,setDraft]=useState<ProviderForm>(emptyProvider);
+  const providerBaseline=useRef(JSON.stringify(emptyProvider()));
+  const [tab,setTab]=useState<'connections'|'models'>('connections');
+  const [editingModel,setEditingModel]=useState<string|null>(null);
+  const [modelDraft,setModelDraft]=useState<ModelForm|null>(null);
+  const modelBaseline=useRef('');
+  const [catalog,setCatalog]=useState<Catalog|null>(null);
+  const [catalogError,setCatalogError]=useState('');
+  const [query,setQuery]=useState('');
+  const [checked,setChecked]=useState<Set<string>>(()=>new Set());
+  const [manualId,setManualId]=useState('');
+  const [manualName,setManualName]=useState('');
+  const [showManual,setShowManual]=useState(false);
+  const [busy,setBusy]=useState('');
   const [notice,setNotice]=useState('');
+  const [tested,setTested]=useState<Record<string,number>>({});
+  const nameInput=useRef<HTMLInputElement>(null);
 
   const refresh=async(initial=false)=>{
     const [p,m]=await Promise.all([
@@ -37,200 +50,369 @@ export default function AdminModelPanel(){
       request<{models:Model[]}>('/admin/ai/models'),
     ]);
     setProviders(p.providers);setModels(m.models);
-    setSelected(old=>old&&p.providers.some(x=>x.id===old)?old:p.providers[0]?.id??null);
     if(initial&&p.providers[0]){
-      const first=p.providers[0];
-      setProviderEditing(first.id);
-      setProviderForm({name:first.name,baseUrl:first.baseUrl,style:first.style,
-        enabled:first.enabled,apiKey:''});
+      setSelected(p.providers[0].id);
+      const next=fromProvider(p.providers[0]);
+      setDraft(next);providerBaseline.current=JSON.stringify(next);
+    }else if(!initial){
+      setSelected(current=>current&&p.providers.some(x=>x.id===current)?current:
+        p.providers[0]?.id??null);
     }
   };
-  useEffect(()=>{void refresh(true).catch(e=>setNotice(e.message));},[]);
+  useEffect(()=>{void refresh(true).catch(e=>setNotice(errorMessage(e)));},[]);
   useEffect(()=>{if(creating)nameInput.current?.focus();},[creating]);
-  const active=providers.find(x=>x.id===selected);
-  const activeModels=models.filter(x=>x.providerId===selected);
-  const run=async(work:()=>Promise<void>)=>{
-    setBusy(true);setNotice('');
-    try{await work();await refresh();}
-    catch(e){setNotice(e instanceof Error?e.message:'操作失败');}
-    finally{setBusy(false);}
+  const active=providers.find(p=>p.id===selected);
+  const activeModels=models.filter(m=>m.providerId===selected);
+  const dirtyProvider=(creating||providerEditing)&&JSON.stringify(draft)!==providerBaseline.current;
+  const dirtyModel=!!modelDraft&&JSON.stringify(modelDraft)!==modelBaseline.current;
+  const confirmLeave=()=>!dirtyProvider&&!dirtyModel||
+    window.confirm('当前有未保存的配置，确定放弃修改吗？');
+  const resetCatalog=()=>{
+    setCatalog(null);setCatalogError('');setChecked(new Set());
+    setQuery('');setManualId('');setManualName('');setShowManual(false);
   };
-  const editProvider=(p:Provider)=>{
-    setCreating(false);setSelected(p.id);setProviderEditing(p.id);
-    setModelEditing(null);setModelForm(newModel(p.id));
-    setProviderForm({name:p.name,baseUrl:p.baseUrl,style:p.style,
-      enabled:p.enabled,apiKey:''});
-    setPanel('providers');
+  const choose=(p:Provider)=>{
+    if(!confirmLeave())return;
+    setSelected(p.id);setCreating(false);setProviderEditing(false);
+    const next=fromProvider(p);setDraft(next);
+    providerBaseline.current=JSON.stringify(next);
+    setEditingModel(null);setModelDraft(null);resetCatalog();setNotice('');
   };
-  const addProvider=()=>{
-    if(selected)previousSelection.current=selected;
-    setSelected(null);setProviderEditing(null);setProviderForm(newProvider());
-    setCreating(true);setModelEditing(null);setPanel('providers');
-    nameInput.current?.focus();
+  const startCreate=()=>{
+    if(!confirmLeave())return;
+    setCreating(true);setSelected(null);setProviderEditing(true);
+    setTab('connections');setDraft(emptyProvider());
+    providerBaseline.current=JSON.stringify(emptyProvider());
+    setEditingModel(null);setModelDraft(null);resetCatalog();setNotice('');
   };
   const cancelProvider=()=>{
-    const previous=providers.find(p=>p.id===previousSelection.current);
-    if(previous)editProvider(previous);
-    else {setCreating(false);setProviderForm(newProvider());setSelected(providers[0]?.id??null);}
+    if(!confirmLeave())return;
+    setCreating(false);setProviderEditing(false);
+    const first=providers.find(p=>p.id===selected)??providers[0];
+    if(first){setSelected(first.id);setDraft(fromProvider(first));}
+    else{setSelected(null);setDraft(emptyProvider());}
   };
-  const submitProvider=(e:FormEvent)=>{
-    e.preventDefault();
-    void run(async()=>{
+  const loadCatalog=async(id:string)=>{
+    setCatalogError('');setCatalog(null);setChecked(new Set());
+    try{
+      const result=await request<Catalog>('/admin/ai/providers/'+id+'/discover',{method:'POST'});
+      setCatalog(result);
+      return result;
+    }catch(e){setCatalogError(errorMessage(e));return null;}
+  };
+  const discover=async()=>{
+    if(!selected||busy)return;
+    if(!confirmLeave())return;
+    setTab('models');setProviderEditing(false);setEditingModel(null);setModelDraft(null);
+    setBusy('discover');
+    try{const result=await loadCatalog(selected);
+      if(result)setNotice('成功获取 '+result.models.length+' 个模型，耗时 '+result.latencyMs+' ms');
+    }finally{setBusy('');}
+  };
+  const saveProvider=async(e:FormEvent)=>{
+    e.preventDefault();if(busy)return;
+    setBusy('saveProvider');setNotice('');
+    try{
       const result=await request<{provider:Provider}>(
-        '/admin/ai/providers'+(providerEditing?'/'+providerEditing:''),
-        {method:providerEditing?'PUT':'POST',body:json({...providerForm,
-          apiKey:providerForm.apiKey||undefined})});
-      setSelected(result.provider.id);
-      setCreating(false);setProviderEditing(result.provider.id);
-      setProviderForm({name:result.provider.name,baseUrl:result.provider.baseUrl,
-        style:result.provider.style,enabled:result.provider.enabled,apiKey:''});
-      setNotice('供应商连接已保存');
-    });
+        '/admin/ai/providers'+(creating?'':('/'+selected)),
+        {method:creating?'POST':'PUT',
+          body:json({...draft,apiKey:draft.apiKey||undefined})});
+      const saved=result.provider;
+      setSelected(saved.id);setCreating(false);setProviderEditing(false);
+      const next=fromProvider(saved);setDraft(next);
+      providerBaseline.current=JSON.stringify(next);
+      resetCatalog();await refresh();
+      setNotice('连接已保存，可获取模型目录并批量注册。');
+      setTab('models');
+      // Try discovery as the next step, but a missing /models endpoint never
+      // invalidates the saved provider or prevents manual registration.
+      const found=await loadCatalog(saved.id);
+      if(found)setNotice('连接保存成功，已发现 '+found.models.length+' 个模型，请选择需要添加的模型。');
+    }catch(e){setNotice(errorMessage(e));}
+    finally{setBusy('');}
   };
-  const editModel=(m:Model)=>{
-    setModelEditing(m.id);
-    const {id,...rest}=m;
-    setModelForm(rest);setPanel('models');
+  const deleteProvider=async()=>{
+    if(!selected||busy||!window.confirm('确定删除此连接？必须先删除关联模型。'))return;
+    setBusy('deleteProvider');setNotice('');
+    try{
+      await request('/admin/ai/providers/'+selected,{method:'DELETE'});
+      setSelected(null);setProviderEditing(false);resetCatalog();
+      await refresh();setNotice('连接已删除');
+    }catch(e){setNotice(errorMessage(e));}
+    finally{setBusy('');}
   };
-  const addModel=()=>{
-    setModelEditing(null);setModelForm(newModel(selected??''));setPanel('models');
+  const importModels=async()=>{
+    if(!selected||busy)return;
+    const selectedCatalog=(catalog?.models??[]).filter(m=>checked.has(m.id))
+      .map(m=>({id:m.id,name:m.name}));
+    const typed=manualId.trim();
+    if(typed&&(!selectedCatalog.some(m=>m.id===typed)))
+      selectedCatalog.push({id:typed,name:manualName.trim()||typed.slice(0,100)});
+    if(!selectedCatalog.length)return;
+    if(selectedCatalog.length>50){setNotice('每次最多添加 50 个模型');return;}
+    setBusy('import');setNotice('');
+    try{
+      const result=await request<{created:number;skipped:number}>('/admin/ai/models/import',
+        {method:'POST',body:json({providerId:selected,models:selectedCatalog})});
+      await refresh();setChecked(new Set());setManualId('');setManualName('');
+      setNotice('已新增 '+result.created+' 个模型，跳过 '+result.skipped+
+        ' 个重复项。新模型默认禁用，请先测试再启用。');
+    }catch(e){setNotice(errorMessage(e));}
+    finally{setBusy('');}
   };
-  const submitModel=(e:FormEvent)=>{
-    e.preventDefault();
-    void run(async()=>{
-      await request('/admin/ai/models'+(modelEditing?'/'+modelEditing:''),
-        {method:modelEditing?'PUT':'POST',body:json(modelForm)});
-      setModelEditing(null);setModelForm(newModel(selected??''));setNotice('模型已保存');
-    });
+  const saveModel=async(e:FormEvent)=>{
+    e.preventDefault();if(!editingModel||!modelDraft||busy)return;
+    setBusy('model');setNotice('');
+    try{
+      await request('/admin/ai/models/'+editingModel,{method:'PUT',body:json(modelDraft)});
+      await refresh();setEditingModel(null);setModelDraft(null);
+      setNotice('模型配置已保存；修改配置后应重新进行兼容性测试。');
+      setTested(old=>{const next={...old};delete next[editingModel];return next;});
+    }catch(e){setNotice(errorMessage(e));}
+    finally{setBusy('');}
   };
-  const requiredFormat=providers.find(p=>p.id===modelForm.providerId)?.style==='responses'
-    ?'responses-effort':'chat-completions-effort';
+  const updateModel=async(m:Model,changes:Partial<ModelForm>)=>{
+    if(busy)return;
+    if(changes.isDefault&&!m.enabled&&!tested[m.id]&&
+      !window.confirm('该模型本次未通过兼容性测试，确定仍要设为默认并启用吗？'))return;
+    if(changes.enabled===false&&m.isDefault){
+      setNotice('请先设置另一个默认模型，再停用当前模型。');return;
+    }
+    setBusy('update:'+m.id);setNotice('');
+    try{
+      await request('/admin/ai/models/'+m.id,{method:'PUT',body:json({...fromModel(m),...changes})});
+      await refresh();
+      setNotice(changes.isDefault?'已切换平台默认模型':'模型状态已更新');
+    }catch(e){setNotice(errorMessage(e));}
+    finally{setBusy('');}
+  };
+  const testModel=async(m:Model)=>{
+    if(busy)return;setBusy('test:'+m.id);setNotice('');
+    try{
+      const result=await request<{latencyMs:number}>('/admin/ai/models/'+m.id+'/test',
+        {method:'POST'});
+      setTested(old=>({...old,[m.id]:Date.now()}));
+      setNotice(m.name+' 兼容性测试通过，耗时 '+result.latencyMs+' ms。测试可能产生少量调用费用。');
+    }catch(e){setNotice(m.name+'：'+errorMessage(e));}
+    finally{setBusy('');}
+  };
+  const deleteModel=async(m:Model)=>{
+    if(busy||!window.confirm('确定删除模型 '+m.name+'？'))return;
+    setBusy('delete:'+m.id);setNotice('');
+    try{
+      await request('/admin/ai/models/'+m.id,{method:'DELETE'});
+      await refresh();setEditingModel(null);setModelDraft(null);setNotice('模型已删除');
+    }catch(e){setNotice(errorMessage(e));}
+    finally{setBusy('');}
+  };
+  const registered=new Set(activeModels.map(m=>m.model));
+  const filtered=(catalog?.models??[]).filter(m=>
+    (m.id+' '+m.name).toLowerCase().includes(query.trim().toLowerCase()));
+  const selectable=filtered.filter(m=>!registered.has(m.id));
+  const selectedCount=checked.size+(manualId.trim()&&!checked.has(manualId.trim())?1:0);
   return <div className="management-layout">
     <header className="management-heading">
-      <div><h2>AI 服务中心</h2><p className="hint">系统管理员维护供应商连接和可用模型，项目成员无需接触 API Key。</p></div>
-      <button onClick={addProvider} disabled={busy} type="button" aria-controls="provider-editor">＋ 添加供应商</button>
+      <div><h2>AI 服务中心</h2>
+        <p className="hint">仅系统管理员维护模型连接。项目成员无需管理密钥。</p></div>
+      <button type="button" onClick={startCreate} disabled={!!busy}>＋ 添加连接</button>
     </header>
-    {notice&&<p role="status" className="notice">{notice}</p>}
+    {notice&&<p className="notice" role="status">{notice}</p>}
     <div className="provider-workspace">
       <aside className="provider-list" aria-label="供应商连接">
         <h3>供应商连接 <span className="count">{providers.length}</span></h3>
         {providers.map(p=><button key={p.id} type="button"
           className={'provider-list-item '+(selected===p.id?'is-active':'')}
-          onClick={()=>{setSelected(p.id);setPanel('providers');editProvider(p);}}>
+          onClick={()=>choose(p)}>
           <span className="provider-avatar">{p.name.slice(0,1).toUpperCase()}</span>
           <span className="provider-list-text"><strong>{p.name}</strong>
-            <small>{models.filter(m=>m.providerId===p.id).length} 个模型 · {p.enabled?'已启用':'已停用'}</small>
-          </span></button>)}
-        {creating&&<p role="status" className="provider-create-indicator">＋ 正在新建供应商（尚未保存）</p>}
-        {!providers.length&&<p className="hint">暂无连接，先添加一个服务商或本地模型代理。</p>}
+            <small>{models.filter(m=>m.providerId===p.id).length} 个模型 ·
+              {p.enabled?' 已启用':' 未启用'} · {p.hasKey?'已配置密钥':'缺少密钥'}</small></span>
+        </button>)}
+        {creating&&<p className="provider-create-indicator">＋ 新建连接（未保存）</p>}
+        {!providers.length&&!creating&&<p className="hint">暂无连接，先创建一个模型服务连接。</p>}
       </aside>
-      <div className="provider-main">
+      <main className="provider-main">
         <div className="management-tabs">
-          <button className={panel==='providers'?'active':''} onClick={()=>setPanel('providers')} type="button">连接设置</button>
-          <button className={panel==='models'?'active':''} disabled={creating} onClick={()=>{setPanel('models');if(!modelEditing)setModelForm(newModel(selected??''));}} type="button">模型列表 ({activeModels.length})</button>
+          <button type="button" className={tab==='connections'?'active':''}
+            onClick={()=>{if(!confirmLeave())return;setTab('connections');setEditingModel(null);setModelDraft(null);}}>
+            连接设置</button>
+          <button type="button" className={tab==='models'?'active':''} disabled={creating||!selected}
+            onClick={()=>{if(!confirmLeave())return;setTab('models');setProviderEditing(false);
+              setEditingModel(null);setModelDraft(null);}}>
+            模型管理 ({activeModels.length})</button>
         </div>
-        {panel==='providers'&&<section id="provider-editor" className="management-editor">
-          {creating&&<p role="status" className="provider-create-notice">新建供应商连接：填写以下信息并保存，不会更改已有连接。</p>}
-          <div className="between"><h3>{creating?'新建供应商连接':providerEditing?'编辑供应商连接':'添加供应商连接'}</h3>
-            {providerEditing&&<button type="button" className="secondary"
-              onClick={addProvider}>新建连接</button>}
-            {creating&&<button type="button" className="secondary" onClick={cancelProvider}>取消新建</button>}
-          </div>
-          <form className="management-form" onSubmit={submitProvider}>
-            <label>连接名称<input ref={nameInput} value={providerForm.name} maxLength={100} required
-              placeholder="例如：公司模型服务 / 本地模型代理"
-              onChange={e=>setProviderForm({...providerForm,name:e.target.value})}/></label>
-            <label>API 请求基础地址<input type="url" required value={providerForm.baseUrl}
-              placeholder="https://api.example.com/v1"
-              onChange={e=>setProviderForm({...providerForm,baseUrl:e.target.value})}/>
-              <small className="hint">这是模型 API 地址，不是服务商官网。系统会依据协议补充具体接口路径。</small>
-              {/^(http:\/\/)(localhost|127\.0\.0\.1|\[::1\])(?=[:/]|$)/i.test(providerForm.baseUrl)&&
-                <small className="hint" role="note">注意：127.0.0.1 / localhost 指向 ChatPM 服务进程所在环境。如果 ChatPM 在 NAS 或 Docker 内运行，这不是你电脑上的模型代理地址，请先验证容器到代理的可达性。</small>}
-            </label>
-            <label>请求协议<select value={providerForm.style}
-              onChange={e=>setProviderForm({...providerForm,style:e.target.value as Wire})}>
-              <option value="chat-completions">Chat Completions（兼容接口）</option>
-              <option value="responses">Responses API</option>
-            </select><small className="hint">暂不支持 Anthropic Messages 等不同格式；请使用服务商已提供且经过测试的兼容接口。</small></label>
-            <label>API Key（{providerEditing&&active?.hasKey?'已保存，留空保持不变':'尚未保存'}）
-              <input type="password" autoComplete="new-password" value={providerForm.apiKey}
-                placeholder={providerEditing&&active?.hasKey?'••••••••（留空保持）':'请输入服务端凭据'}
-                onChange={e=>setProviderForm({...providerForm,apiKey:e.target.value})}/>
-              <small className="hint">仅提交到服务端加密保存，编辑时不回显明文；请勿将 Key 放入 .env 的 LLM_* 字段。</small>
-            </label>
-            <label className="check"><input type="checkbox" checked={providerForm.enabled}
-              onChange={e=>setProviderForm({...providerForm,enabled:e.target.checked})}/>启用该供应商连接</label>
-            <div className="actions"><button disabled={busy} type="submit">保存连接</button>
-              {providerEditing&&<button type="button" className="secondary" disabled={busy}
-                onClick={()=>void run(async()=>{
-                  if(!window.confirm('确定移除供应商？请先删除关联模型。'))return;
-                  await request('/admin/ai/providers/'+providerEditing,{method:'DELETE'});
-                  setSelected(null);setProviderEditing(null);setProviderForm(newProvider());
-                })}>删除连接</button>}</div>
-          </form>
-          {providerEditing&&active&&<p className="hint">当前连接：{active.name} · {active.hasKey?'密钥已配置':'缺少密钥'}。
-            系统仅显示密钥状态，不返回密钥内容。</p>}
-        </section>}
-        {panel==='models'&&<section className="management-editor">
-          <div className="between"><h3>模型管理</h3>
-            <button className="secondary" type="button" onClick={addModel} disabled={!selected}>＋ 添加模型</button>
-          </div>
-          {!selected&&<p className="hint">先创建供应商连接，再为该连接注册模型。</p>}
-          {activeModels.map(m=><article className="model-card" key={m.id}>
-            <div><strong>{m.name}</strong><p className="hint">{m.model} · {m.enabled?'已启用':'未启用'} {m.isDefault?'· 默认模型':''}</p></div>
+        {tab==='connections'&&<section className="management-editor">
+          {!creating&&!providerEditing&&active&&<>
+            <div className="between"><h3>{active.name}</h3>
+              <span className="status-chip">{active.enabled?'已启用':'未启用'}</span></div>
+            <dl className="provider-summary">
+              <div><dt>API 地址</dt><dd>{active.baseUrl}</dd></div>
+              <div><dt>请求协议</dt><dd>{wireName(active.style)}</dd></div>
+              <div><dt>API Key</dt><dd>{active.hasKey?'已保存（不可回显）':'尚未设置'}</dd></div>
+              <div><dt>已注册模型</dt><dd>{activeModels.length} 个</dd></div>
+            </dl>
+            <p className="hint">“已启用”仅表示配置开关状态，不代表推理已经通过测试。</p>
             <div className="actions">
-              <button className="secondary" type="button" onClick={()=>editModel(m)}>编辑</button>
-              <button className="secondary" disabled={busy} type="button" onClick={()=>void run(async()=>{
-                const result=await request<{latencyMs:number}>('/admin/ai/models/'+m.id+'/test',{method:'POST'});
-                setNotice('测试通过 · '+result.latencyMs+' ms');
-              })}>测试连接</button>
-              <button className="secondary" disabled={busy} type="button" onClick={()=>void run(async()=>{
-                if(!window.confirm('确定删除模型？'))return;
-                await request('/admin/ai/models/'+m.id,{method:'DELETE'});
-                setModelEditing(null);setModelForm(newModel(selected??''));
-              })}>删除</button>
+              <button type="button" disabled={!!busy} onClick={()=>{setProviderEditing(true);
+                const next=fromProvider(active);setDraft(next);providerBaseline.current=JSON.stringify(next);}}>
+                编辑连接</button>
+              <button type="button" className="secondary" disabled={!!busy} onClick={()=>void discover()}>
+                检测连接并获取模型</button>
+              <button type="button" className="secondary" disabled={!!busy}
+                onClick={()=>{setTab('models');}}>管理模型</button>
+            </div>
+          </>}
+          {(creating||providerEditing)&&<>
+            <div className="between"><h3>{creating?'创建供应商连接':'编辑供应商连接'}</h3>
+              <button type="button" className="secondary" onClick={cancelProvider} disabled={!!busy}>取消</button>
+            </div>
+            <form className="management-form" onSubmit={e=>void saveProvider(e)}>
+              <label>连接名称<input ref={nameInput} required maxLength={100} value={draft.name}
+                placeholder="例如：公司模型代理"
+                onChange={e=>setDraft({...draft,name:e.target.value})}/></label>
+              <label>API 请求基础地址<input required type="url" value={draft.baseUrl}
+                placeholder="https://api.example.com/v1"
+                onChange={e=>setDraft({...draft,baseUrl:e.target.value})}/>
+                <small className="hint">填写模型接口地址，不是服务商官网；无需包含 /models 或 /chat/completions。</small>
+                {/^(http:\/\/)(localhost|127\.0\.0\.1|\[::1\])(?=[:/]|$)/i.test(draft.baseUrl)&&
+                  <small className="hint">本机地址属于 ChatPM 服务器或容器，不一定是浏览器所在电脑。</small>}
+              </label>
+              <label>请求协议<select value={draft.style}
+                onChange={e=>setDraft({...draft,style:e.target.value as Wire})}>
+                <option value="chat-completions">Chat Completions</option>
+                <option value="responses">Responses API</option>
+              </select></label>
+              <label>API Key（{active?.hasKey&&!creating?'已保存，留空不修改':'尚未设置'}）
+                <input type="password" autoComplete="new-password" value={draft.apiKey}
+                  placeholder={active?.hasKey&&!creating?'留空保持现有密钥':'输入服务端 API Key'}
+                  onChange={e=>setDraft({...draft,apiKey:e.target.value})}/>
+                <small className="hint">密钥仅提交到服务端加密保存，不回传明文。</small>
+              </label>
+              <label className="check"><input type="checkbox" checked={draft.enabled}
+                onChange={e=>setDraft({...draft,enabled:e.target.checked})}/>启用此连接</label>
+              <div className="actions"><button type="submit" disabled={!!busy}>
+                {busy==='saveProvider'?'正在保存…':'保存并获取模型'}</button>
+                {!creating&&<button type="button" className="secondary" disabled={!!busy}
+                  onClick={()=>void deleteProvider()}>删除连接</button>}
+              </div>
+            </form>
+          </>}
+          {!active&&!creating&&<p className="hint">请选择连接或点击“添加连接”。</p>}
+        </section>}
+        {tab==='models'&&<section className="management-editor">
+          <div className="between">
+            <div><h3>模型管理</h3><p className="hint">添加模型默认不启用，请先测试模型的结构化输出能力。</p></div>
+            <button type="button" className="secondary" disabled={!!busy||!selected}
+              onClick={()=>void discover()}>{busy==='discover'?'正在获取…':'↻ 获取模型列表'}</button>
+          </div>
+          <div className="catalog-box">
+            <div className="between"><strong>从远端模型目录选择</strong>
+              <span className="hint">{catalog?'发现 '+catalog.models.length+' 个':'尚未加载目录'}</span></div>
+            {catalogError&&<p className="catalog-error" role="alert">{catalogError}
+              <span className="hint">仍可手动填写模型 ID。</span></p>}
+            {catalog&&<>
+              <label className="catalog-search">搜索模型（按名称或 ID）
+                <input value={query} onChange={e=>setQuery(e.target.value)}
+                  placeholder="筛选可用模型…"/></label>
+              <div className="catalog-options" aria-label="发现的模型">
+                {filtered.map(m=><label className="catalog-option" key={m.id}>
+                  <input type="checkbox" disabled={registered.has(m.id)||!!busy}
+                    checked={checked.has(m.id)} onChange={e=>setChecked(previous=>{
+                      const next=new Set(previous);if(e.target.checked)next.add(m.id);else next.delete(m.id);
+                      return next;})}/>
+                  <span><strong>{m.name}</strong><small>{m.id}{m.ownedBy?' · '+m.ownedBy:''}</small></span>
+                  {registered.has(m.id)&&<em>已注册</em>}
+                </label>)}
+                {!filtered.length&&<p className="hint">没有匹配的模型，请尝试手动注册。</p>}
+              </div>
+              <div className="catalog-actions">
+                <button type="button" className="secondary" disabled={!selectable.length||!!busy}
+                  onClick={()=>setChecked(new Set(selectable.map(m=>m.id)))}>
+                  全选当前结果</button>
+                <button type="button" className="secondary" disabled={!checked.size||!!busy}
+                  onClick={()=>setChecked(new Set())}>清空选择</button>
+                <span className="hint">{catalog.truncated?'目录部分结果已截断；':''}目录不保证模型支持结构化输出。</span>
+              </div>
+            </>}
+            <button type="button" className="manual-toggle" aria-expanded={showManual}
+              onClick={()=>setShowManual(x=>!x)}>
+              {showManual?'−':'＋'} 手动注册模型（目录不可用时使用）
+            </button>
+            {showManual&&<div className="manual-fields">
+              <label>实际请求模型 ID<input maxLength={150} value={manualId}
+                onChange={e=>setManualId(e.target.value)} placeholder="供应商的 model 参数"/></label>
+              <label>显示名称（可选）<input maxLength={100} value={manualName}
+                onChange={e=>setManualName(e.target.value)} placeholder="例如：项目管理模型"/></label>
+            </div>}
+            <div className="actions">
+              <button type="button" disabled={!selectedCount||!!busy||selectedCount>50}
+                onClick={()=>void importModels()}>{busy==='import'?'正在添加…':
+                '添加选中的 '+selectedCount+' 个模型'}</button>
+              {selectedCount>50&&<small className="hint">每批最多导入 50 个模型</small>}
+            </div>
+          </div>
+          <h3>已注册模型（{activeModels.length}）</h3>
+          {activeModels.length===0&&<p className="hint">尚未注册模型。获取目录后勾选模型，或手动填写模型 ID。</p>}
+          {activeModels.map(m=><article className="model-card" key={m.id}>
+            <div className="model-card-info">
+              <strong>{m.name}</strong><p className="hint">{m.model}</p>
+              <p className="hint">{m.enabled?'已启用':'未启用'}{m.isDefault?' · 平台默认':''}
+                {tested[m.id]?' · 本次会话测试通过':''}</p>
+            </div>
+            <div className="actions">
+              <button type="button" className="secondary" disabled={!!busy}
+                onClick={()=>void testModel(m)}>{busy==='test:'+m.id?'测试中…':'测试模型'}</button>
+              <button type="button" className="secondary" disabled={!!busy}
+                onClick={()=>{if(!confirmLeave())return;setEditingModel(m.id);
+                  const next=fromModel(m);setModelDraft(next);
+                  modelBaseline.current=JSON.stringify(next);}}>高级设置</button>
+              <button type="button" className="secondary" disabled={!!busy||m.isDefault}
+                onClick={()=>void updateModel(m,{enabled:!m.enabled})}>{m.enabled?'停用':'启用'}</button>
+              {!m.isDefault&&<button type="button" className="secondary" disabled={!!busy}
+                onClick={()=>void updateModel(m,{isDefault:true,enabled:true})}>设为默认</button>}
+              <button type="button" className="secondary" disabled={!!busy||m.isDefault}
+                onClick={()=>void deleteModel(m)}>删除</button>
             </div>
           </article>)}
-          {selected&&<form className="management-form" onSubmit={submitModel}>
-            <h3>{modelEditing?'编辑模型':'注册模型'}</h3>
-            <label>供应商连接<select required value={modelForm.providerId}
-              onChange={e=>setModelForm({...modelForm,providerId:e.target.value,reasoningFormat:'none',reasoning:'auto'})}>
-              <option value="">请选择连接</option>{providers.map(p=><option key={p.id} value={p.id}>{p.name}</option>)}
-            </select></label>
-            <label>显示名称<input required maxLength={100} placeholder="例如：旗舰模型"
-              value={modelForm.name} onChange={e=>setModelForm({...modelForm,name:e.target.value})}/></label>
-            <label>实际请求模型 ID<input required maxLength={150} value={modelForm.model}
-              placeholder="由供应商给出的 model 参数"
-              onChange={e=>setModelForm({...modelForm,model:e.target.value})}/></label>
+          {editingModel&&modelDraft&&<form className="management-form model-advanced"
+            onSubmit={e=>void saveModel(e)}>
+            <div className="between"><h3>高级设置：{models.find(m=>m.id===editingModel)?.name}</h3>
+              <button type="button" className="secondary" onClick={()=>{
+                if(!confirmLeave())return;setEditingModel(null);setModelDraft(null);}}>取消</button></div>
+            <label>显示名称<input required maxLength={100} value={modelDraft.name}
+              onChange={e=>setModelDraft({...modelDraft,name:e.target.value})}/></label>
+            <label>实际请求模型 ID<input required maxLength={150} value={modelDraft.model}
+              onChange={e=>setModelDraft({...modelDraft,model:e.target.value})}/></label>
             <div className="management-grid">
-              <label>最大输出 Token<input type="number" min={512} max={131072}
-                value={modelForm.maxOutputTokens} onChange={e=>setModelForm({...modelForm,maxOutputTokens:Number(e.target.value)})}/></label>
-              <label>输入预算（字符）<input type="number" min={2000} max={250000}
-                value={modelForm.contextChars} onChange={e=>setModelForm({...modelForm,contextChars:Number(e.target.value)})}/></label>
+              <label>最大输出 Token 预算<input type="number" min={512} max={131072}
+                value={modelDraft.maxOutputTokens}
+                onChange={e=>setModelDraft({...modelDraft,maxOutputTokens:Number(e.target.value)})}/></label>
+              <label>项目上下文字符截取预算<input type="number" min={2000} max={250000}
+                value={modelDraft.contextChars}
+                onChange={e=>setModelDraft({...modelDraft,contextChars:Number(e.target.value)})}/></label>
             </div>
+            <p className="hint">以上是 ChatPM 的请求预算，不代表模型实际最大上下文窗口。</p>
             <div className="management-grid">
-              <label>推理参数支持<select value={modelForm.reasoningFormat}
-                onChange={e=>setModelForm({...modelForm,reasoningFormat:e.target.value as ReasoningFormat,reasoning:'auto'})}>
-                <option value="none">不发送推理参数</option>
-                <option value={requiredFormat}>{requiredFormat==='responses-effort'?'Responses reasoning.effort':'Chat Completions reasoning_effort'}</option>
+              <label>推理参数映射<select value={modelDraft.reasoningFormat}
+                onChange={e=>setModelDraft({...modelDraft,reasoningFormat:e.target.value as ReasoningFormat,
+                  reasoning:'auto'})}>
+                <option value="none">不发送推理参数（推荐）</option>
+                <option value={active?.style==='responses'?'responses-effort':'chat-completions-effort'}>
+                  {active?.style==='responses'?'Responses reasoning.effort':'Chat reasoning_effort'}</option>
               </select></label>
-              <label>推理等级<select value={modelForm.reasoning} disabled={modelForm.reasoningFormat==='none'}
-                onChange={e=>setModelForm({...modelForm,reasoning:e.target.value as Reasoning})}>
-                <option value="auto">默认</option><option value="none">关闭</option>
+              <label>推理等级<select disabled={modelDraft.reasoningFormat==='none'}
+                value={modelDraft.reasoning}
+                onChange={e=>setModelDraft({...modelDraft,reasoning:e.target.value as Reasoning})}>
+                <option value="auto">由模型决定</option><option value="none">关闭</option>
                 <option value="low">低</option><option value="medium">中</option>
                 <option value="high">高</option><option value="max">最大</option>
               </select></label>
             </div>
-            <label className="check"><input type="checkbox" checked={modelForm.enabled}
-              onChange={e=>setModelForm({...modelForm,enabled:e.target.checked,isDefault:e.target.checked?modelForm.isDefault:false})}/>启用模型</label>
-            <label className="check"><input type="checkbox" checked={modelForm.isDefault}
-              onChange={e=>setModelForm({...modelForm,isDefault:e.target.checked,enabled:e.target.checked||modelForm.enabled})}/>设置为平台默认模型</label>
-            <div className="actions"><button disabled={busy} type="submit">{modelEditing?'保存修改':'添加模型'}</button>
-              {modelEditing&&<button className="secondary" type="button" onClick={addModel}>取消编辑</button>}</div>
-            <p className="hint">请求预算和推理映射须与实际模型能力相符；模型注册不等于已通过兼容性测试。</p>
+            <p className="hint">仅在供应商明确支持时发送推理等级；保存后重新执行模型测试。</p>
+            <button type="submit" disabled={!!busy}>保存模型配置</button>
           </form>}
         </section>}
-      </div>
+      </main>
     </div>
   </div>;
 }
