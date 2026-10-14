@@ -66,3 +66,7 @@
 ## ADR-035 · 版本化 PM 黄金评测基础
 
 现有 AI `PROMPT_VERSION`/`ACTIVITY_SCHEMA` 与 Live Evaluation CLI 共享生产构建器，增加 16 个合成用例（10 个 Schema 支持情景 + 6 个明确标记不支持的正式 PM 行为）、纯评测器以及 `npm run test:ai-evals` CI。此测试只校验合成数据覆盖、版本、评分器拒绝越权/虚构日期/虚构负责人和 Schema 错误，**不是模型准确率实测**。部署管理员若决定自行承担真实推理请求费用，可在独立环境中传入可信 `LLM_API_KEY`、`LLM_BASE_URL`、`LLM_MODEL`、`LLM_API_STYLE` 和 `PM_EVAL_LIVE=1`，执行 `npm run eval:pm:live`，生成仅包含匿名化案例 ID 和分数的输出。不经真实厂商推理与人工判读不能声明“模型质量通过”。
+
+## ADR-036 · Issue 解决/重新打开与审计历史
+
+新增 014_issue_transitions.sql，为已存在的正式 Issue 增加按同项目复合外键引用的状态变化历史表，不重写历史迁移，也不因项目成员退出而删除历史用户身份。owner/manager 可以在同项目按版本提出 resolve/reopen 并填写非空处理说明；业务状态、历史行、审计、领域事件、Outbox 和 CommandReceipt 在同一事务内提交。项目授权成员可分页查看历史，Web 项目治理页签提供管理与查看入口。当前**尚未实现**自动 Risk→Issue、变更基线联动、Playbook 主动处置和全量 RAID 流程，不能以这一切片标记 P1 整体完成。
