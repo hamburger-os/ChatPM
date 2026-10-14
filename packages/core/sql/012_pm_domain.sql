@@ -30,7 +30,7 @@ CREATE TABLE project_deliverables (
   milestone_id UUID,
   title TEXT NOT NULL CHECK(length(trim(title)) BETWEEN 1 AND 250),
   acceptance_criteria TEXT NOT NULL CHECK(length(trim(acceptance_criteria)) BETWEEN 1 AND 3000),
-  assignee_id UUID NOT NULL,
+  assignee_id UUID NOT NULL REFERENCES users(id),
   due_date DATE,
   status TEXT NOT NULL DEFAULT 'planned'
     CHECK(status IN ('planned','submitted','accepted','returned')),
@@ -43,7 +43,6 @@ CREATE TABLE project_deliverables (
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   UNIQUE(project_id,id),
   FOREIGN KEY(project_id,milestone_id) REFERENCES project_milestones(project_id,id),
-  FOREIGN KEY(project_id,assignee_id) REFERENCES project_members(project_id,user_id),
   CHECK(status <> 'accepted' OR
     (submitted_by IS NOT NULL AND reviewed_by IS NOT NULL AND
      submitted_by <> reviewed_by AND reviewed_at IS NOT NULL))
@@ -55,12 +54,11 @@ CREATE TABLE project_issues (
   detail TEXT NOT NULL DEFAULT '' CHECK(length(detail)<=5000),
   severity TEXT NOT NULL CHECK(severity IN ('low','medium','high','critical')),
   status TEXT NOT NULL DEFAULT 'open' CHECK(status IN ('open','resolved')),
-  owner_id UUID,
+  owner_id UUID REFERENCES users(id),
   version INTEGER NOT NULL DEFAULT 1 CHECK(version>0),
   created_by UUID NOT NULL REFERENCES users(id),
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  UNIQUE(project_id,id),
-  FOREIGN KEY(project_id,owner_id) REFERENCES project_members(project_id,user_id)
+  UNIQUE(project_id,id)
 );
 CREATE TABLE project_decisions (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),

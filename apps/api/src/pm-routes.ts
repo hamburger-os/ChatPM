@@ -85,6 +85,19 @@ export function registerPmRoutes(app:FastifyInstance,
       projectId,actorId:user,idempotencyKey:input.idempotencyKey as string,
       kind:'pm.'+kind+'.created.v1',action:spec.action,payload:input,
       mutate:async db=>{
+        // Responsibility is checked at assignment time, not enforced as a
+        // historical FK to mutable membership. Otherwise a person could never
+        // leave a project after completing an accepted deliverable.
+        const assignee=kind==='deliverables'?input.assigneeId:
+          kind==='issues'?input.ownerId:null;
+        if(assignee){
+          const active=await db.query(`SELECT 1 FROM project_members pm
+            JOIN projects p ON p.id=pm.project_id
+            JOIN tenant_members tm ON tm.tenant_id=p.tenant_id AND tm.user_id=pm.user_id
+            WHERE pm.project_id=$1 AND pm.user_id=$2 FOR SHARE OF pm,tm`,
+            [projectId,assignee]);
+          if(!active.rowCount)fail(400,'负责人必须是当前项目和组织成员');
+        }
         // Names and columns are fixed by the in-process specification.
         const sql=`INSERT INTO ${spec.table} (${columns.join(',')})
           VALUES(${columns.map((_,i)=>'$'+(i+1)).join(',')}) RETURNING *`;
