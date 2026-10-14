@@ -79,7 +79,7 @@ try{
   const forbidden=await api('/projects/'+pid+'/messages',{cookie:cookieB});
   assert.equal(forbidden.status,404,'Cross-project read must not be allowed');
   const denied=await api('/projects/'+pid+'/tasks',{method:'POST',cookie:cookieB,
-    body:{title:'越权任务',assigneeId:null,dueDate:null}});
+    body:{idempotencyKey:randomUUID(),title:'越权任务',assigneeId:null,dueDate:null}});
   assert.equal(denied.status,404,'Cross-project write must not be allowed');
   const unauthorizedTenant=await api('/projects',{method:'POST',cookie:cookieB,body:{
     name:'不能创建的项目',tenantId,timezone:'Asia/Shanghai'}});
@@ -451,9 +451,23 @@ try{
   }finally{
     if(!unlocked)await db.query('ROLLBACK');
   }
-  const task=await api('/projects/'+pid+'/tasks',{method:'POST',
-    body:{title:'正式任务',detail:'',assigneeId:uid,dueDate:null}});
+  const directTaskInput={idempotencyKey:randomUUID(),
+    title:'正式任务',detail:'',assigneeId:uid,dueDate:null};
+  const task=await api('/projects/'+pid+'/tasks',{method:'POST',body:directTaskInput});
   assert.equal(task.status,201,JSON.stringify(task.data));
+  const taskReplay=await api('/projects/'+pid+'/tasks',{method:'POST',body:directTaskInput});
+  assert.equal(taskReplay.status,201,'Replayed task creation must return the existing receipt');
+  assert.equal(taskReplay.data.task.id,task.data.task.id);
+  const taskKeyConflict=await api('/projects/'+pid+'/tasks',{method:'POST',
+    body:{...directTaskInput,title:'Different task'}});
+  assert.equal(taskKeyConflict.status,409,'Reused key with different input is rejected');
+  const missingTaskKey=await api('/projects/'+pid+'/tasks',{method:'POST',
+    body:{title:'Unkeyed task',assigneeId:null,dueDate:null}});
+  assert.equal(missingTaskKey.status,400,'Task writes require idempotency keys');
+  const taskCreatedEvents=(await db.query(`SELECT count(*)::int AS n FROM domain_events
+    WHERE project_id=$1 AND kind='task.created.v1' AND aggregate_id=$2`,
+    [pid,task.data.task.id])).rows[0].n;
+  assert.equal(taskCreatedEvents,1,'Duplicate creation must not emit two events');
   // Sourced project claims: an author confirms a statement, never task acceptance.
   const evidenceBase='/projects/'+pid+'/evidence/claims';
   const ownerEvidenceText='🧩 我计划本周五完成环境配置，仍需验收。';
@@ -545,7 +559,7 @@ try{
   assert.equal(evidenceRows,2,'Failed or replayed attempts must not create extra spans');
 
   const tid=task.data.task.id;
-  const anotherTask=await api('/projects/'+pid+'/tasks',{method:'POST',body:{
+  const anotherTask=await api('/projects/'+pid+'/tasks',{method:'POST',body:{idempotencyKey:randomUUID(),
     title:'Dependency predecessor',detail:'',assigneeId:uid,dueDate:null}});
   assert.equal(anotherTask.status,201,JSON.stringify(anotherTask.data));
   const prerequisiteTaskId=anotherTask.data.task.id;
@@ -563,18 +577,18 @@ try{
   assert.equal(dependencies.status,200);
   assert.equal(dependencies.data.dependencies.filter(x=>x.dependent_task_id===tid).length,1);
   const prematureCompletion=await api('/projects/'+pid+'/tasks/'+tid,{
-    method:'PATCH',body:{status:'done',version:1}});
+    method:'PATCH',body:{idempotencyKey:randomUUID(),status:'done',version:1}});
   assert.equal(prematureCompletion.status,409,
     'A dependent task cannot complete before its predecessor');
   const unmodified=(await db.query('SELECT status,version FROM tasks WHERE id=$1',[tid])).rows[0];
   assert.equal(unmodified.status,'todo');
   assert.equal(unmodified.version,1,'Blocked completion must roll back');
-  const completedStandalone=await api('/projects/'+pid+'/tasks',{method:'POST',body:{
+  const completedStandalone=await api('/projects/'+pid+'/tasks',{method:'POST',body:{idempotencyKey:randomUUID(),
     title:'Already delivered separate work',detail:'',assigneeId:uid,dueDate:null}});
   assert.equal(completedStandalone.status,201,JSON.stringify(completedStandalone.data));
   const completedStandaloneId=completedStandalone.data.task.id;
   const standaloneDone=await api('/projects/'+pid+'/tasks/'+completedStandaloneId,{
-    method:'PATCH',body:{status:'done',version:1}});
+    method:'PATCH',body:{idempotencyKey:randomUUID(),status:'done',version:1}});
   assert.equal(standaloneDone.status,200,'Tasks without prerequisites can finish');
   const impossibleLateDependency=await api(pm+'/dependencies',{
     method:'POST',body:{idempotencyKey:randomUUID(),
@@ -582,7 +596,7 @@ try{
   assert.equal(impossibleLateDependency.status,409,
     'Cannot add an unfinished prerequisite to already finished work');
   const prerequisiteDone=await api('/projects/'+pid+'/tasks/'+prerequisiteTaskId,{
-    method:'PATCH',body:{status:'done',version:1}});
+    method:'PATCH',body:{idempotencyKey:randomUUID(),status:'done',version:1}});
   assert.equal(prerequisiteDone.status,200,'Predecessor completion is permitted');
 
 
@@ -608,13 +622,24 @@ try{
     method:'POST',body:{decision:'accepted'}});
   assert.equal(progressAgain.status,409);
 
-  const changed=await api('/projects/'+pid+'/tasks/'+tid,{method:'PATCH',
-    body:{status:'doing',version:1}});
+  const taskUpdateInput={idempotencyKey:randomUUID(),status:'doing',version:1};
+  const changed=await api('/projects/'+pid+'/tasks/'+tid,{method:'PATCH',body:taskUpdateInput});
   assert.equal(changed.status,200);
+  const taskUpdateReplay=await api('/projects/'+pid+'/tasks/'+tid,{
+    method:'PATCH',body:taskUpdateInput});
+  assert.equal(taskUpdateReplay.status,200);
+  assert.equal(taskUpdateReplay.data.task.version,changed.data.task.version);
+  const taskUpdateKeyConflict=await api('/projects/'+pid+'/tasks/'+tid,{
+    method:'PATCH',body:{...taskUpdateInput,status:'blocked'}});
+  assert.equal(taskUpdateKeyConflict.status,409);
+  const taskUpdatedEvents=(await db.query(`SELECT count(*)::int AS n FROM domain_events
+    WHERE project_id=$1 AND kind='task.updated.v1' AND aggregate_id=$2`,
+    [pid,tid])).rows[0].n;
+  assert.equal(taskUpdatedEvents,1,'Task status update must write one event');
   const stale=await api('/projects/'+pid+'/tasks/'+tid,{method:'PATCH',
-    body:{status:'done',version:1}});
+    body:{idempotencyKey:randomUUID(),status:'done',version:1}});
   assert.equal(stale.status,409,'Stale versions must not overwrite task state');
-  const edited=await api('/projects/'+pid+'/tasks/'+tid,{method:'PATCH',body:{
+  const edited=await api('/projects/'+pid+'/tasks/'+tid,{method:'PATCH',body:{idempotencyKey:randomUUID(),
     version:2,assigneeId:uid,dueDate:new Date(Date.now()+86400000).toISOString().slice(0,10),
   }});
   assert.equal(edited.status,200,'Owner may edit task plan');
@@ -635,7 +660,7 @@ try{
     "UPDATE followup_plans SET last_sent_at=NOW(),next_at=NOW()+INTERVAL '24 hours' WHERE task_id=$1",
     [tid]);
   const replanned=await api('/projects/'+pid+'/tasks/'+tid,{method:'PATCH',
-    body:{version:edited.data.task.version,
+    body:{idempotencyKey:randomUUID(),version:edited.data.task.version,
       dueDate:new Date(Date.now()+3*86400000).toISOString().slice(0,10)}});
   assert.equal(replanned.status,200,'Replanning should succeed');
   const cooldown=await db.query(
@@ -643,7 +668,7 @@ try{
     [tid]);
   assert.equal(cooldown.rows[0]?.preserved,true,'Replanning must preserve last reminder cooldown');
   const finallyCompleted=await api('/projects/'+pid+'/tasks/'+tid,{
-    method:'PATCH',body:{status:'done',version:replanned.data.task.version}});
+    method:'PATCH',body:{idempotencyKey:randomUUID(),status:'done',version:replanned.data.task.version}});
   assert.equal(finallyCompleted.status,200,
     'Dependent task may finish after the prerequisite is completed');
   assert.equal(finallyCompleted.data.task.status,'done');
@@ -730,7 +755,7 @@ try{
   assert.ok(report.data.report.content.includes('总数：'+beforeCount+'；'),
     'Report counts must not be truncated to 200');
   const changedTask=await api('/projects/'+pid+'/tasks',{method:'POST',
-    body:{title:'晚于草稿新增的任务',assigneeId:null,dueDate:null}});
+    body:{idempotencyKey:randomUUID(),title:'晚于草稿新增的任务',assigneeId:null,dueDate:null}});
   assert.equal(changedTask.status,201);
   const refreshed=await api('/projects/'+pid+'/reports',{method:'POST',body:{kind:'week'}});
   assert.equal(refreshed.data.report.id,report.data.report.id);
@@ -749,16 +774,16 @@ try{
   const reassigned=await api('/projects/'+pid+'/tasks/'+linked.rows[0].id,{
     method:'PATCH',body:{version:1,assigneeId:uid}});
   assert.equal(reassigned.status,200,'Owner can reassign unfinished work before removing a member');
-  const historical=await api('/projects/'+pid+'/tasks',{method:'POST',body:{
+  const historical=await api('/projects/'+pid+'/tasks',{method:'POST',body:{idempotencyKey:randomUUID(),
     title:'保留历史负责人',assigneeId:second.data.user.id,dueDate:null}});
   assert.equal(historical.status,201);
   const markDone=await api('/projects/'+pid+'/tasks/'+historical.data.task.id,{
-    method:'PATCH',body:{version:historical.data.task.version,status:'done'}});
+    method:'PATCH',body:{idempotencyKey:randomUUID(),version:historical.data.task.version,status:'done'}});
   assert.equal(markDone.status,200);
   const removed=await api('/projects/'+pid+'/members/'+second.data.user.id,{method:'DELETE'});
   assert.equal(removed.status,200);
   const reopenFormerMember=await api('/projects/'+pid+'/tasks/'+historical.data.task.id,{
-    method:'PATCH',body:{version:markDone.data.task.version,status:'doing'}});
+    method:'PATCH',body:{idempotencyKey:randomUUID(),version:markDone.data.task.version,status:'doing'}});
   assert.equal(reopenFormerMember.status,400,'Reopening must reject a revoked assignee');
   const revokedMember=await api('/projects/'+pid+'/messages',{cookie:cookieB});
   assert.equal(revokedMember.status,404,'Removed member must lose access immediately');
