@@ -120,6 +120,100 @@ try{
     email:'second+'+suffix2+'@example.com',
   }});
   assert.equal(invited.status,200,'Owner should be able to add a registered project member');
+  const pm='/projects/'+pid+'/pm';
+  const forbiddenGoal=await api(pm+'/goals',{method:'POST',cookie:cookieB,
+    body:{idempotencyKey:randomUUID(),title:'No',successCriteria:'Not authorized'}});
+  assert.equal(forbiddenGoal.status,403,'Project members cannot create goals');
+  const goalInput={idempotencyKey:randomUUID(),title:'Release reliably',
+    description:'Verify project value',successCriteria:'Accepted delivery'};
+  const goal=await api(pm+'/goals',{method:'POST',body:goalInput});
+  assert.equal(goal.status,201,JSON.stringify(goal.data));
+  const goalId=goal.data.item.id;
+  const sameGoal=await api(pm+'/goals',{method:'POST',body:goalInput});
+  assert.equal(sameGoal.status,201);
+  assert.equal(sameGoal.data.item.id,goalId,'Idempotent replay must not create a new goal');
+  const keyReuse=await api(pm+'/goals',{method:'POST',body:{
+    ...goalInput,title:'Different goal'}});
+  assert.equal(keyReuse.status,409,'Different payload must not reuse a command key');
+  const milestone=await api(pm+'/milestones',{method:'POST',body:{
+    idempotencyKey:randomUUID(),title:'Sprint review',
+    goalId,dueDate:'2026-12-31'}});
+  assert.equal(milestone.status,201,JSON.stringify(milestone.data));
+  const badMilestone=await api(pm+'/milestones',{method:'POST',body:{
+    idempotencyKey:randomUUID(),title:'Cross project association',
+    goalId:randomUUID(),dueDate:'2026-12-31'}});
+  assert.notEqual(badMilestone.status,201,'Foreign goal must be rejected');
+  const issue=await api(pm+'/issues',{method:'POST',body:{
+    idempotencyKey:randomUUID(),title:'Environment not ready',
+    detail:'Already blocking work',severity:'high',ownerId:uid}});
+  assert.equal(issue.status,201,JSON.stringify(issue.data));
+  const decision=await api(pm+'/decisions',{method:'POST',body:{
+    idempotencyKey:randomUUID(),title:'Use staged rollout',rationale:'Risk reduction'}});
+  assert.equal(decision.status,201,JSON.stringify(decision.data));
+  const deliverable=await api(pm+'/deliverables',{method:'POST',body:{
+    idempotencyKey:randomUUID(),title:'Release checklist',
+    acceptanceCriteria:'All checks pass',assigneeId:second.data.user.id,
+    milestoneId:milestone.data.item.id,dueDate:'2026-12-20'}});
+  assert.equal(deliverable.status,201,JSON.stringify(deliverable.data));
+  const deliverableId=deliverable.data.item.id;
+  const notAssigned=await api(pm+'/deliverables/'+deliverableId+'/submit',{
+    method:'POST',body:{idempotencyKey:randomUUID(),expectedVersion:1}});
+  assert.equal(notAssigned.status,403,'Only the assignee may submit');
+  const submitted=await api(pm+'/deliverables/'+deliverableId+'/submit',{
+    method:'POST',cookie:cookieB,
+    body:{idempotencyKey:randomUUID(),expectedVersion:1}});
+  assert.equal(submitted.status,200,JSON.stringify(submitted.data));
+  assert.equal(submitted.data.item.status,'submitted');
+  const rejectedReview=await api(pm+'/deliverables/'+deliverableId+'/review',{
+    method:'POST',cookie:cookieB,
+    body:{idempotencyKey:randomUUID(),expectedVersion:2,decision:'accept'}});
+  assert.equal(rejectedReview.status,403,'Member must not approve deliverables');
+  const conflictReview=await api(pm+'/deliverables/'+deliverableId+'/review',{
+    method:'POST',
+    body:{idempotencyKey:randomUUID(),expectedVersion:1,decision:'accept'}});
+  assert.equal(conflictReview.status,409,'Stale review version must conflict');
+  const accepted=await api(pm+'/deliverables/'+deliverableId+'/review',{
+    method:'POST',
+    body:{idempotencyKey:randomUUID(),expectedVersion:2,decision:'accept'}});
+  assert.equal(accepted.status,200,JSON.stringify(accepted.data));
+  assert.equal(accepted.data.item.status,'accepted');
+  assert.equal(accepted.data.item.version,3);
+  const repeatSubmit=await api(pm+'/deliverables/'+deliverableId+'/submit',{
+    method:'POST',cookie:cookieB,
+    body:{idempotencyKey:randomUUID(),expectedVersion:3}});
+  assert.equal(repeatSubmit.status,409);
+  // Manager requests the baseline change. Owner must approve, not the author.
+  await db.query("UPDATE project_members SET role='manager' WHERE project_id=$1 AND user_id=$2",
+    [pid,second.data.user.id]);
+  const change=await api(pm+'/changes',{method:'POST',cookie:cookieB,body:{
+    idempotencyKey:randomUUID(),title:'Extend rollout',rationale:'Blocked integration',
+    impact:'One day later'}});
+  assert.equal(change.status,201,JSON.stringify(change.data));
+  const selfApprove=await api(pm+'/changes/'+change.data.item.id+'/decide',{
+    method:'POST',cookie:cookieB,
+    body:{idempotencyKey:randomUUID(),expectedVersion:1,decision:'approve'}});
+  assert.equal(selfApprove.status,403,'Only the project owner may approve baseline changes');
+  const approved=await api(pm+'/changes/'+change.data.item.id+'/decide',{
+    method:'POST',body:{idempotencyKey:randomUUID(),expectedVersion:1,
+      decision:'approve'}});
+  assert.equal(approved.status,200,JSON.stringify(approved.data));
+  assert.equal(approved.data.item.status,'approved');
+  await db.query("UPDATE project_members SET role='member' WHERE project_id=$1 AND user_id=$2",
+    [pid,second.data.user.id]);
+  const register=await api(pm);
+  assert.equal(register.status,200);
+  assert.equal(register.data.goals.find(x=>x.id===goalId).success_criteria,
+    'Accepted delivery');
+  assert.equal(register.data.deliverables.find(x=>x.id===deliverableId).status,'accepted');
+  assert.equal((await api(pm,{cookie:cookieB})).status,200);
+  const receiptCount=(await db.query(`SELECT count(*)::int AS count
+    FROM command_receipts WHERE project_id=$1 AND kind='pm.goals.created.v1'`,
+  [pid])).rows[0].count;
+  assert.equal(receiptCount,1,'Idempotent command must create exactly one receipt');
+  const eventCount=(await db.query(`SELECT count(*)::int AS count
+    FROM domain_events WHERE project_id=$1`,[pid])).rows[0].count;
+  assert.ok(eventCount>=9,'PM operations must create traceable domain events');
+
   const memberView=await api('/projects/'+pid+'/members',{cookie:cookieB});
   assert.equal(memberView.status,200);
   const ownerOnly=await api('/projects/'+pid+'/settings',{method:'PATCH',cookie:cookieB,
@@ -283,6 +377,24 @@ try{
     body:{title:'正式任务',detail:'',assigneeId:uid,dueDate:null}});
   assert.equal(task.status,201,JSON.stringify(task.data));
   const tid=task.data.task.id;
+  const anotherTask=await api('/projects/'+pid+'/tasks',{method:'POST',body:{
+    title:'Dependency predecessor',detail:'',assigneeId:uid,dueDate:null}});
+  assert.equal(anotherTask.status,201,JSON.stringify(anotherTask.data));
+  const prerequisiteTaskId=anotherTask.data.task.id;
+  const dependency=await api(pm+'/dependencies',{method:'POST',body:{
+    idempotencyKey:randomUUID(),dependentTaskId:tid,prerequisiteTaskId}});
+  assert.equal(dependency.status,201,JSON.stringify(dependency.data));
+  const cyclic=await api(pm+'/dependencies',{method:'POST',body:{
+    idempotencyKey:randomUUID(),dependentTaskId:prerequisiteTaskId,
+    prerequisiteTaskId:tid}});
+  assert.equal(cyclic.status,409,'Cyclic dependencies must not be accepted');
+  const noDependency=await api(pm+'/dependencies',{method:'POST',body:{
+    idempotencyKey:randomUUID(),dependentTaskId:tid,prerequisiteTaskId:randomUUID()}});
+  assert.equal(noDependency.status,404,'Dependencies must reference same-project tasks');
+  const dependencies=await api(pm+'/dependencies');
+  assert.equal(dependencies.status,200);
+  assert.equal(dependencies.data.dependencies.filter(x=>x.dependent_task_id===tid).length,1);
+
   const progressSource=await api('/projects/'+pid+'/messages',{method:'POST',
     body:{content:'方案初稿已完成，请核对评审',nonce:randomUUID()}});
   assert.equal(progressSource.status,201);
