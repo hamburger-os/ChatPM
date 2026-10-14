@@ -1,65 +1,111 @@
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { z } from 'zod';
-import { randomUUID } from 'node:crypto';
 import { pool, transaction } from '../../../packages/core/src/db.ts';
 import { requireSystemAdmin } from '../../../packages/core/src/permissions.ts';
-import { deleteModelConfig, listModelConfigs, resolveModelConfig, saveModelConfig } from
-  '../../../packages/core/src/project-model.ts';
+import {
+  deleteModelConfig,deleteProvider,listModelConfigs,listProviders,
+  resolveModelConfig,saveModelConfig,saveProvider,
+} from '../../../packages/core/src/project-model.ts';
 import { callStructuredLLM, modelAuditIdentity } from '../../../packages/core/src/llm-transport.ts';
 
 const uuid=z.string().uuid();
-const inputSchema=z.object({
-  name:z.string().trim().min(1).max(100),
-  model:z.string().trim().min(1).max(150),
-  baseUrl:z.string().url().max(2048),
-  style:z.enum(['responses','chat-completions']),
-  reasoning:z.enum(['auto','none','low','medium','high','max']),
-  maxOutputTokens:z.number().int().min(512).max(131072),
-  contextChars:z.number().int().min(2000).max(250000),
-  enabled:z.boolean(),isDefault:z.boolean(),
-  apiKey:z.string().min(1).max(500).regex(/^[^\r\n]+$/).optional(),
-}).strict();
 const denied=(code:number,message:string):never=>{
   throw Object.assign(new Error(message),{statusCode:code});
 };
+const providerSchema=z.object({
+  name:z.string().trim().min(1).max(100),
+  baseUrl:z.string().url().max(2048),
+  style:z.enum(['responses','chat-completions']),
+  enabled:z.boolean(),
+  apiKey:z.string().min(1).max(5000).regex(/^[^\r\n]+$/).optional(),
+}).strict();
+const modelSchema=z.object({
+  name:z.string().trim().min(1).max(100),
+  model:z.string().trim().min(1).max(150),
+  providerId:uuid,
+  reasoning:z.enum(['auto','none','low','medium','high','max']),
+  reasoningFormat:z.enum(['none','responses-effort','chat-completions-effort']),
+  maxOutputTokens:z.number().int().min(512).max(131072),
+  contextChars:z.number().int().min(2000).max(250000),
+  enabled:z.boolean(),isDefault:z.boolean(),
+}).strict();
+
 export function registerAdminModelRoutes(app:FastifyInstance,
   authenticated:(req:FastifyRequest)=>Promise<string>):void{
   const admin=async(req:FastifyRequest)=>{
-    const id=await authenticated(req);
-    await requireSystemAdmin(id);
-    return id;
+    const actor=await authenticated(req);
+    await requireSystemAdmin(actor);
+    return actor;
   };
+  app.get('/admin/ai/providers',async req=>{
+    await admin(req);return {providers:await listProviders()};
+  });
+  app.post('/admin/ai/providers',async(req,reply)=>{
+    const actor=await admin(req),value=providerSchema.parse(req.body);
+    const provider=await transaction(async db=>{
+      const saved=await saveProvider(db,null,value);
+      await db.query(`INSERT INTO system_audit_entries(actor_id,action,target_id,metadata)
+        VALUES($1,'ai.provider_created',$2,$3)`,
+        [actor,saved.id,JSON.stringify({name:saved.name,style:saved.style})]);
+      return saved;
+    });
+    return reply.code(201).send({provider});
+  });
+  app.put('/admin/ai/providers/:id',async req=>{
+    const actor=await admin(req),id=uuid.parse((req.params as {id:string}).id);
+    const value=providerSchema.parse(req.body);
+    const provider=await transaction(async db=>{
+      const saved=await saveProvider(db,id,value);
+      await db.query(`INSERT INTO system_audit_entries(actor_id,action,target_id,metadata)
+        VALUES($1,'ai.provider_updated',$2,$3)`,[actor,id,JSON.stringify({
+        name:saved.name,style:saved.style,enabled:saved.enabled,secretChanged:Boolean(value.apiKey),
+      })]);
+      return saved;
+    });
+    return {provider};
+  });
+  app.delete('/admin/ai/providers/:id',async req=>{
+    const actor=await admin(req),id=uuid.parse((req.params as {id:string}).id);
+    const removed=await transaction(async db=>{
+      const related=await db.query('SELECT 1 FROM ai_model_configs WHERE provider_id=$1 LIMIT 1',[id]);
+      if(related.rowCount)denied(409,'请先移除该供应商的模型');
+      const ok=await deleteProvider(db,id);
+      if(ok)await db.query(`INSERT INTO system_audit_entries(actor_id,action,target_id)
+        VALUES($1,'ai.provider_deleted',$2)`,[actor,id]);
+      return ok;
+    });
+    if(!removed)denied(404,'供应商不存在');
+    return {ok:true};
+  });
   app.get('/admin/ai/models',async req=>{
     await admin(req);return {models:await listModelConfigs()};
   });
   app.post('/admin/ai/models',async(req,reply)=>{
-    const actor=await admin(req),v=inputSchema.parse(req.body);
+    const actor=await admin(req),value=modelSchema.parse(req.body);
     const model=await transaction(async db=>{
-      const saved=await saveModelConfig(db,null,v);
+      const saved=await saveModelConfig(db,null,value);
       await db.query(`INSERT INTO system_audit_entries(actor_id,action,target_id,metadata)
         VALUES($1,'ai.model_created',$2,$3)`,[actor,saved.id,JSON.stringify({
-        name:saved.name,model:saved.model,style:saved.style})]);
+        name:saved.name,model:saved.model,providerId:saved.providerId})]);
       return saved;
     });
-    app.log.info({actor,modelId:model.id},'Admin added AI model config');
     return reply.code(201).send({model});
   });
   app.put('/admin/ai/models/:id',async req=>{
-    const actor=await admin(req);
-    const id=uuid.parse((req.params as {id:string}).id);
-    const v=inputSchema.parse(req.body);
+    const actor=await admin(req),id=uuid.parse((req.params as {id:string}).id);
+    const value=modelSchema.parse(req.body);
     const model=await transaction(async db=>{
-      const saved=await saveModelConfig(db,id,v);
+      const saved=await saveModelConfig(db,id,value);
       await db.query(`INSERT INTO system_audit_entries(actor_id,action,target_id,metadata)
         VALUES($1,'ai.model_updated',$2,$3)`,[actor,id,JSON.stringify({
-        model:saved.model,enabled:saved.enabled,isDefault:saved.isDefault})]);
+        model:saved.model,providerId:saved.providerId,
+        enabled:saved.enabled,isDefault:saved.isDefault})]);
       return saved;
     });
     return {model};
   });
   app.delete('/admin/ai/models/:id',async req=>{
-    const actor=await admin(req);
-    const id=uuid.parse((req.params as {id:string}).id);
+    const actor=await admin(req),id=uuid.parse((req.params as {id:string}).id);
     const deleted=await transaction(async db=>{
       const removed=await deleteModelConfig(db,id);
       if(removed)await db.query(`INSERT INTO system_audit_entries(actor_id,action,target_id)
