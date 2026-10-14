@@ -143,3 +143,11 @@ Web 端从 `GET /projects` 初始化项目列表和设置面板。该接口返�
 - `POST /admin/ai/models/:id/test`：允许尚未启用的连接/模型进行匿名 JSON 探测，不改变实际业务调用的启用条件。实际业务继续只使用已启用的默认模型和已启用的供应商，不能隐式切换目标。
 - SSRF：目录 discovery 使用 DNS/IP 私网预检，禁止跟随重定向，流式响应限制 512 KB；管理员目标网络访问仍受生产出站防火墙控制，不能将解析预检当成连接级目标固定。
 - Web：保存供应商后尝试目录发现，失败保留保存结果；浏览器不见 Key，不提交外部发现 URL；已注册 ID 不可重复勾选；高级设置与选择操作分别管理草稿；测试通过状态仅按本次会话展示，不宣称持久化验证。
+
+
+## ADR-027 · 模型代理诊断契约
+
+- 管理模型测试 `POST /admin/ai/models/:id/test` 先调用只读传输的 `probeModelText`，仅发送匿名简短问题且不附加 JSON 格式参数；若可生成可见文本，再执行既有 `callStructuredLLM` 的 `{ok:true}` 严格对象校验。
+- HTTP 200 测试结果包括 `ok`、`textOk`、`structuredOk`、`latencyMs`、可选 `textLatencyMs`、以及失败时的 `errorCode`。允许 `textOk=true` 且 `structuredOk=false`，此状态不得赋予模型“已测试可用于 AI 抽取”的结论。身份仍只有系统管理员可访问，网络请求仍不带项目数据。
+- Responses 提取优先读取 `output[].content[].type=output_text` 文本；仅对代理历史不标准的消息对象接受字符串 `content`，禁止使用 `reasoning` 输出作为最终答案。协议格式不匹配、推理独占输出与真正空响应为不同错误。响应不合规则仍必须失败。
+- Base URL 按用户配置精确拼接，不猜测供应商品牌：例如若需要 /v1/models，管理员需保存以 /v1 结尾的前缀。错误提示可以建议该路径，但不会静默改写端点。

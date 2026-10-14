@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { callStructuredLLM, readLLMSettings, modelAuditIdentity } from '../src/llm-transport.ts';
+import { callStructuredLLM, probeModelText, readLLMSettings, modelAuditIdentity } from '../src/llm-transport.ts';
 
 const schema={type:'object',additionalProperties:false,required:['items'],
   properties:{items:{type:'array',items:{type:'string'}}}};
@@ -81,7 +81,7 @@ test('rejects upstream errors, incomplete responses, refusals, empty and non-JSO
   )),/MODEL_INCOMPLETE_OUTPUT/);
   await assert.rejects(callStructuredLLM(chat,'msg',schema,async()=>new Response(
     JSON.stringify({choices:[{finish_reason:'stop',message:{content:json,refusal:'no'}}]}),{status:200}
-  )),/MODEL_INCOMPLETE_OUTPUT/);
+  )),/MODEL_REFUSED/);
 });
 
 test('audit identity distinguishes endpoints without exposing credentials or private URL paths',()=>{
@@ -156,4 +156,53 @@ test('reasoning is declared by the model, never inferred from endpoint brand',as
   });
   await assert.rejects(callStructuredLLM({...config,reasoningFormat:'none'},'task',schema),
     /MODEL_REASONING_UNSUPPORTED/);
+});
+
+
+test('proxy plain-text probe omits strict JSON options and uses configured prefix',async()=>{
+  const config=settings({LLM_API_STYLE:'chat-completions',
+    LLM_BASE_URL:'http://127.0.0.1:8045/v1',LLM_MODEL:'gemini-example-high'});
+  const result=await probeModelText(config,async(url,init)=>{
+    assert.equal(String(url),'http://127.0.0.1:8045/v1/chat/completions');
+    const body=JSON.parse(String(init?.body));
+    assert.equal(body.model,'gemini-example-high');
+    assert.equal(body.response_format,undefined);
+    assert.equal(body.reasoning_effort,undefined);
+    assert.equal(body.messages.length,1);
+    return new Response(JSON.stringify({choices:[{finish_reason:'stop',
+      message:{content:'OK'}}]}),{status:200});
+  });
+  assert.equal(result,'OK');
+});
+
+test('proxy Responses adapter accepts nonstandard visible string content without reading reasoning data',async()=>{
+  const content=JSON.stringify({items:['done']});
+  const config=settings();
+  const result=await callStructuredLLM(config,'test',schema,async()=>new Response(
+    JSON.stringify({status:'completed',output:[
+      {type:'reasoning',content:'private reasoning must not be exposed'},
+      {type:'message',role:'assistant',content},
+    ]}),{status:200}));
+  assert.deepEqual(result,{items:['done']});
+});
+
+test('Responses adapter distinguishes reasoning-only and other wire envelope',async()=>{
+  const config=settings();
+  await assert.rejects(callStructuredLLM(config,'test',schema,async()=>new Response(
+    JSON.stringify({status:'completed',output:[{type:'reasoning',content:[]}]})
+  )),/MODEL_REASONING_ONLY_OUTPUT/);
+  await assert.rejects(callStructuredLLM(config,'test',schema,async()=>new Response(
+    JSON.stringify({choices:[{finish_reason:'stop',message:{content:json}}]})
+  )),/MODEL_RESPONSE_FORMAT_MISMATCH/);
+});
+
+test('text probe alone does not claim structured JSON compatibility',async()=>{
+  const config=settings({LLM_API_STYLE:'chat-completions'});
+  const fetcher:typeof fetch=async(_url,init)=>{
+    const body=JSON.parse(String(init?.body));
+    return new Response(JSON.stringify({choices:[{finish_reason:'stop',
+      message:{content:body.response_format?'OK':'connected'}}]}));
+  };
+  assert.equal(await probeModelText(config,fetcher),'connected');
+  await assert.rejects(callStructuredLLM(config,'test',schema,fetcher),/MODEL_INVALID_JSON/);
 });

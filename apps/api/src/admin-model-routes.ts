@@ -7,7 +7,7 @@ import {
   resolveModelConfig,resolveProviderCatalogConfig,saveModelConfig,saveProvider,
 } from '../../../packages/core/src/project-model.ts';
 import { discoverProviderModels } from '../../../packages/core/src/model-catalog.ts';
-import { callStructuredLLM, modelAuditIdentity } from '../../../packages/core/src/llm-transport.ts';
+import { callStructuredLLM, modelAuditIdentity, probeModelText } from '../../../packages/core/src/llm-transport.ts';
 
 const uuid=z.string().uuid();
 const denied=(code:number,message:string):never=>{
@@ -95,7 +95,7 @@ export function registerAdminModelRoutes(app:FastifyInstance,
       const messages:Record<string,string>={
         MODEL_CATALOG_HTTP_401:'模型目录鉴权失败（401），请检查 API Key',
         MODEL_CATALOG_HTTP_403:'无权访问模型目录（403），请检查密钥权限',
-        MODEL_CATALOG_HTTP_404:'该连接没有标准 /models 接口（404），可以手动注册模型',
+        MODEL_CATALOG_HTTP_404:'模型目录返回 404。ChatPM 会将 /models 拼在基础地址后；请检查是否遗漏 /v1（例如基础地址应以 /v1 结尾），再重试。',
         MODEL_CATALOG_HTTP_405:'模型目录接口不支持 GET（405），可以手动注册模型',
         MODEL_CATALOG_HTTP_429:'服务端限制了请求频率（429），请稍后再试',
         MODEL_CATALOG_DNS_FAILED:'模型地址的 DNS 解析失败',
@@ -174,17 +174,32 @@ export function registerAdminModelRoutes(app:FastifyInstance,
       RETURNING model_config_id`,[id]);
     if(!check.rowCount)denied(429,'每个模型最多每 30 秒测试一次');
     const started=Date.now();
+    const identity=modelAuditIdentity(config);
+    const codeFor=(error:unknown):string=>{
+      const value=error instanceof Error?error.message:'';
+      return /^MODEL_[A-Z0-9_]+$/.test(value)?value:'MODEL_CONNECTION_FAILED';
+    };
+    // A lightweight test deliberately avoids strict JSON output options.
+    // A successful plain reply is not enough to enable ChatPM's AI analysis.
+    try{
+      await probeModelText(config);
+    }catch(error){
+      return {ok:false,textOk:false,structuredOk:false,
+        errorCode:codeFor(error),latencyMs:Date.now()-started,model:identity};
+    }
+    const textLatencyMs=Date.now()-started;
     try{
       const result=await callStructuredLLM(config,
-        '这是匿名连接测试，不包含真实项目资料。仅返回 JSON 对象 {"ok":true}。',
+        '这是匿名结构化输出测试，不包含真实项目资料。仅返回 JSON 对象 {"ok":true}。',
         {type:'object',additionalProperties:false,required:['ok'],properties:{ok:{type:'boolean'}}});
       if(!result||typeof result!=='object'||(result as {ok?:unknown}).ok!==true)
-        throw new Error('MODEL_INVALID_TEST_RESPONSE');
-      return {ok:true,latencyMs:Date.now()-started,model:modelAuditIdentity(config)};
+        throw new Error('MODEL_TEST_CONTENT_MISMATCH');
+      return {ok:true,textOk:true,structuredOk:true,
+        textLatencyMs,latencyMs:Date.now()-started,model:identity};
     }catch(error){
-      const code=error instanceof Error&&/^MODEL_[A-Z0-9_]+$/.test(error.message)
-        ?error.message:'MODEL_CONNECTION_FAILED';
-      denied(422,'模型测试失败：'+code);
+      return {ok:false,textOk:true,structuredOk:false,
+        errorCode:codeFor(error),textLatencyMs,
+        latencyMs:Date.now()-started,model:identity};
     }
   });
 }
