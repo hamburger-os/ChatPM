@@ -166,6 +166,71 @@ export function registerPmRoutes(app:FastifyInstance,
     });
   });
 
+  // Issue is an occurred problem, not a prospective risk. State changes
+  // require a human explanation and retain append-only, project-scoped history.
+  const issueTransitionSchema=versioned.extend({
+    decision:z.enum(['resolve','reopen']),
+    note:z.string().trim().min(1).max(2000),
+  });
+  app.post('/projects/:projectId/pm/issues/:itemId/transition',async req=>{
+    const projectId=context(req),user=await authenticated(req);
+    const id=uuid.parse((req.params as {itemId:string}).itemId);
+    const input=issueTransitionSchema.parse(req.body);
+    return executePmCommand({
+      projectId,actorId:user,idempotencyKey:input.idempotencyKey,
+      action:'pm.plan',kind:'pm.issue.transitioned.v1',payload:{id,...input},
+      mutate:async db=>{
+        const r=await db.query<{status:'open'|'resolved';version:number}>(`
+          SELECT status,version FROM project_issues
+          WHERE project_id=$1 AND id=$2 FOR UPDATE
+        `,[projectId,id]);
+        const issue=r.rows[0];
+        if(!issue)fail(404,'问题不存在');
+        if(issue.version!==input.expectedVersion)fail(409,'问题版本冲突');
+        const target=input.decision==='resolve'?'resolved':'open';
+        if(issue.status===target)fail(409,'问题已经处于目标状态');
+        const updated=await db.query(`
+          UPDATE project_issues SET status=$3,version=version+1
+          WHERE project_id=$1 AND id=$2 RETURNING *
+        `,[projectId,id,target]);
+        const item=updated.rows[0] as Record<string,unknown>;
+        await db.query(`
+          INSERT INTO project_issue_transitions(
+            project_id,issue_id,from_status,to_status,issue_version,note,actor_id)
+          VALUES($1,$2,$3,$4,$5,$6,$7)
+        `,[projectId,id,issue.status,target,item.version,input.note,user]);
+        return {response:{item},aggregateType:'issues',aggregateId:id,
+          aggregateVersion:Number(item.version)} satisfies Mutation;
+      },
+    });
+  });
+
+  app.get('/projects/:projectId/pm/issues/:itemId/history',async req=>{
+    const projectId=context(req),user=await authenticated(req);
+    const id=uuid.parse((req.params as {itemId:string}).itemId);
+    const paging=z.object({beforeVersion:z.coerce.number().int().positive().optional()})
+      .parse(req.query);
+    const scoped=await pool.query(`
+      SELECT i.id FROM project_issues i
+      JOIN project_members pm ON pm.project_id=i.project_id AND pm.user_id=$3
+      JOIN projects p ON p.id=i.project_id
+      JOIN tenant_members tm ON tm.tenant_id=p.tenant_id AND tm.user_id=$3
+      WHERE i.project_id=$1 AND i.id=$2
+    `,[projectId,id,user]);
+    if(!scoped.rowCount)fail(404,'问题不存在或无权限');
+    // 51 rows make truncation explicit instead of silently hiding history.
+    const {rows}=await pool.query<{
+      id:string;from_status:string;to_status:string;issue_version:number;
+      note:string;actor_id:string;occurred_at:Date;
+    }>(`SELECT id,from_status,to_status,issue_version,note,actor_id,occurred_at
+      FROM project_issue_transitions
+      WHERE project_id=$1 AND issue_id=$2 AND issue_version<COALESCE($3::int,2147483647)
+      ORDER BY issue_version DESC LIMIT 51`,
+      [projectId,id,paging.beforeVersion??null]);
+    return {history:rows.slice(0,50),
+      nextBeforeVersion:rows.length>50?rows[49].issue_version:null};
+  });
+
   const decisionSchema=versioned.extend({decision:z.enum(['approve','reject'])});
   app.post('/projects/:projectId/pm/changes/:itemId/decide',async req=>{
     const projectId=context(req),user=await authenticated(req);
