@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { pool, type DbClient } from '../../../packages/core/src/db.ts';
 import { executePmCommand, type PmMutation } from '../../../packages/core/src/pm-command.ts';
 import { assertProject, type ProjectAction, type ProjectRole } from '../../../packages/core/src/permissions.ts';
+import { lockTaskDependencyGraph } from '../../../packages/core/src/delivery/dependency-policy.ts';
 
 const uuid=z.string().uuid();
 const title=z.string().trim().min(1).max(250);
@@ -279,13 +280,16 @@ export function registerPmRoutes(app:FastifyInstance,
       projectId,actorId:user,idempotencyKey:input.idempotencyKey,
       action:'pm.plan',kind:'pm.dependency.created.v1',payload:input,
       mutate:async(db:DbClient)=>{
-        // Lock the entire project's graph, preventing concurrent cycle creation.
-        await db.query('SELECT pg_advisory_xact_lock(hashtextextended($1,0))',
-          ['pm-dependencies:'+projectId]);
-        const known=await db.query(`SELECT id FROM tasks WHERE project_id=$1
-          AND id=ANY($2::uuid[]) FOR KEY SHARE`,
+        // Serialize both dependency inserts and dependent task completion.
+        await lockTaskDependencyGraph(db,projectId);
+        const known=await db.query<{id:string;status:string}>(`SELECT id,status FROM tasks
+          WHERE project_id=$1 AND id=ANY($2::uuid[]) FOR SHARE`,
           [projectId,[input.dependentTaskId,input.prerequisiteTaskId]]);
         if(known.rows.length!==2)fail(404,'任务必须都属于同一项目');
+        const byId=new Map(known.rows.map(t=>[t.id,t.status]));
+        if(byId.get(input.dependentTaskId)==='done'&&
+          byId.get(input.prerequisiteTaskId)!=='done')
+          fail(409,'不能为已完成任务新增未完成的前置任务');
         const cycle=await db.query(`WITH RECURSIVE reachable(id) AS (
           SELECT $3::uuid UNION
           SELECT d.prerequisite_task_id FROM task_dependencies d
