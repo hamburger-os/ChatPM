@@ -2,12 +2,10 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import type { Person, Progress, Project, Proposal, Report, Risk, Task, User } from './client';
 import { json, request } from './client';
-import AdminModelPanel from './AdminModelPanel';
-import OrganizationPanel from './OrganizationPanel';
 
-type Tab='tasks'|'proposals'|'reports'|'settings'|'organization'|'admin';
-export default function WorkspaceDetails({project,tenantId,user}:{
-  project:Project|null;tenantId:string;user:User;
+type Tab='tasks'|'proposals'|'reports'|'settings';
+export default function WorkspaceDetails({project,user}:{
+  project:Project|null;user:User;
 }){
   const [tab,setTab]=useState<Tab>('tasks');
   const [tasks,setTasks]=useState<Task[]>([]);
@@ -80,18 +78,13 @@ export default function WorkspaceDetails({project,tenantId,user}:{
   }
   return <aside className="details">
     <div className="tabs">
-      {(['tasks','proposals','reports','settings',
-        ...(tenantId?['organization' as const]:[]),
-        ...(user.is_system_admin?['admin' as const]:[])] as Tab[]).map(t=>
+      {(['tasks','proposals','reports','settings'] as Tab[]).map(t=>
         <button key={t} className={tab===t?'active':''} onClick={()=>setTab(t)}>
-          {({tasks:'任务',proposals:'AI 待确认',reports:'汇报',settings:'设置',
-            organization:'组织管理',admin:'系统 AI'})[t]}
+          {({tasks:'任务',proposals:'AI 待确认',reports:'汇报',settings:'项目设置'})[t]}
         </button>)}
     </div>
     <div className="detail-content">
-    {tab==='admin'&&user.is_system_admin&&<AdminModelPanel/>}
-    {tab==='organization'&&tenantId&&<OrganizationPanel tenantId={tenantId}/>}
-    {!project&&tab!=='admin'&&tab!=='organization'&&<p className="hint">请先选择或创建项目。</p>}
+    {!project&&<p className="hint">请先选择或创建项目。</p>}
     {project&&tab==='tasks'&&<>
       <h3>待审核的进度证据 ({progress.filter(x=>x.status==='pending').length})</h3>
       {progress.filter(x=>x.status==='pending').map(x=><article className="item" key={x.id}>
@@ -179,7 +172,7 @@ export default function WorkspaceDetails({project,tenantId,user}:{
         <h3>AI 助手</h3>
         <label className="check"><input type="checkbox" checked={settings.aiEnabled}
           onChange={e=>setSettings({...settings,aiEnabled:e.target.checked})}/>启用 AI 消息分析</label>
-        <p className="hint">供应商、模型与密钥仅由系统总管理员统一管理。</p>
+        <p className="hint">供应商、模型与密钥由系统管理员在「系统管理」中统一维护。</p>
         <h3>工作日提醒</h3>
         <label className="check"><input type="checkbox" checked={settings.workStart!==null}
           onChange={e=>setSettings({...settings,workStart:e.target.checked?9:null,
