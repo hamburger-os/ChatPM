@@ -83,12 +83,8 @@ export function registerAdminModelRoutes(app:FastifyInstance,
     await admin(req);
     const id=uuid.parse((req.params as {id:string}).id);
     const connection=await resolveProviderCatalogConfig(id);
-    // A DB-backed throttle also works across multiple API processes.
-    const allowed=await pool.query(`INSERT INTO ai_provider_checks(provider_id,last_checked_at)
-      VALUES($1,NOW()) ON CONFLICT(provider_id) DO UPDATE SET last_checked_at=NOW()
-      WHERE ai_provider_checks.last_checked_at<NOW()-INTERVAL '10 seconds'
-      RETURNING provider_id`,[id]);
-    if(!allowed.rowCount)denied(429,'请等待 10 秒再重新获取模型目录');
+    // Catalog metadata fetches are admin-only and non-billable. Permit an
+    // immediate repeat after completion; UI prevents simultaneous clicks.
     try{return await discoverProviderModels(connection);}
     catch(error){
       const code=error instanceof Error?error.message:'';
@@ -167,39 +163,44 @@ export function registerAdminModelRoutes(app:FastifyInstance,
   app.post('/admin/ai/models/:id/test',async req=>{
     await admin(req);
     const id=uuid.parse((req.params as {id:string}).id);
+    const mode=z.object({mode:z.enum(['quick','full']).default('quick')})
+      .strict().parse(req.body??{}).mode;
     const config=await resolveModelConfig(id,true).catch(()=>denied(400,'模型配置不可用'));
+    // Tests invoke a billable model. Preserve the per-model test cooldown.
     const check=await pool.query(`INSERT INTO ai_model_checks(model_config_id,last_test_at)
       VALUES($1,NOW()) ON CONFLICT(model_config_id) DO UPDATE SET
       last_test_at=NOW() WHERE ai_model_checks.last_test_at<NOW()-INTERVAL '30 seconds'
       RETURNING model_config_id`,[id]);
-    if(!check.rowCount)denied(429,'每个模型最多每 30 秒测试一次');
+    if(!check.rowCount)denied(429,'每个模型最多每 30 秒测试一次，以避免误触发计费调用');
     const started=Date.now();
     const identity=modelAuditIdentity(config);
     const codeFor=(error:unknown):string=>{
       const value=error instanceof Error?error.message:'';
       return /^MODEL_[A-Z0-9_]+$/.test(value)?value:'MODEL_CONNECTION_FAILED';
     };
-    // A lightweight test deliberately avoids strict JSON output options.
-    // A successful plain reply is not enough to enable ChatPM's AI analysis.
-    try{
-      await probeModelText(config);
-    }catch(error){
-      return {ok:false,textOk:false,structuredOk:false,
-        errorCode:codeFor(error),latencyMs:Date.now()-started,model:identity};
+    let textLatencyMs:number|undefined;
+    if(mode==='full'){
+      try{
+        await probeModelText(config);
+      }catch(error){
+        return {ok:false,mode,textOk:false,structuredOk:false,
+          errorCode:codeFor(error),latencyMs:Date.now()-started,model:identity};
+      }
+      textLatencyMs=Date.now()-started;
     }
-    const textLatencyMs=Date.now()-started;
     try{
       const result=await callStructuredLLM(config,
         '这是匿名结构化输出测试，不包含真实项目资料。仅返回 JSON 对象 {"ok":true}。',
         {type:'object',additionalProperties:false,required:['ok'],properties:{ok:{type:'boolean'}}});
       if(!result||typeof result!=='object'||(result as {ok?:unknown}).ok!==true)
         throw new Error('MODEL_TEST_CONTENT_MISMATCH');
-      return {ok:true,textOk:true,structuredOk:true,
-        textLatencyMs,latencyMs:Date.now()-started,model:identity};
+      return {ok:true,mode,textOk:mode==='full'?true:null,structuredOk:true,
+        ...(textLatencyMs!==undefined?{textLatencyMs}:{}),
+        latencyMs:Date.now()-started,model:identity};
     }catch(error){
-      return {ok:false,textOk:true,structuredOk:false,
-        errorCode:codeFor(error),textLatencyMs,
+      return {ok:false,mode,textOk:mode==='full'?true:null,structuredOk:false,
+        errorCode:codeFor(error),
+        ...(textLatencyMs!==undefined?{textLatencyMs}:{}),
         latencyMs:Date.now()-started,model:identity};
     }
-  });
-}
+  });}
