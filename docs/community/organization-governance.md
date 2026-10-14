@@ -17,6 +17,10 @@ npm run admin:grant -- --email=admin@example.com --confirm
 ```
 以管理员账号登录，在「系统 AI」添加模型名称、模型 ID、API 地址、协议与 Key，启用并设为默认。项目 owner 仅开启/关闭项目 AI 分析。更换 `MODEL_ENCRYPTION_KEY` 会使已有模型凭据无法解密，必须计划重新配置。请勿在公网 HTTP 上运行真实数据。
 
+### 操作审计与权限撤销
+
+部门、项目组合、项目集、项目归类、成员角色和资源投入等组织管理写入由服务器重新检查当前组织管理员身份。成功写入和组织审计记录作为一次原子操作保存；如果校验或审计失败，不会留下部分组织修改。已被撤销管理员角色的账号不能继续通过先前加载的页面操作。组织成员身份本身不授予跨项目聊天访问权。
+
 ### 当前限制
 这是实验性功能：尚无 SSO、邮件邀请、跨项目基线/投资分析、真实任意模型兼容认证或生产级安全验收。
 
@@ -36,6 +40,10 @@ Only the platform system administrator can edit models in the "System AI" panel;
 npm run admin:grant -- --email=admin@example.com --confirm
 ```
 Log in as the promoted account. Open System Management → AI Service Center, create a provider connection (endpoint, protocol and encrypted API key), then register its models and select an enabled default. Project owners may enable or disable AI for their project. Rotating `MODEL_ENCRYPTION_KEY` makes previously encrypted model credentials unreadable and requires a planned reconfiguration. Do not run sensitive deployments over public HTTP.
+
+### Operation audit and administrator revocation
+
+Organization management writes—including departments, portfolios, programs, project classification, membership roles, and resource allocations—recheck the current organization administrator's role on the server. A successful write and its organization audit record are committed atomically; validation or audit failure leaves no partial organization change. A user whose administrator role has been revoked cannot keep modifying the organization from an already-open page. Organization membership does not grant access to other projects' conversations.
 
 ### Limitations
 Experimental: SSO, invitation emails, cross-project benefits analytics, universal model compatibility certification and production security acceptance remain outstanding.
