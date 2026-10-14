@@ -181,3 +181,9 @@
 ## ADR-035 · 可重复黄金评测，不伪造模型质量（2026-10-15）
 
 新增与当前项目分析 Prompt 和 JSON Schema 同源的合成样例/评分器；CLI 在明确 `PM_EVAL_LIVE=1` 且有部署方密钥时才能调用实际模型，不使用生产聊天。CI 验证样例覆盖/评分器正确性和提示版本，不假定 AI 质量已经通过；对当前不支持的 Commitment/Issue/Decision/Change/Acceptance/Intervention 另列 Coverage Gap，不混入误导性的成功率。不新增自治 Agent，不引入 Shell/文件模型工具。
+
+## ADR-036 · 正式 Issue 生命周期与版本化历史（2026-10-15）
+
+**决定：** 扩展已存在的 `project_issues`，而不是创建第二套不兼容的问题记录，新增按项目复合外键引用的 `project_issue_transitions` 状态事件表。现有问题保持 `open` 或 `resolved`；新增闭环 API 支持 resolve/reopen 两种受控状态转换，所有写入复用正式 PM CommandReceipt/DomainEvent/Outbox 事务。UI 为授权用户展示历史，只有 owner/manager 可更改状态，AI 不可自动解决。
+
+**选用原因：** 不丢失多次解决/复发历史，并为周报及整改后核验提供事实基础。**代价：** 更多小表和版本约束；不直接计算实际整改效果，也不标榜 PMBOK Issue/Change 的所有流程已实现。**不选：** 在单个 `resolution_note` 字段覆盖历史、跨项目引用和成员离职时删除操作者记录。

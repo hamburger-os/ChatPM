@@ -190,3 +190,7 @@ AI 事件、规则提醒与周期报告 Runner 的应用入口分别归 `package
 ## ADR-035 · 黄金评测契约
 
 `activity schema`、`buildActivityPrompt` 必须与 `ConfiguredLLMProvider.analyzeWork` 实际生产请求同源，不允许评测用的是另一个更容易的 Prompt；可执行 evaluator 的 input 标记 schemaVersion/promptVersion、caseId、coverage 和 expectedKinds，评分绝不执行领域写入。CI 的 `npm run test:ai-evals` 仅校验 Fixtures 与 Scorer/安全反例；真实效果必须通过显式 `PM_EVAL_LIVE=1 npm run eval:pm:live` 生成匿名化汇总。未覆盖的关键领域能力要在评测结果中标识为 unsupported，不得计入 passed。
+
+## ADR-036 · Issue 状态流转契约
+
+新迁移 `014_issue_transitions.sql` 为既有 `project_issues` 添加不可覆写的状态流转历史。正式 API：`POST /projects/:projectId/pm/issues/:itemId/transition` 输入 `{idempotencyKey,expectedVersion,decision:'resolve'|'reopen',note}`；`GET /projects/:projectId/pm/issues/:itemId/history` 查询同项目历史。仅 owner/manager 可在服务端执行状态更改；只读查询仍严格校验项目和组织成员。执行使用 `executePmCommand`，历史表与业务更新和审计/Outbox 同事务。不得以 AI 对话中的“解决了”自动改变 Issue 状态。
