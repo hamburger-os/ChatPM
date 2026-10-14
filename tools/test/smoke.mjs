@@ -172,12 +172,12 @@ try{
     method:'POST',
     body:{idempotencyKey:randomUUID(),expectedVersion:1,decision:'accept'}});
   assert.equal(conflictReview.status,409,'Stale review version must conflict');
-  const accepted=await api(pm+'/deliverables/'+deliverableId+'/review',{
+  const pmAccepted=await api(pm+'/deliverables/'+deliverableId+'/review',{
     method:'POST',
     body:{idempotencyKey:randomUUID(),expectedVersion:2,decision:'accept'}});
-  assert.equal(accepted.status,200,JSON.stringify(accepted.data));
-  assert.equal(accepted.data.item.status,'accepted');
-  assert.equal(accepted.data.item.version,3);
+  assert.equal(pmAccepted.status,200,JSON.stringify(pmAccepted.data));
+  assert.equal(pmAccepted.data.item.status,'accepted');
+  assert.equal(pmAccepted.data.item.version,3);
   const repeatSubmit=await api(pm+'/deliverables/'+deliverableId+'/submit',{
     method:'POST',cookie:cookieB,
     body:{idempotencyKey:randomUUID(),expectedVersion:3}});
