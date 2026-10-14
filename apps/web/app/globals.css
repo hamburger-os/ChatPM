@@ -199,3 +199,42 @@ label{display:grid;gap:7px;font-size:13px;color:#536174}label.check{display:flex
   .management-heading{flex-wrap:wrap}
   .management-heading button{min-height:44px}
 }
+
+
+/* Discovery-first AI model administration. */
+.provider-summary{margin:18px 0;padding:0;max-width:790px;border:1px solid #e3eaf4;border-radius:12px;overflow:hidden}
+.provider-summary div{display:grid;grid-template-columns:minmax(100px,30%) minmax(0,1fr);gap:15px;padding:13px 16px;border-bottom:1px solid #edf1f7}
+.provider-summary div:last-child{border:0}
+.provider-summary dt{color:#728198;font-size:13px}
+.provider-summary dd{margin:0;overflow-wrap:anywhere;font-size:13px;color:#263951}
+.status-chip{padding:6px 11px;border-radius:20px;background:#edf2fa;color:#536782;font-size:12px}
+.catalog-box{border:1px solid #dce6f5;border-radius:13px;background:#fafcff;padding:20px;margin:12px 0 27px}
+.catalog-box>.between{margin:0 0 14px}
+.catalog-box>.between strong{font-size:14px}
+.catalog-search{display:block;font-size:13px;color:#435269}
+.catalog-search input{margin-top:6px}
+.catalog-options{max-height:350px;overflow:auto;border:1px solid #e2e9f3;border-radius:10px;background:white;margin:12px 0}
+.catalog-option{display:flex;align-items:center;gap:12px;padding:12px 14px;border-bottom:1px solid #edf1f7;cursor:pointer;font-size:13px}
+.catalog-option:last-child{border:0}
+.catalog-option input{width:17px;height:17px;flex:none}
+.catalog-option span{display:grid;gap:4px;min-width:0;flex:1}
+.catalog-option strong,.catalog-option small{overflow-wrap:anywhere}
+.catalog-option small{font-size:11px;color:#8290a4}
+.catalog-option em{font-style:normal;color:#718199;font-size:11px}
+.catalog-actions{display:flex;align-items:center;flex-wrap:wrap;gap:9px;margin:9px 0 16px}
+.catalog-actions button{padding:8px 11px;font-size:12px}
+.catalog-error{border:1px solid #f0c7b6;background:#fff5f0;border-radius:9px;padding:12px;color:#924e35;font-size:13px;overflow-wrap:anywhere}
+.catalog-error .hint{display:block}
+.manual-toggle{width:auto;background:transparent;padding:7px 0;color:#2762c6;font-size:13px}
+.manual-fields{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;margin:10px 0}
+.manual-fields label{font-size:12px}
+.manual-fields input{margin-top:5px}
+.model-card-info{min-width:0;overflow-wrap:anywhere}
+.model-advanced{border-top:2px solid #e1e9f5;margin-top:24px;padding-top:16px}
+@media (max-width:750px){
+  .provider-summary div{grid-template-columns:1fr;gap:3px}
+  .catalog-box{padding:12px}
+  .manual-fields{grid-template-columns:1fr}
+  .model-card .actions{gap:6px}
+  .model-card .actions button{min-height:38px}
+}
