@@ -43,13 +43,23 @@ export default function WorkspaceDetails({project,user}:{
     setTab('tasks');
     setSettings({aiEnabled:project.ai_enabled,workStart:project.work_start,
       workEnd:project.work_end,cooldownHours:project.cooldown_hours});
-    const update=()=>{void reload(id).then(x=>{
-      if(!active)return;
-      setTasks(x.tasks);setPeople(x.people);setRisks(x.risks);
-      setProposals(x.proposals);setProgress(x.progress);setReports(x.reports);
-    }).catch(e=>{if(active)setNotice(e.message);});};
-    update();const interval=setInterval(update,5000);
-    return ()=>{active=false;clearInterval(interval);};
+    let inFlight=false;
+    const update=async()=>{
+      if(!active||document.hidden||inFlight)return;
+      inFlight=true;
+      try{
+        const x=await reload(id);
+        if(!active)return;
+        setTasks(x.tasks);setPeople(x.people);setRisks(x.risks);
+        setProposals(x.proposals);setProgress(x.progress);setReports(x.reports);
+      }catch(e){if(active)setNotice(e instanceof Error?e.message:'刷新失败');}
+      finally{inFlight=false;}
+    };
+    void update();
+    const interval=setInterval(()=>void update(),15000);
+    const visible=()=>{if(!document.hidden)void update();};
+    document.addEventListener('visibilitychange',visible);
+    return ()=>{active=false;clearInterval(interval);document.removeEventListener('visibilitychange',visible);};
   },[id]);
   async function act(fn:()=>Promise<void>){
     if(!id)return;

@@ -5,6 +5,7 @@ import { assertProject, canProject, isSystemAdmin, type ProjectRole } from '../.
 import { registerAdminModelRoutes } from './admin-model-routes.ts';
 import { registerGovernanceRoutes } from './governance-routes.ts';
 import { randomUUID } from 'node:crypto';
+import { signedQuotaKey } from '../../../packages/core/src/quota-key.ts';
 import Fastify from 'fastify';
 import cors from '@fastify/cors';
 import cookie from '@fastify/cookie';
@@ -36,7 +37,12 @@ const fail = (code:number,msg:string):never => { throw new ApiError(code,msg); }
 await app.register(cors, { origin, credentials: true });
 await app.register(cookie);
 await app.register(helmet);
-await app.register(rateLimit,{max:100,timeWindow:'1 minute'});
+// Verify signed session identity before choosing a quota bucket. Never trust raw
+// cookies or X-Forwarded-For; anonymous requests remain IP-scoped.
+await app.register(rateLimit,{
+  max:180,timeWindow:'1 minute',
+  keyGenerator: req=>signedQuotaKey(req,serverConfig.SESSION_SECRET),
+});
 
 app.addHook('onRequest', async (req) => {
   if (['POST','PATCH','PUT','DELETE'].includes(req.method) && req.headers.cookie) {
