@@ -42,3 +42,7 @@
 ## ADR-029 · 本次合并切片
 
 已落地：V2 模块/命令/AI 授权/Playbook 目标设计与 ADR；组织管理的全部现有写入路径使用事务命令，在事务内复核管理员身份，与组织审计同成败；新增数据库集成回归。尚未落地：全域 CommandReceipt/DomainEvent、正式 Goal/Deliverable/Issue/Decision/Change、WorkItem 验收流程、独立 Worker runner、ModelInvocation 账本、可执行版本 Playbook、正式 V2 数据转换与全量 E2E。上述目标详见 [分期路线图](v2-delivery-plan.md)，不应按设计文档数量计为完成。
+
+## ADR-030 · 正式项目管理登记簿与命令切片
+
+已在本次分支增加新增迁移 012_pm_domain.sql（不更改存量迁移）及受保护项目 API：目标、里程碑、交付物、问题、决策、变更申请、任务依赖；交付物可由当前被指派人员提交、由 owner/manager 独立验收/退回；变更审批仅 owner，且不可自批；同项目任务依赖阻止自环、环路。新 PM API 使用事务内的项目/租户成员双重鉴权、幂等回执、审计、领域事件、Outbox；Worker 识别并确认记录型 domain.changed，不允许 AI 自动提交。项目原有 Task/Risk/Proposal 接口**暂未统一迁移**，完整 WorkItem 命令标准化、风险处理工作流、跨项目资源冲突、验收 Web 专门界面、模型干预仍未实现。实际测试/CI 结果以对应 PR Head 为准，不能把此条当作验证通过证明。

@@ -162,3 +162,11 @@ Web 端从 `GET /projects` 初始化项目列表和设置面板。该接口返�
 [完整目标命令/事件](../design/command-event-contracts.md) 与 [V2 架构](../design/v2-architecture.md) 定义未来统一边界；目前不是全部具备 CommandReceipt、DomainEvent、ModelInvocation 的实现。组织领域已经使用 organizationCommand 将管理员授权重检、数据库改动和组织审计绑定为单事务。后续逐模块迁移正式写入时不得将未经运行的能力标注为交付。
 
 **权限说明：** 当前正式实现允许 owner 与 manager 审核候选（proposal.approve），成员管理、报告发布及项目 AI 设置仅 owner 有权操作。系统管理员独享模型凭据配置。以 permissions.ts 和实际服务端路由为准。
+
+## ADR-030 当前可执行入口
+
+- `packages/core/sql/012_pm_domain.sql` 新增正式 PM 目标/里程碑/交付物/问题/决策/变更申请/依赖及项目级命令回执与领域事件。
+- `packages/core/src/pm-command.ts` 是新增 PM API 专属的 Command Executor；调用者只传入经过校验的 payload，命令在当前事务内校验 project_members 和 tenant_members，保持审计/事件/Outbox/回执同提交。
+- `apps/api/src/pm-routes.ts` 的 `GET /projects/:projectId/pm` 读取登记簿，`POST /projects/:projectId/pm/:kind` 创建正式目标/里程碑/交付物/问题/决策/变更申请（kind 白名单）；独立状态接口处理交付物 submit/review、变更审批及任务依赖。新 POST 请求必须传 UUID idempotencyKey，状态变更还必须传 expectedVersion。
+- `apps/worker/src/worker.ts` 消费 domain.changed 时校验它确实引用了同项目 domain_events，不发消息、不调用模型、不得改变业务状态；未知类型仍失败重试。
+- `tools/test/smoke.mjs` 和权限单元回归覆盖跨项目、重复请求、审批和依赖环。项目管理专门 UI 与统一旧 Task API 命令化是后续内容，不可声称已经交付。

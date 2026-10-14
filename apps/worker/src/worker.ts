@@ -145,6 +145,18 @@ async function processEvents() {
   const events=await claimEvents();
   for(const event of events) {
     try {
+      if(event.kind==='domain.changed'){
+        // Record-only domain events have no automatic AI side effects.
+        // Ensure an actual same-project event exists before acknowledging.
+        const eventId=(await pool.query<{id:string}>(`
+          SELECT d.id FROM domain_events d JOIN outbox_events o
+            ON o.project_id=d.project_id
+          WHERE o.id=$1 AND o.project_id=$2 AND d.id=(o.payload->>'domainEventId')::uuid
+        `,[event.id,event.project_id])).rows[0]?.id;
+        if(!eventId)throw new Error('DOMAIN_EVENT_NOT_FOUND');
+        await finishEvent(event);
+        continue;
+      }
       const result=await runAnalysis(event);
       if(result && event.message_id)
         await recordAnalysis(event,result.kind,result.status,result.modelName);
