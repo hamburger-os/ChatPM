@@ -103,3 +103,7 @@ CI 新增 `tools/test/task-linkage-smoke.mjs`：PostgreSQL 创建正式任务与
 ## ADR-032 · /review AI 授权和模型调用审计检查点
 
 检查：项目 AI 关闭后不得发出新请求/消耗调用额度；版本只在真实开关变更时递增；每次真正模型调用产生独立审计记录，失败/重试不覆盖先前行；不能存聊天原文、密钥、原始上游错误及可能包含私人文本的未加密输入 SHA；Zod/HTTP 异常只保存受限失败代码；owner-only GET 不能被普通成员或其他项目用户读取；Worker 在被撤权后安全放弃排队事件。SQLite/模拟 Provider 不足以替代 PostgreSQL、真实供应商、生产 egress 及关闭模型瞬间的网络请求竞态测试。完整五项 CI 与人工审查要基于最新提交。
+
+## ADR-033 · Worker 重构专项 /review
+
+核对原 Worker 的 processEvents/processReminders/processReports 移入独立核心 Runner 后无业务 SQL 变更；保留 Outbox claim_token/错误重试/撤权后放弃、项目消息 nonce、提醒工作时间与冷却、周月报幂等和快照一致性；启动、15s Tick、健康心跳、IPC/Windows 优雅关闭不改变；新增纯函数回归覆盖逾期、当天和阻塞文案。不得声称 API 已完成整体薄路由重构或生产多 Worker 扩缩容验收。合并门禁为最终 PR SHA 五项 CI，未解决 Review 线程清零。

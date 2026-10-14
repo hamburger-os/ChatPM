@@ -40,3 +40,9 @@ Identity/Tenancy、Projects、Conversations、Work、Risk/Decision、AI Orchestr
 目标为共用产品核心的官方 SaaS 与自部署，云端与本地模型通过适配器接入。只有在实测需求充分时才增加其他分布式组件，避免建立无使用依据的兼容层。
 
 详见 [部署架构和跨平台运行契约](deployment.md)，完整生产安全验收仍未完成。
+
+## ADR-033 · Worker 运行任务模块边界
+
+Worker 是独立部署的调度进程，而非所有领域业务的所有者。将事件/AI 候选处理、规则提醒、周期报告分为 `Conversation.AIEventRunner`、`Automation.ReminderRunner` 与 `Reporting.PeriodRunner`，在 `packages/core/src/` 内共享数据库事务与项目时区策略；Worker 仅调度，不重复实现相关 SQL。消息事件/AI 候选逻辑保持原有 SQL 与模型行为，但代码移入 `packages/core/src/conversation/ai-event-runner.ts`。进程入口只调度、心跳和优雅关闭。
+
+该抽取不改变 Outbox 至少一次投递、提醒静默窗口/冷却时间、消息 nonce 幂等或历史报告的“当前项目周期状态快照”限制，也不引入 Redis、微服务或复杂工作流引擎。API/Worker 同源对领域命令的完全收敛仍为目标，非本批已完成。

@@ -167,3 +167,7 @@
 **决定：** `projects.ai_enabled` 继续是模型出站许可的唯一当前状态；PostgreSQL 触发器维护 `ai_authorization_version` 并保证 UI/后台脚本更改保持同一规则。Worker 的单次模型操作在调用前检验开启状态及版本，重试与失败独立写入只含脱敏字段的 `ai_model_invocations`。ModelInvocation 是外部尝试而非 AI 自动执行许可；正式任务与风险仍需人审批。
 
 **不选：** 复制多份互相冲突的 `enabled` 字段、以 Chat 原文作为账本、估算 token 成本当作真实账单、在外部 60 秒网络请求期间长期持有数据库写锁、隐式供应商故障切换。**局限：** 数据库校验与网络请求之间有不可消除的 TOCTOU 窗口，生产仍需网络 egress 策略；细粒度 ProjectAIAuthorization、组织数据分级与真实费用需要后续实现。**复审：** CI 与真实模型评测明确验证网络调用幂等和成本，并完成出站限制后升级。
+
+## ADR-033 · Worker 调度与核心业务 Runner 分离（2026-10-14）
+
+**选择：** 将三条独立 Runner——AI 事件、规则提醒与周期报告——从 apps/worker/src/worker.ts 的进程启动文件移到 packages/core/src/conversation/ai-event-runner.ts、packages/core/src/automation/reminder-runner.ts 与 packages/core/src/reporting/period-runner.ts，保留同一 PostgreSQL 事务/工作时区/重试设计与实际运行行为。Worker 仅引用 runner 并负责 tick、心跳与 graceful shutdown。**不选：** 跨进程 RPC、额外队列、改变消息事件消费业务语义、引入新的通用调度框架。**复审：** 多 Worker 租约与 SQL 语义出现实际性能需求后再调整。验收以 CI 事件/提醒/报告集成与原生/Docker 运行测试为准。

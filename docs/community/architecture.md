@@ -61,3 +61,9 @@ English: Task deadlines are local calendar dates. AI links progress/blocker/comp
 ### Versioned AI authorization and invocation audit
 
 Project owners can turn AI on or off, which updates an authorization revision. New model calls recheck the current authorization; disabled projects should not initiate another model request. Individual attempts retain redacted model/prompt identities and success/failure diagnostics without copying chat contents, API keys, or raw provider responses. Missing token usage is shown as unknown, not zero. This is a first-stage audit mechanism, not a complete enterprise policy engine, exact cost ledger, or production security certification.
+
+### Worker 模块化与提醒文案 / Worker modularity and reminders
+
+中文：Worker 进程负责运行调度和健康心跳；消息事件、规则提醒和周月报分别由核心业务 Runner 管理。逾期提醒会明确表达逾期天数，截止日显示“今天截止”；这属于内部结构与沟通准确性改进，不意味着已经引入独立队列、分布式 Worker 或自动项目决策。
+
+English: The Worker process owns scheduling and health checks, while message events, rule-based reminders, and scheduled reports run in separate core modules. Overdue reminders state the elapsed days and due-today reminders clearly say the deadline is today. This refactor does not introduce distributed job orchestration or autonomous project decisions.
