@@ -134,3 +134,12 @@ Web 端从 `GET /projects` 初始化项目列表和设置面板。该接口返�
 - 受支持协议：Responses、Chat Completions；不支持 Anthropic Messages 原生格式与自动目录发现。管理员指定模型显示名称和请求 ID；推理参数使用显式 `reasoning_format`，不能以域名推断。非管理员请求必须 403。
 - 009 迁移为既有模型配置搬迁密钥，并删除旧列。Worker 调用默认已启用模型与已启用提供商的组合；没有可用连接则拒绝模型调用。无自动向其他模型的隐式降级。
 - 文档、单元、数据库、API、Worker、部署和前端构建必须共同验收；生产级网络 egress、DNS 防重绑定、实际供应商兼容性与本地 Windows 端 E2E 仍属于发布风险。
+
+
+## ADR-026 · AI 模型目录与批量注册契约
+
+- `POST /admin/ai/providers/:id/discover`：只允许系统管理员读取已持久化供应商，服务端使用解密的 Key 向其 Base URL 下的 `/models` 发起受限 GET；返回最多 500 条规范化的 ID、name、ownedBy、latencyMs、truncated。目录发现错误不泄漏上游响应体或 Key，10 秒内同连接限频。
+- `POST /admin/ai/models/import`：只允许系统管理员，以 `{providerId,models:[{id,name?}]}` 输入 1–50 个模型，数据库事务插入，唯一约束保证同连接 ID 幂等。返回 created/skipped，新增项禁用，不能自动成为平台默认。
+- `POST /admin/ai/models/:id/test`：允许尚未启用的连接/模型进行匿名 JSON 探测，不改变实际业务调用的启用条件。实际业务继续只使用已启用的默认模型和已启用的供应商，不能隐式切换目标。
+- SSRF：目录 discovery 使用 DNS/IP 私网预检，禁止跟随重定向，流式响应限制 512 KB；管理员目标网络访问仍受生产出站防火墙控制，不能将解析预检当成连接级目标固定。
+- Web：保存供应商后尝试目录发现，失败保留保存结果；浏览器不见 Key，不提交外部发现 URL；已注册 ID 不可重复勾选；高级设置与选择操作分别管理草稿；测试通过状态仅按本次会话展示，不宣称持久化验证。
