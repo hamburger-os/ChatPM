@@ -198,3 +198,7 @@ AI 事件、规则提醒与周期报告 Runner 的应用入口分别归 `package
 ## ADR-037 · 任务完成条件与项目授权入口
 
 `packages/core/src/identity/project-access.ts` 实现 `lockProjectAccess(db,projectId,actorId)`，为正式 PM Command 与旧任务写入返回当前 tenant/role（`FOR SHARE OF pm,tm`）；所有正式权限判定在**同一业务事务中**执行。任务负责人被指派前也验证仍是项目及组织有效成员。新增依赖、任务提交为 done 都在同一 `pm-dependencies:${projectId}` 项目级顾问锁内校验顺序与完成条件。不可用已缓存页面中的 manager/member 角色作为可写权限。现有旧 Task 路由未统一到完整 CommandReceipt，不得宣称全域迁移。
+
+## ADR-038 · EvidenceSource / ProjectClaim 当前代码边界
+
+`015_evidence_claims.sql` 建立 `project_evidence_spans` 和 `project_claims`，均由项目复合 FK 约束。正式服务在事务内验证源消息 `kind='user'`、项目 ID、原作者与 code-point 范围（0-based start inclusive/end exclusive），由服务端截取 quote 并保存；来源消息文本视作不可信数据，不授予任何命令能力。允许 owner/manager 录入其他人来源的待核实主张，普通成员仅可为自己的消息创建；只允许原作者确认措辞与分类，经理可驳回。 `source_acknowledged` 不等同于任务 done、交付物 accepted 或 ChangeRequest approved。统一 CommandReceipt/DomainEvent/Outbox/Audit，服务端必须每次写入重新验证项目与组织成员身份；AI 仅可在未来生成另需审核的 pending 主张。
