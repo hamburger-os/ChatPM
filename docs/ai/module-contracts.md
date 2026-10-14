@@ -29,7 +29,7 @@
 - `PostMessage`：每次必须验证项目成员与团队成员资格；事务内统一插入 Message 和 Outbox；项目级锁保证 seq 提交顺序、nonce 保证幂等。
 - `AnalyzeMessage`：仅在项目 Owner 启用模型时触发；模型输出需 Schema + Zod 校验，只存带来源的候选，不直接写正式 Task/Risk。
 - `ClarifyProposal`：成员消息含明确 `【候选:UUID】` 才关联现有线程；重复回复幂等，仅更新待确认线索。
-- `ApproveProposal`：只有 Owner 可以确认/拒绝；创建正式记录并审计，候选不可被重复确认。
+- `ApproveProposal`：Owner / Manager 可按 proposal.approve 确认/拒绝；创建正式记录并审计，候选不可被重复确认。
 - `UpdateTask`：版本乐观锁；Owner 可以调整计划，指派成员仅能修改自己的任务状态。
 - `RunFollowUp`：检查最新状态、工作时段与冷却；静默不能视为已发送；事件重复不导致重复提醒。
 - `GenerateReport`：SQL 单次快照，完整聚合但有界明细；人工只覆盖草稿，已发布内容不可变；定时报告每项目/类型/周期至多创建一次。
@@ -97,25 +97,22 @@ Web 端从 `GET /projects` 初始化项目列表和设置面板。该接口返�
 - `deploy.mjs` 固定 Compose 项目名并使用 `--env-file`，在替换任何占位秘密前先检查已有名为 `chatpm_postgres_data` 的数据卷；原密码遗失需人工恢复。
 - `run.mjs` 将根环境变量交给 API、Worker 和 Next 子应用；Worker 接收 `{type:'chatpm:shutdown'}` IPC 消息，在完成 tick/关闭连接池后断开 IPC 退出。这是受限时间内的进程级排空，不是持久消息事务回滚。
 
-## 可配置模型传输契约（ADR-019）
-
-- 部署级模型配置由服务器管理员控制：`LLM_API_KEY`（空值禁用调用）、`LLM_BASE_URL`（只接受无凭据/query/fragment 的绝对 URL；外部须 HTTPS，回环或 `host.docker.internal` 可 HTTP）、`LLM_MODEL`、`LLM_API_STYLE=responses|chat-completions`。
-- `packages/core/src/llm-transport.ts` 是无数据库副作用的模型 HTTP 适配；`ai-provider.ts` 在每次业务调用时先校验配置、原子预留项目日额度，再解析并通过 Zod 校验，来源/Prompt/模型版本随候选落库。无额外回退模型、错误不产生正式领域记录。
-- Docker 仅 API、Worker、迁移任务读取服务端 LLM 变量，Web 独立配置无 Key；原生从项目根目录环境读取。变更模型后重启 Worker。
-
-**开启 AI 的统一校验**：`PATCH /projects/:id/settings` 对 `aiEnabled=true` 调用与 Worker 一致的 `readLLMSettings`；`model_name` 保存模型/端点主机/协议/端点指纹复合身份（密钥和 URL path 不落库）。所有模型请求必须 `redirect:'error'`。
+## 平台级模型配置与传输（当前有效）
+- 系统管理员维护 ai_provider_connections 与 ai_model_configs；项目负责人不持有、选择或测试独立项目供应商 Key，项目成员只使用管理员启用的默认模型。
+- 传输适配仍支持 Responses 与 Chat Completions；服务器按管理员配置的协议、reasoningFormat 和限额调用，不以 DeepSeek/OpenAI 字样推断供应商能力。
+- 凭据由 MODEL_ENCRYPTION_KEY 加密，永不回传浏览器；目录发现与匿名 quick/full 模型测试仅 system admin 授权。
+- 项目通过 PATCH /projects/:id/settings 控制 aiEnabled；Worker 独立验证项目授权和当前默认模型，输出只能生成 Evidence / Proposal / 只读回复。完整 AI 授权版本化尚属 V2 目标。
+- 此处不继续维护已废弃的项目级 LLM_* 模型设置操作流程；历史决策留在 docs/design/decision-log.md。
 
 ## 原生前台一键停止（ADR-020）
 
 `npm start` 和 `npm run dev` 使用 `run.mjs` 同目录实例独占的回环控制服务；`npm run stop` 是一个不依赖 npm 已安装模块的 Node.js 内置工具，读取私有 `.chatpm-run.json` 中的端口/随机令牌，向当前受控管理器申请停止，等 Web、API、Worker 子进程退出才返回成功。Windows Worker 沿用现有 IPC 关闭。PID 仅用来确认状态是否陈旧，禁止按 PID 自动杀进程。Docker Compose / WinSW / systemd 使用各自停止命令，启动之前的旧版进程无法通过新控制协议停止。
 
-## ADR-021 · AI 项目配置、上下文与运行记录
-
-- 项目负责人通过 `GET/PUT /projects/:id/model` 管理固定供应商 `server|openai|deepseek`，项目成员无访问密钥配置的权限。内置 OpenAI/DeepSeek Base URL 固定于服务端，禁止由浏览器提交任意 URL。服务端模式继续读取部署管理员的 `LLM_*`；数据库保存项目 Key 的 AES-GCM 密文，并从服务器 SESSION_SECRET 派生密钥，不会给客户端返回密钥和密文。更换 SESSION_SECRET 会使已有项目 Key 失效，需重新保存。
-- `POST /projects/:id/model/test` 只用无项目资料的固定 JSON 探测，项目 Owner 授权和 PostgreSQL 每项目 30 秒限频；响应仅返回通过状态、延时和匿名模型身份，不返回上游原文。真实联网联调和供应商计费风险仍由部署者承担。
-- `GET /projects/:id/ai/runs` 只有 Owner 可查，仅包含源消息、结果/阶段、模型身份、已脱敏错误码和时间戳；不会回显聊天全文或 Key。Worker 对每条开启了 AI 的消息记录处理结果，失败仍保留 Outbox 重试语义。
-- `@AI` 触发只读问答，输出不能调用正式变更；普通消息走有界分层上下文的候选提取，近期唯一澄清追问可自然答复，多候选或不明确的回复仍需显式 `【候选:UUID】`。所有候选继续人工审批；提问也按项目 UTC 日请求限额计数。
-- 上下文首先读取同项目正式任务/风险和最后 12 条讨论，明确区分可信事实和非可信聊天并按配置预算裁剪，不保存虚构摘要，不支持跨项目历史与通用 Agent 工具。
+## 项目上下文和运行记录（当前有效）
+- 项目 Owner 显式打开 AI 后，模型仅能读取同项目的有界正式任务/风险和近期聊天，不支持跨项目检索。结构化输出接受 JSON Schema 与 Zod 双层约束；候选/进度审批始终是独立于任务完成状态的操作。
+- 分析源消息、模型身份、错误码与阶段可通过有权限的项目接口查看；具体角色以服务器接口授权为准。当前 ai_analysis_runs 尚不是每次实际 ModelInvocation 的独立账本。
+- @AI 只读问答不具备正式项目变更工具。自然澄清关联限唯一近期线程，歧义时需显式候选 ID。
+- 系统模型由管理员集中维护；不允许再从项目端提交 server|openai|deepseek 品牌配置或独立项目 API Key。
 
 ## ADR-022 · 任务进度证据、日历期限及提前检查
 
@@ -164,4 +161,4 @@ Web 端从 `GET /projects` 初始化项目列表和设置面板。该接口返�
 
 [完整目标命令/事件](../design/command-event-contracts.md) 与 [V2 架构](../design/v2-architecture.md) 定义未来统一边界；目前不是全部具备 CommandReceipt、DomainEvent、ModelInvocation 的实现。组织领域已经使用 organizationCommand 将管理员授权重检、数据库改动和组织审计绑定为单事务。后续逐模块迁移正式写入时不得将未经运行的能力标注为交付。
 
-**当前权限校正：** 当前正式实现允许项目 owner 和 manager 审核任务/风险的 ProposedChange（proposal.approve）；此前本文件“只有 Owner”属于过时描述。项目成员管理、报告发布与项目 AI 设置仍仅 owner 有权操作。请以 packages/core/src/permissions.ts 及服务端路由复核最终授权，而非以 Web 按钮或旧文字作为权限来源。
+**权限说明：** 当前正式实现允许 owner 与 manager 审核候选（proposal.approve），成员管理、报告发布及项目 AI 设置仅 owner 有权操作。系统管理员独享模型凭据配置。以 permissions.ts 和实际服务端路由为准。
