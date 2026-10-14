@@ -471,6 +471,29 @@ try{
   const dependencies=await api(pm+'/dependencies');
   assert.equal(dependencies.status,200);
   assert.equal(dependencies.data.dependencies.filter(x=>x.dependent_task_id===tid).length,1);
+  const prematureCompletion=await api('/projects/'+pid+'/tasks/'+tid,{
+    method:'PATCH',body:{status:'done',version:1}});
+  assert.equal(prematureCompletion.status,409,
+    'A dependent task cannot complete before its predecessor');
+  const unmodified=(await db.query('SELECT status,version FROM tasks WHERE id=$1',[tid])).rows[0];
+  assert.equal(unmodified.status,'todo');
+  assert.equal(unmodified.version,1,'Blocked completion must roll back');
+  const completedStandalone=await api('/projects/'+pid+'/tasks',{method:'POST',body:{
+    title:'Already delivered separate work',detail:'',assigneeId:uid,dueDate:null}});
+  assert.equal(completedStandalone.status,201,JSON.stringify(completedStandalone.data));
+  const completedStandaloneId=completedStandalone.data.task.id;
+  const standaloneDone=await api('/projects/'+pid+'/tasks/'+completedStandaloneId,{
+    method:'PATCH',body:{status:'done',version:1}});
+  assert.equal(standaloneDone.status,200,'Tasks without prerequisites can finish');
+  const impossibleLateDependency=await api(pm+'/dependencies',{
+    method:'POST',body:{idempotencyKey:randomUUID(),
+      dependentTaskId:completedStandaloneId,prerequisiteTaskId:tid}});
+  assert.equal(impossibleLateDependency.status,409,
+    'Cannot add an unfinished prerequisite to already finished work');
+  const prerequisiteDone=await api('/projects/'+pid+'/tasks/'+prerequisiteTaskId,{
+    method:'PATCH',body:{status:'done',version:1}});
+  assert.equal(prerequisiteDone.status,200,'Predecessor completion is permitted');
+
 
   const progressSource=await api('/projects/'+pid+'/messages',{method:'POST',
     body:{content:'方案初稿已完成，请核对评审',nonce:randomUUID()}});
@@ -528,6 +551,17 @@ try{
     "SELECT next_at >= last_sent_at + INTERVAL '24 hours' AS preserved FROM followup_plans WHERE task_id=$1",
     [tid]);
   assert.equal(cooldown.rows[0]?.preserved,true,'Replanning must preserve last reminder cooldown');
+  const finallyCompleted=await api('/projects/'+pid+'/tasks/'+tid,{
+    method:'PATCH',body:{status:'done',version:replanned.data.task.version}});
+  assert.equal(finallyCompleted.status,200,
+    'Dependent task may finish after the prerequisite is completed');
+  assert.equal(finallyCompleted.data.task.status,'done');
+  const validAfterCompletion=await api(pm+'/dependencies',{
+    method:'POST',body:{idempotencyKey:randomUUID(),
+      dependentTaskId:completedStandaloneId,prerequisiteTaskId:tid}});
+  assert.equal(validAfterCompletion.status,201,
+    'Adding an already-satisfied dependency does not contradict completed work');
+
 
   const candidate=(await db.query(
     `INSERT INTO proposed_changes(project_id,source_message_id,kind,title,detail)
