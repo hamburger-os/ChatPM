@@ -86,6 +86,12 @@ export async function saveProvider(db:DbClient,id:string|null,value:ProviderInpu
   const existing=id?(await db.query<ProviderRow>(
     'SELECT * FROM ai_provider_connections WHERE id=$1 FOR UPDATE',[id])).rows[0]:null;
   if(id&&!existing)throw new Error('PROVIDER_NOT_FOUND');
+  if(id&&existing&&existing.api_style!==value.style){
+    const incompatible=await db.query(`SELECT 1 FROM ai_model_configs
+      WHERE provider_id=$1 AND reasoning_format=$2 LIMIT 1`,[id,
+        value.style==='responses'?'chat-completions-effort':'responses-effort']);
+    if(incompatible.rowCount)throw new Error('MODEL_REASONING_STYLE_MISMATCH');
+  }
   const cipher=value.apiKey?encryptModelKey(value.apiKey):existing?.api_key_ciphertext??null;
   if(value.enabled&&!cipher)throw new Error('MODEL_KEY_REQUIRED');
   const fields=[value.name,url,value.style,cipher,value.enabled];
