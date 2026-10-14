@@ -12,8 +12,8 @@ CREATE TABLE ai_provider_connections (
 -- Lossless one-time relocation of existing credentials, one provider per old
 -- model. Admins may consolidate provider connections in the new interface.
 INSERT INTO ai_provider_connections(id,name,base_url,api_style,api_key_ciphertext,enabled)
- SELECT id,'连接 - '||name,base_url,api_style,api_key_ciphertext,
-        api_key_ciphertext IS NOT NULL
+ SELECT id,left('连接 - '||name,80)||' / '||left(id::text,8),base_url,api_style,
+        api_key_ciphertext,api_key_ciphertext IS NOT NULL
  FROM ai_model_configs;
 ALTER TABLE ai_model_configs
   ADD COLUMN provider_id UUID REFERENCES ai_provider_connections(id) ON DELETE RESTRICT;
@@ -27,3 +27,9 @@ ALTER TABLE ai_model_configs
   DROP COLUMN api_style CASCADE,
   DROP COLUMN api_key_ciphertext CASCADE;
 CREATE INDEX idx_ai_models_provider ON ai_model_configs(provider_id);
+
+-- Models are unique only within a provider; different providers may offer
+-- identical display names and actual model IDs.
+ALTER TABLE ai_model_configs DROP CONSTRAINT ai_model_configs_name_key;
+ALTER TABLE ai_model_configs ADD CONSTRAINT uq_model_provider_name UNIQUE(provider_id,name);
+ALTER TABLE ai_model_configs ADD CONSTRAINT uq_model_provider_request UNIQUE(provider_id,model_id);
