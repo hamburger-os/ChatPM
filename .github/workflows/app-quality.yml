@@ -59,6 +59,8 @@ jobs:
         run: node --import tsx packages/core/test/ai-authorization.integration.ts
       - name: Organization governance transaction integration
         run: node --import tsx packages/core/test/organization.integration.ts
+      - name: Project access revocation integration
+        run: node --import tsx packages/core/test/project-access.integration.ts
       - name: Outbox reliability integration
         run: node --import tsx packages/core/test/outbox.integration.ts
       - name: Mock AI conversation integration
