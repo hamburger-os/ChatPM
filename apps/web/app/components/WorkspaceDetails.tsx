@@ -178,7 +178,7 @@ export default function WorkspaceDetails({project,user}:{
           onChange={e=>setSettings({...settings,workStart:e.target.checked?9:null,
             workEnd:e.target.checked?18:null,cooldownHours:e.target.checked?24:null})}/>启用提醒</label>
         {settings.workStart!==null&&<div className="triple">
-          {(['workStart','workEnd','cooldownHours'] as const).map(field=><label key={field}>{field}
+          {(['workStart','workEnd','cooldownHours'] as const).map(field=><label key={field}>{({workStart:'开始时间（时）',workEnd:'结束时间（时）',cooldownHours:'提醒间隔（小时）'})[field]}
             <input type="number" value={settings[field]??''} onChange={e=>setSettings({...settings,
               [field]:e.target.value===''?null:Number(e.target.value)})}/></label>)}
         </div>}
