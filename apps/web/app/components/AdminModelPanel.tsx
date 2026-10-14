@@ -72,14 +72,14 @@ export default function AdminModelPanel(){
     setQuery('');setManualId('');setManualName('');setShowManual(false);
   };
   const choose=(p:Provider)=>{
-    if(!confirmLeave())return;
+    if(busy||!confirmLeave())return;
     setSelected(p.id);setCreating(false);setProviderEditing(false);
     const next=fromProvider(p);setDraft(next);
     providerBaseline.current=JSON.stringify(next);
     setEditingModel(null);setModelDraft(null);resetCatalog();setNotice('');
   };
   const startCreate=()=>{
-    if(!confirmLeave())return;
+    if(busy||!confirmLeave())return;
     setCreating(true);setSelected(null);setProviderEditing(true);
     setTab('connections');setDraft(emptyProvider());
     providerBaseline.current=JSON.stringify(emptyProvider());
@@ -121,7 +121,7 @@ export default function AdminModelPanel(){
       setSelected(saved.id);setCreating(false);setProviderEditing(false);
       const next=fromProvider(saved);setDraft(next);
       providerBaseline.current=JSON.stringify(next);
-      resetCatalog();await refresh();
+      resetCatalog();setTested({});await refresh();
       setNotice('连接已保存，可获取模型目录并批量注册。');
       setTab('models');
       // Try discovery as the next step, but a missing /models endpoint never
@@ -173,8 +173,8 @@ export default function AdminModelPanel(){
   };
   const updateModel=async(m:Model,changes:Partial<ModelForm>)=>{
     if(busy)return;
-    if(changes.isDefault&&!m.enabled&&!tested[m.id]&&
-      !window.confirm('该模型本次未通过兼容性测试，确定仍要设为默认并启用吗？'))return;
+    if((changes.isDefault||changes.enabled===true)&&!tested[m.id]&&
+      !window.confirm('该模型尚未在本次会话中通过兼容性测试，确定仍要启用吗？'))return;
     if(changes.enabled===false&&m.isDefault){
       setNotice('请先设置另一个默认模型，再停用当前模型。');return;
     }
@@ -234,10 +234,10 @@ export default function AdminModelPanel(){
       <main className="provider-main">
         <div className="management-tabs">
           <button type="button" className={tab==='connections'?'active':''}
-            onClick={()=>{if(!confirmLeave())return;setTab('connections');setEditingModel(null);setModelDraft(null);}}>
+            onClick={()=>{if(busy||!confirmLeave())return;setTab('connections');setEditingModel(null);setModelDraft(null);}}>
             连接设置</button>
           <button type="button" className={tab==='models'?'active':''} disabled={creating||!selected}
-            onClick={()=>{if(!confirmLeave())return;setTab('models');setProviderEditing(false);
+            onClick={()=>{if(busy||!confirmLeave())return;setTab('models');setProviderEditing(false);
               setEditingModel(null);setModelDraft(null);}}>
             模型管理 ({activeModels.length})</button>
         </div>
@@ -363,7 +363,7 @@ export default function AdminModelPanel(){
               <button type="button" className="secondary" disabled={!!busy}
                 onClick={()=>void testModel(m)}>{busy==='test:'+m.id?'测试中…':'测试模型'}</button>
               <button type="button" className="secondary" disabled={!!busy}
-                onClick={()=>{if(!confirmLeave())return;setEditingModel(m.id);
+                onClick={()=>{if(busy||!confirmLeave())return;setEditingModel(m.id);
                   const next=fromModel(m);setModelDraft(next);
                   modelBaseline.current=JSON.stringify(next);}}>高级设置</button>
               <button type="button" className="secondary" disabled={!!busy||m.isDefault}
