@@ -26,3 +26,9 @@
 - `WorkspaceDetails` 工作台数据最低间隔 15 秒轮询（初始化和前台恢复例外），隐藏页不发定时查询，同一循环防止并发重入。消息保留有序游标轮询，隐藏页暂停，前台恢复刷新。不能将短轮询伪装成 SSE。
 - `apps/api/src/server.ts` 的通用限流按**验签成功**的 JWT sub 分桶，对缺失或无效 Cookie 回退 IP；登录与注册始终按服务所见 IP 严格限制。数据库 `readSession` 与项目成员校验仍是鉴权依据，签名 JWT 仅用于配额键，不是授权捷径。对前置代理来源 IP 的信任须另做严格配置，不能盲目启用全局 trustProxy。
 - Compose 仍只发布 Web 回环端口；本地模型 URL 在 Docker 内依容器网络解析。实际 QNAP IPv6、TLS、模型 DNS/SSRF 出站控制和移动端交互属于硬件及生产专项验收。
+
+## ADR-029 · 组织应用命令（已实现的当前契约）
+
+packages/core/src/organization-commands.ts 的 organizationCommand(tenantId, actorId, action, callback) 统一持有 tenant-governance advisory transaction lock，在同一事务内 SELECT ... FOR UPDATE 重检 tenant_members 的 admin 身份，执行 callback，再插入 organization_audit_entries。callback 必须只用传入的 DbClient 写入；业务失败/审计失败会回滚，不能换成 pool.query。apps/api/src/governance-routes.ts 的所有组织管理写路径均经过此命令；读取不走该锁。测试使用 packages/core/test/organization.integration.ts，并由 Product verification 工作流在迁移后运行。
+
+范围限制：这是组织命令的安全基线，不等于系统级 CommandReceipt、DomainEvent、所有模块的 Outbox 已迁移完毕。租户级串行锁适合当前低频管理写入，遇到真实热点冲突再重新评估锁粒度。

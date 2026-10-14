@@ -159,3 +159,9 @@ Web 端从 `GET /projects` 初始化项目列表和设置面板。该接口返�
 - `POST /admin/ai/models/:id/test` 请求体严格校验 `{mode:'quick'|'full'}`，缺省 quick。quick 仅执行结构化抽取探测；full 执行匿名文本与结构化测试各一次，两者均有实际推理费用。响应带 `mode`、`ok`、`textOk:boolean|null`、`structuredOk`、`latencyMs`、可选 `textLatencyMs` 和脱敏 `errorCode`。quick 未单独测试文本时 `textOk=null`，不得报文本测试通过；不能以 quick/完整模式选择影响业务推理适配器。
 - 模型测试仍保持管理员授权和每模型 30 秒数据库限频；只有结构化返回符合 `{ok:true}` 才把本会话模型标注为测试通过。成功后未自动启用或设为平台默认。
 - Web 目录刷新失败仍呈现旧候选项并保留选择；成功时保留与新目录仍匹配的选择，防止管理员重新选择大量模型。禁止在请求执行时重入。
+
+## V2 目标契约与已实现组织切片
+
+[完整目标命令/事件](../design/command-event-contracts.md) 与 [V2 架构](../design/v2-architecture.md) 定义未来统一边界；目前不是全部具备 CommandReceipt、DomainEvent、ModelInvocation 的实现。组织领域已经使用 organizationCommand 将管理员授权重检、数据库改动和组织审计绑定为单事务。后续逐模块迁移正式写入时不得将未经运行的能力标注为交付。
+
+**当前权限校正：** 当前正式实现允许项目 owner 和 manager 审核任务/风险的 ProposedChange（proposal.approve）；此前本文件“只有 Owner”属于过时描述。项目成员管理、报告发布与项目 AI 设置仍仅 owner 有权操作。请以 packages/core/src/permissions.ts 及服务端路由复核最终授权，而非以 Web 按钮或旧文字作为权限来源。
