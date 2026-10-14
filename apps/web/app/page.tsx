@@ -30,6 +30,7 @@ export default function Home(){
   const [search,setSearch]=useState('');
   const [view,setView]=useState<View>('projects');
   const [showDetails,setShowDetails]=useState(true);
+  const [mobileWork,setMobileWork]=useState(false);
   const [messages,setMessages]=useState<Message[]>([]);
   const [chat,setChat]=useState('');
   const [working,setWorking]=useState(false);
@@ -104,7 +105,7 @@ export default function Home(){
     window.history.replaceState(null,'',window.location.pathname+(params.size?'?'+params:''));
   }
   function selectProject(id:string){
-    setSelected(id);setNotice('');
+    setMobileWork(false);setSelected(id);setNotice('');
     const params=new URLSearchParams(window.location.search);
     params.set('project',id);params.delete('view');
     window.history.replaceState(null,'',window.location.pathname+'?'+params);
@@ -144,13 +145,13 @@ export default function Home(){
   }
 
   if(auth==='checking')return <main className="auth-shell">
-    <section className="auth-card"><div className="brand">✳ ChatPM</div><p>正在检查登录会话…</p></section></main>;
+    <section className="auth-card"><div className="brand"><img className="brand-mark" src="/icon.svg" alt="" width={32} height={32}/>ChatPM</div><p>正在检查登录会话…</p></section></main>;
   if(auth==='error')return <main className="auth-shell">
-    <section className="auth-card"><div className="brand">✳ ChatPM</div>
+    <section className="auth-card"><div className="brand"><img className="brand-mark" src="/icon.svg" alt="" width={32} height={32}/>ChatPM</div>
       <h2>服务暂时不可用</h2><p>网络异常不会清除已有登录会话。</p>
       <button onClick={()=>setRetry(x=>x+1)}>重试连接</button></section></main>;
   if(!user)return <main className="auth-shell"><section className="auth-card">
-      <div className="brand"><span className="brand-icon">✳</span> ChatPM</div>
+      <div className="brand"><img className="brand-mark" src="/icon.svg" alt="" width={32} height={32}/>ChatPM</div>
       <h1>让项目主动向前</h1><p>用自然协作推动项目，让 AI 协助跟进任务与风险。</p>
       <form className="stack" onSubmit={login}>
         {register&&<label>昵称<input required value={displayName} onChange={e=>setDisplayName(e.target.value)}/></label>}
@@ -167,9 +168,9 @@ export default function Home(){
       {notice&&<p role="alert" className="notice">{notice}</p>}
     </section></main>;
 
-  return <main className={'app-shell '+(view==='projects'&&showDetails?'has-details':'without-details')}>
+  return <main className={'app-shell '+(view==='projects'&&showDetails?'has-details':'without-details')+(mobileWork?' mobile-work':' mobile-chat')}>
     <nav className="app-rail" aria-label="主功能导航">
-      <div className="rail-logo" aria-label="ChatPM">✳</div>
+      <div className="rail-logo" aria-label="ChatPM"><img src="/icon.svg" alt="" width={42} height={42}/></div>
       {(['projects',...(canOrg?['organization' as const]:[]),
         ...(user.is_system_admin?['system' as const]:[])] as View[]).map(item=>
         <button className={'rail-action '+(view===item?'active':'')} key={item}
@@ -225,6 +226,12 @@ export default function Home(){
       </div>
     </aside>
     {view==='projects'?<>
+      <nav className="mobile-project-tabs" aria-label="移动端项目工作区">
+        <button type="button" aria-pressed={!mobileWork} className={!mobileWork?'active':''}
+          onClick={()=>setMobileWork(false)}>消息</button>
+        <button type="button" aria-pressed={mobileWork} className={mobileWork?'active':''}
+          disabled={!selected} onClick={()=>{setMobileWork(true);setShowDetails(true);}}>任务与工作台</button>
+      </nav>
       <section className="chat-pane">
         <header><div><h2>{current?.name||'请选择项目'}</h2>
           <small>{current?(current.ai_enabled?'AI 消息分析已开启':'AI 消息分析未开启'):'选择一个项目开始协作'}</small></div>
