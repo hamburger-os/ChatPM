@@ -79,3 +79,9 @@ English: The background-process entrypoint now owns only startup, scheduling and
 中文：ChatPM 使用合成项目协作示例检验 AI 对任务、进度、阻塞、风险、模糊日期和提示注入的理解，并明确列出当前尚未支持的管理能力。GitHub 自动化只检查测试数据和评分程序；真正模型质量需管理员主动使用模型密钥进行评测并保存结果。没有真实评测结果时，不会展示虚构的准确率。
 
 English: Synthetic project conversations form a versioned golden set for task/progress/blocker/risk extraction, ambiguous dates and prompt-injection safety. Unsupported PM features remain explicit coverage gaps. CI checks the corpus and scorer only; live model quality requires a deliberate administrator-triggered run with real model access. No accuracy number is claimed without actual results.
+
+### 任务依赖的完成保护 / Task dependency completion guard
+
+中文：在项目治理中登记的任务依赖是完成前置约束。若前置任务尚未完成，下游任务不能被标记为完成；为已完成任务新增未完成的前置任务也会被拒绝。服务器在写入事务内重新检查项目与组织成员权限，防止成员被撤权后继续修改计划。此前已完成工作因实际质量问题重新打开时，仍需要项目经理处理下游影响；这不是自动项目变更或验收替代。
+
+English: Registered task dependencies are finish-before-completion constraints. A dependent task cannot be marked done while any predecessor is incomplete, and a completed task cannot gain a new incomplete predecessor. The server rechecks both project and organization membership inside write transactions. Reopening genuinely defective earlier work remains possible and requires human assessment of downstream impact; this is not automatic baseline change management.

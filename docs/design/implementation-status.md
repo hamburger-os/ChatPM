@@ -70,3 +70,7 @@
 ## ADR-036 · Issue 解决/重新打开与审计历史
 
 新增 014_issue_transitions.sql，为已存在的正式 Issue 增加按同项目复合外键引用的状态变化历史表，不重写历史迁移，也不因项目成员退出而删除历史用户身份。owner/manager 可以在同项目按版本提出 resolve/reopen 并填写非空处理说明；业务状态、历史行、审计、领域事件、Outbox 和 CommandReceipt 在同一事务内提交。项目授权成员可分页查看历史，Web 项目治理页签提供管理与查看入口。当前**尚未实现**自动 Risk→Issue、变更基线联动、Playbook 主动处置和全量 RAID 流程，不能以这一切片标记 P1 整体完成。
+
+## ADR-037 · 完成任务的前置依赖检查与事务内权限重检
+
+已将旧 Task create/update 的项目权限检查移到正式数据库事务，复用 `lockProjectAccess` 联合检查项目及组织有效成员身份，使用 `FOR SHARE OF pm,tm` 与并发角色撤销互斥。负责人分配要求当前项目与组织成员资格。正式 PM Command 也复用同一鉴权 helper。任务状态尝试转为 done 时同依赖图修改共享项目级事务锁，若存在未完成前置任务则 409 回滚；已完成任务不能被新增未完成前置依赖。任务真实复发后可以重新打开，仍待正式下游影响评估。旧 Task 写入尚未迁移到统一 CommandReceipt/DomainEvent，完整 P1/P2 不算完成。
