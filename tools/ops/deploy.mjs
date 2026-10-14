@@ -17,7 +17,7 @@ export function prepareDockerEnv(source) {
   const newline = source.includes('\r\n') ? '\r\n' : '\n';
   const lines = source.split(/\r?\n/);
   const generated = [];
-  for (const key of ['SESSION_SECRET', 'POSTGRES_PASSWORD']) {
+  for (const key of ['SESSION_SECRET', 'MODEL_ENCRYPTION_KEY', 'POSTGRES_PASSWORD']) {
     const matches = lines.flatMap((line, index) =>
       line.match(new RegExp('^' + key + '=(.*)$')) ? [index] : []);
     if (matches.length > 1) throw new Error('Duplicate setting: ' + key);
