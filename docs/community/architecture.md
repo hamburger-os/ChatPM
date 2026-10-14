@@ -36,11 +36,17 @@ The proposed architecture uses a **TypeScript monorepo, modular monolith, and a 
 
 [Full design (Chinese)](../design/system-architecture.md) · [中文](#中文)
 
-## ADR-021 · 用户可配置的受限项目模型 / Project-scoped controlled models
+## 当前模型与正式领域权限 / Current model and governance permissions
 
-中文：项目 Owner 可以在 UI 对固定的 OpenAI/DeepSeek HTTPS 提供商设置模型名称和加密密钥，也可以选择服务器预配置模型；配置采用项目隔离和审计，不允许客户端任意模型 URL。内建 Agent 仅具备候选提取、近期上下文和 `@AI` 只读回答；无权限自行提交正式任务，也未嵌入 Pi Coding Agent 的文件/Shell 能力。
+中文：系统总管理员集中配置模型连接、密钥和默认模型，项目负责人只能控制项目 AI 是否启用。项目管理登记簿增加价值目标、里程碑、交付物验收、问题、决策、变更请求与任务依赖等正式对象；关键变更审批和验收采用服务端权限、审计及幂等命令。当前产品仍是实验性版本，新的项目管理 API 不等于已经实现完整项目经理自动执行、全部管理界面或生产验收。
 
-English: Project owners can configure model IDs and encrypted keys for fixed HTTPS OpenAI/DeepSeek endpoints or use the server-managed provider. Configurations are project-scoped and audited; arbitrary client-provided URLs are not allowed. The restricted PM assistant supports candidate extraction, bounded recent context and read-only `@AI` replies, not autonomous task commits, Pi coding-agent shell/file tools or long-term memory. Records and model connectivity checks are exposed only to owners.
+English: Platform administrators centrally manage AI connections, credentials, and the default model. Project owners control whether AI is enabled for their project. The formal PM register adds goals, milestones, deliverable acceptance, issues, decisions, change requests, and task dependencies. Server-side authorization, auditable idempotent commands, and explicit human review guard critical changes. These initial APIs do not constitute a complete autonomous PM or production acceptance.
+
+## 历史 ADR-021（已被系统管理员统一模型策略取代） / Historical ADR-021 (superseded)
+
+中文：此前曾允许项目 Owner 配置固定供应商，目前已废止；现行模型与密钥管理权仅属于系统管理员。项目 AI 助手仅具备候选提取、近期上下文和 `@AI` 只读回答，无 Shell/文件控制能力。
+
+English: An earlier project-scoped provider configuration was removed. Only platform administrators may manage AI model credentials and connections now; project owners toggle project AI access. The assistant supports evidence-backed proposals and read-only `@AI` replies, not arbitrary tools or autonomous official task changes.
 
 ## ADR-022 · 进度证据与日期、风险驱动检查
 

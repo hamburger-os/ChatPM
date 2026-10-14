@@ -162,3 +162,9 @@ Web 端从 `GET /projects` 初始化项目列表和设置面板。该接口返�
 [完整目标命令/事件](../design/command-event-contracts.md) 与 [V2 架构](../design/v2-architecture.md) 定义未来统一边界；目前不是全部具备 CommandReceipt、DomainEvent、ModelInvocation 的实现。组织领域已经使用 organizationCommand 将管理员授权重检、数据库改动和组织审计绑定为单事务。后续逐模块迁移正式写入时不得将未经运行的能力标注为交付。
 
 **权限说明：** 当前正式实现允许 owner 与 manager 审核候选（proposal.approve），成员管理、报告发布及项目 AI 设置仅 owner 有权操作。系统管理员独享模型凭据配置。以 permissions.ts 和实际服务端路由为准。
+
+## ADR-030 · 新增的正式 PM 命令边界
+
+正式 API 由独立路由模块注册，PM 业务写入通过 scoped command executor 事务运行：当前 tenant/project 成员关系 FOR SHARE 锁、角色动作矩阵、同 scope 的 command key + payload hash、对象版本/业务状态校验、审计、domain_events 和 `domain.changed` Outbox 同事务。Worker 对此种已识别的记录型事件验证关联 domain_event 后 ack；不做未经授权的自动业务写入，未知事件类型一律失败。任务依赖必须用同项目 FK 与事务内项目锁进行环检测。
+
+首次上线正式业务结构只覆盖创建、列表、交付物提交/验收、变更审批和依赖登记，复杂问题响应/决策重审、目标收益跟踪及图形化管理另行验收。所有业务命令通过带 UUID 的 idempotencyKey 防双提交；同 key 不同输入冲突拒绝。现有旧 Task/Proposal API 尚不具备完全统一命令回执，不能虚称全系统改造完成。
