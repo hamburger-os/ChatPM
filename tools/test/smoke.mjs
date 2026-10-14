@@ -156,6 +156,74 @@ try{
     idempotencyKey:randomUUID(),title:'Environment not ready',
     detail:'Already blocking work',severity:'high',ownerId:uid}});
   assert.equal(issue.status,201,JSON.stringify(issue.data));
+  const issueId=issue.data.item.id;
+  const deniedIssueTransition=await api(pm+'/issues/'+issueId+'/transition',{
+    method:'POST',cookie:cookieB,body:{idempotencyKey:randomUUID(),
+      expectedVersion:1,decision:'resolve',note:'Already handled'}});
+  assert.equal(deniedIssueTransition.status,403,'Members cannot resolve formal issues');
+  const missingIssueNote=await api(pm+'/issues/'+issueId+'/transition',{
+    method:'POST',body:{idempotencyKey:randomUUID(),
+      expectedVersion:1,decision:'resolve',note:'   '}});
+  assert.equal(missingIssueNote.status,400,'Issue transitions require evidence notes');
+  const issueCommand={idempotencyKey:randomUUID(),expectedVersion:1,
+    decision:'resolve',note:'Test environment was deployed and verified'};
+  const issueResolved=await api(pm+'/issues/'+issueId+'/transition',{
+    method:'POST',body:issueCommand});
+  assert.equal(issueResolved.status,200,JSON.stringify(issueResolved.data));
+  assert.equal(issueResolved.data.item.status,'resolved');
+  assert.equal(issueResolved.data.item.version,2);
+  const issueReplay=await api(pm+'/issues/'+issueId+'/transition',{
+    method:'POST',body:issueCommand});
+  assert.equal(issueReplay.status,200);
+  assert.equal(issueReplay.data.item.version,2,'Idempotent replay must not increment the version');
+  const changedIssuePayload=await api(pm+'/issues/'+issueId+'/transition',{
+    method:'POST',body:{...issueCommand,note:'Other explanation'}});
+  assert.equal(changedIssuePayload.status,409,'Reusing a key with a different note is invalid');
+  const staleIssue=await api(pm+'/issues/'+issueId+'/transition',{
+    method:'POST',body:{idempotencyKey:randomUUID(),
+      expectedVersion:1,decision:'reopen',note:'Stale update'}});
+  assert.equal(staleIssue.status,409,'Version conflict must be enforced');
+  const resolvedAgain=await api(pm+'/issues/'+issueId+'/transition',{
+    method:'POST',body:{idempotencyKey:randomUUID(),
+      expectedVersion:2,decision:'resolve',note:'Duplicate resolution'}});
+  assert.equal(resolvedAgain.status,409,'Resolved issues cannot resolve again');
+  const memberHistory=await api(pm+'/issues/'+issueId+'/history',{cookie:cookieB});
+  assert.equal(memberHistory.status,200);
+  assert.equal(memberHistory.data.history.length,1);
+  assert.equal(memberHistory.data.history[0].to_status,'resolved');
+  assert.equal(memberHistory.data.history[0].note,issueCommand.note);
+  const foreignIssueHistory=await api('/projects/'+randomUUID()+'/pm/issues/'+
+    issueId+'/history');
+  assert.equal(foreignIssueHistory.status,404,'Cross-project history must not leak');
+  await db.query("UPDATE project_members SET role='manager' WHERE project_id=$1 AND user_id=$2",
+    [pid,second.data.user.id]);
+  const issueReopened=await api(pm+'/issues/'+issueId+'/transition',{
+    method:'POST',cookie:cookieB,body:{idempotencyKey:randomUUID(),
+      expectedVersion:2,decision:'reopen',note:'Environment failure returned'}});
+  assert.equal(issueReopened.status,200,JSON.stringify(issueReopened.data));
+  assert.equal(issueReopened.data.item.status,'open');
+  assert.equal(issueReopened.data.item.version,3);
+  await db.query("UPDATE project_members SET role='member' WHERE project_id=$1 AND user_id=$2",
+    [pid,second.data.user.id]);
+  const fullIssueHistory=await api(pm+'/issues/'+issueId+'/history');
+  assert.equal(fullIssueHistory.status,200);
+  assert.deepEqual(fullIssueHistory.data.history.map(x=>x.to_status),
+    ['open','resolved']);
+  assert.deepEqual(fullIssueHistory.data.history.map(x=>x.issue_version),[3,2]);
+  assert.equal(fullIssueHistory.data.history[0].note,'Environment failure returned');
+  const earlierIssueHistory=await api(pm+'/issues/'+issueId+'/history?beforeVersion=3');
+  assert.equal(earlierIssueHistory.status,200);
+  assert.deepEqual(earlierIssueHistory.data.history.map(x=>x.issue_version),[2]);
+  assert.equal((await db.query(`SELECT count(*)::int AS count
+    FROM project_issue_transitions WHERE project_id=$1 AND issue_id=$2`,
+    [pid,issueId])).rows[0].count,2,'History must be append-only on state changes');
+  assert.equal((await db.query(`SELECT count(*)::int AS count
+    FROM domain_events WHERE project_id=$1 AND kind='pm.issue.transitioned.v1'
+      AND aggregate_id=$2`,[pid,issueId])).rows[0].count,2);
+  assert.equal((await db.query(`SELECT count(*)::int AS count
+    FROM audit_entries WHERE project_id=$1 AND action='pm.issue.transitioned.v1'
+      AND target_id=$2`,[pid,issueId])).rows[0].count,2);
+
   const decision=await api(pm+'/decisions',{method:'POST',body:{
     idempotencyKey:randomUUID(),title:'Use staged rollout',rationale:'Risk reduction'}});
   assert.equal(decision.status,201,JSON.stringify(decision.data));
