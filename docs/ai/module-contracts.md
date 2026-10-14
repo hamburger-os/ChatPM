@@ -174,3 +174,7 @@ Web 端从 `GET /projects` 初始化项目列表和设置面板。该接口返�
 ## ADR-031 · 项目治理工作台 UI 契约
 
 `WorkspaceDetails` 增加 `governance` 页签，仅在当前项目范围挂载 `PmRegisterPanel`；子组件 GET /projects/:id/pm 与 GET /projects/:id/pm/dependencies，POST /projects/:id/pm/:kind / deliverables submit/review / changes decide / dependencies。单次用户提交生成 UUID idempotencyKey，状态更新传 expectedVersion。不要跨项目复用旧登记簿状态；项目角色仅用于 UI 按钮可见性，后端仍强制鉴权。新 UI 使用现有同源客户端 request/json 和公共样式，不传 AI Key，不赋予 AI 直接修改正式记录权限。
+
+## ADR-032 · AI 撤权与模型账本契约
+
+新增迁移 `013_ai_authorization_ledger.sql` 维持 projects.ai_enabled 单一事实来源；数据库触发器在切换时增量更新 ai_authorization_version。受控 `ConfiguredLLMProvider.request` 在预留额度后、出站之前重新核验开启状态与版本；关闭或版本变化时必须安全失败，不能调用上游。已实际发出的尝试保存脱敏 ModelInvocation，外部模型请求失败、Zod 格式失败均记录，重试独立记录；不保存消息原文、密钥或上游原始错误；无真实 Usage 时 token 字段为 null。项目 Owner 可读取摘要 API，普通成员/系统管理员无权仅凭平台身份读取跨项目调用记录。完整 capability grant 与 Playbook 执行仍为目标设计。
