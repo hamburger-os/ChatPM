@@ -74,6 +74,18 @@ try{
   assert.equal(bad,0,'A progress update must not become a duplicate new task');
   const status=(await db.query(`SELECT status FROM tasks WHERE id=$1`,[taskId])).rows[0].status;
   assert.equal(status,'doing','Unapproved model evidence cannot close the formal task');
+  const ledger=(await db.query(`SELECT status,authorization_version,model_identity,
+    prompt_version,input_tokens,output_tokens,input_fingerprint
+    FROM ai_model_invocations WHERE project_id=$1`,[project.id])).rows;
+  assert.equal(ledger.length,1,'Every actual model attempt must be logged');
+  assert.equal(ledger[0].status,'succeeded');
+  assert.equal(Number(ledger[0].authorization_version),1);
+  assert.ok(ledger[0].model_identity.includes('mock-project-model'));
+  assert.equal(ledger[0].input_tokens,null,'Missing provider usage is unknown');
+  assert.equal(ledger[0].output_tokens,null);
+  assert.match(ledger[0].input_fingerprint,/^[a-f0-9]{64}$/);
+  assert.ok(!JSON.stringify(ledger).includes('设计初稿已完成'),
+    'Invocation ledger must not contain private messages');
   assert.equal(modelCalls,1);
 } finally{
   if(worker&&worker.exitCode===null){

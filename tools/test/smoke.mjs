@@ -61,12 +61,21 @@ try{
   assert.equal(initialProject.work_start,null,'Unset work start must be explicit null');
   assert.equal(initialProject.work_end,null,'Unset work end must be explicit null');
   assert.equal(initialProject.cooldown_hours,null,'Unset cooldown must be explicit null');
+  const initialAuthorization=await api('/projects/'+pid+'/ai/authorization');
+  assert.equal(initialAuthorization.status,200,JSON.stringify(initialAuthorization.data));
+  assert.deepEqual(initialAuthorization.data.authorization,{enabled:false,version:1});
+  const initialInvocationList=await api('/projects/'+pid+'/ai/invocations');
+  assert.equal(initialInvocationList.status,200);
+  assert.deepEqual(initialInvocationList.data.invocations,[]);
+
   const suffix2=randomUUID().slice(0,8);
   const second=await api('/auth/register',{method:'POST',cookie:'',body:{
     email:'second+'+suffix2+'@example.com',password:'Passw0rd-Strong-123',displayName:'李工',
   }});
   assert.equal(second.status,200,JSON.stringify(second.data));
   cookieB=second.cookie;assert.ok(cookieB);
+  const deniedLedger=await api('/projects/'+pid+'/ai/invocations',{cookie:cookieB});
+  assert.equal(deniedLedger.status,404,'Cross-project invocation ledger must not leak');
   const forbidden=await api('/projects/'+pid+'/messages',{cookie:cookieB});
   assert.equal(forbidden.status,404,'Cross-project read must not be allowed');
   const denied=await api('/projects/'+pid+'/tasks',{method:'POST',cookie:cookieB,

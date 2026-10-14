@@ -20,6 +20,10 @@
 
 ---
 
+### AI 授权版本与调用审计
+
+项目负责人启用或关闭 AI 后，系统增加授权版本；每次新模型调用前再次检查当前授权，关闭时不再主动发出新的模型请求。每次模型调用尝试保留脱敏运行记录，区分成功、失败和具体模型/Prompt 版本；不会将聊天全文、密钥或供应商原始错误存入调用日志。Token 用量未从提供商获得时会显示为未知，不代表零消耗；该功能不是全面的权限/成本治理或生产安全认证。
+
 ## English
 
 The proposed architecture uses a **TypeScript monorepo, modular monolith, and a separate worker process**. Next.js provides the UI, Fastify the API, PostgreSQL stores authoritative records, and a PostgreSQL Outbox and polling worker handle asynchronous analysis and reminders. AI supports configurable Responses / Chat Completions HTTP transports. The centralized model settings UI is available; live DeepSeek/local-model verification and external notification adapters are not shipped. Reminders are built into ChatPM.
@@ -53,3 +57,7 @@ English: An earlier project-scoped provider configuration was removed. Only plat
 中文：任务期限是项目当地 `DATE`；已有任务进度在聊天分析后生成带来源的待审证据，Owner 可以确认/忽略，不会由 AI 更新正式任务完成状态。已分配任务从建立后即进入阶段检查计划，阻塞事项提高提醒频率；默认按时区工作窗口和冷却策略发送站内消息。界面日期只到天，任务栏展示待审核进展。
 
 English: Task deadlines are local calendar dates. AI links progress/blocker/completion claims to existing same-project tasks as pending sourced evidence; an owner must review and no AI action automatically marks formal work done. Assigned tasks enter a proactive check-in schedule and blocked items receive higher priority, while existing working-hour and cooldown policies remain in force.
+
+### Versioned AI authorization and invocation audit
+
+Project owners can turn AI on or off, which updates an authorization revision. New model calls recheck the current authorization; disabled projects should not initiate another model request. Individual attempts retain redacted model/prompt identities and success/failure diagnostics without copying chat contents, API keys, or raw provider responses. Missing token usage is shown as unknown, not zero. This is a first-stage audit mechanism, not a complete enterprise policy engine, exact cost ledger, or production security certification.

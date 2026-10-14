@@ -32,7 +32,7 @@ try{
   const tenant=(await pool.query(
     "INSERT INTO tenants(name) VALUES('AI mock tenant') RETURNING id")).rows[0];
   const project=(await pool.query(
-    "INSERT INTO projects(tenant_id,name,owner_id) VALUES($1,'AI mocked project',$2) RETURNING id",
+    "INSERT INTO projects(tenant_id,name,owner_id,ai_enabled) VALUES($1,'AI mocked project',$2,TRUE) RETURNING id",
     [tenant.id,user.id])).rows[0];
   const provider=(await pool.query(`INSERT INTO ai_provider_connections
     (name,base_url,api_style,api_key_ciphertext,enabled)
@@ -141,6 +141,15 @@ try{
     id:unknown.id,projectId:project.id,content:unknown.content,projectName:'AI mocked project',
   }),true);
   assert.equal(providerCalls,4,'Unrelated proposals must not trigger model calls');
+  const invocations=(await pool.query(`SELECT status,authorization_version,
+    input_tokens,output_tokens,input_fingerprint FROM ai_model_invocations
+    WHERE project_id=$1 ORDER BY started_at`,[project.id])).rows;
+  assert.equal(invocations.length,4,'One ledger row per actual upstream attempt');
+  assert.ok(invocations.every(x=>x.status==='succeeded'));
+  assert.ok(invocations.every(x=>Number(x.authorization_version)===1));
+  assert.ok(invocations.every(x=>x.input_tokens===null&&x.output_tokens===null));
+  assert.ok(invocations.every(x=>/^[a-f0-9]{64}$/.test(x.input_fingerprint)));
+
   console.log('AI integration passed: source-bound multi-turn evidence, replay, budget and no automatic task updates');
 }finally{
   globalThis.fetch=previousFetch;

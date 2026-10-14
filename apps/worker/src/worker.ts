@@ -163,10 +163,15 @@ async function processEvents() {
       await finishEvent(event);
     }catch(err) {
       if(event.message_id){
-        const code=err instanceof Error && /^MODEL_[A-Z0-9_]+$/.test(err.message)
+        const code=err instanceof Error && /^(?:MODEL_|AI_AUTHORIZATION_)[A-Z0-9_]+$/.test(err.message)
           ?err.message:err instanceof Error&&err.name==='ZodError'?'MODEL_SCHEMA':err instanceof Error?err.name.slice(0,60):'UNKNOWN_FAILURE';
         try {await recordAnalysis(event,'extract','failed',undefined,code);}
         catch { /* Event failure still flows through the outbox retry state. */ }
+      }
+      // A revoked run is cancelled, not retried after someone re-enables AI.
+      if(err instanceof Error&&/^AI_AUTHORIZATION_(?:REVOKED|CHANGED)$/.test(err.message)){
+        await finishEvent(event);
+        continue;
       }
       await failEvent(event,err);
       console.error('Outbox event failed',event.id,

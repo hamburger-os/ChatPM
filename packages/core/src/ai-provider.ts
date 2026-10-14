@@ -1,3 +1,4 @@
+import { createHmac } from 'node:crypto';
 import { pool } from './db.ts';
 import { z } from 'zod';
 import { callStructuredLLM, modelAuditIdentity } from './llm-transport.ts';
@@ -55,13 +56,63 @@ async function reserveCall(projectId:string){
   if(!rows.length)throw new DailyAIBudgetExceeded();
 }
 
+export async function readProjectAiAuthorization(projectId:string):Promise<{
+  enabled:boolean;version:number;
+}>{
+  const {rows}=await pool.query<{ai_enabled:boolean;ai_authorization_version:string}>(`
+    SELECT ai_enabled,ai_authorization_version FROM projects WHERE id=$1
+  `,[projectId]);
+  const row=rows[0];
+  if(!row)throw new Error('PROJECT_NOT_FOUND');
+  return {enabled:row.ai_enabled,version:Number(row.ai_authorization_version)};
+}
+function safeErrorCode(error:unknown):string{
+  if(error instanceof z.ZodError)return 'MODEL_SCHEMA';
+  if(error instanceof Error){
+    if(/^MODEL_[A-Z0-9_]+$/.test(error.message))return error.message;
+    if(error.name==='AbortError')return 'MODEL_TIMEOUT';
+  }
+  return 'MODEL_INVOCATION_FAILED';
+}
+
 export class ConfiguredLLMProvider implements LLMProvider{
   constructor(private readonly projectId:string){}
   private async request<T>(input:string,schema:object,output:z.ZodType<T>,promptVersion:string,mode:'analysis'|'reply'='analysis'):Promise<ModelResult<T>>{
+    const authorization=await readProjectAiAuthorization(this.projectId);
+    if(!authorization.enabled)throw new Error('AI_AUTHORIZATION_REVOKED');
     const settings=await resolveProjectModel(this.projectId);
     await reserveCall(this.projectId);
-    const data=await callStructuredLLM(settings,input,schema,fetch,mode);
-    return {value:output.parse(data),modelName:modelAuditIdentity(settings),promptVersion};
+    // Do not send queued work using a revoked or replaced authorization.
+    const current=await readProjectAiAuthorization(this.projectId);
+    if(!current.enabled)throw new Error('AI_AUTHORIZATION_REVOKED');
+    if(current.version!==authorization.version)throw new Error('AI_AUTHORIZATION_CHANGED');
+
+    // Fingerprint is keyed so low-entropy private messages cannot be guessed
+    // from a public SHA256 digest. No prompt text/response/key is persisted.
+    const fingerprintKey=process.env.MODEL_ENCRYPTION_KEY;
+    if(!fingerprintKey)throw new Error('MODEL_ENCRYPTION_NOT_CONFIGURED');
+    const fingerprint=createHmac('sha256',fingerprintKey).update(input).digest('hex');
+    const modelName=modelAuditIdentity(settings);
+    const started=await pool.query<{id:string}>(`
+      INSERT INTO ai_model_invocations(project_id,authorization_version,
+        model_identity,prompt_version,input_fingerprint)
+      VALUES($1,$2,$3,$4,$5) RETURNING id
+    `,[this.projectId,current.version,modelName,promptVersion,fingerprint]);
+    const invocationId=started.rows[0].id;
+    const start=Date.now();
+    try{
+      const data=await callStructuredLLM(settings,input,schema,fetch,mode);
+      const parsed=output.parse(data);
+      await pool.query(`UPDATE ai_model_invocations SET status='succeeded',
+        latency_ms=$2,finished_at=NOW() WHERE id=$1`,
+        [invocationId,Math.max(0,Date.now()-start)]);
+      return {value:parsed,modelName,promptVersion};
+    }catch(error){
+      await pool.query(`UPDATE ai_model_invocations SET status='failed',
+        error_code=$2,latency_ms=$3,finished_at=NOW() WHERE id=$1`,
+        [invocationId,safeErrorCode(error),Math.max(0,Date.now()-start)]);
+      throw error;
+    }
   }
 
   async analyzeWork(project:string,message:string){
