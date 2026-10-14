@@ -11,8 +11,8 @@ const deny=(code:number,message:string):never=>{
 export function registerGovernanceRoutes(app:FastifyInstance,
   authenticated:(req:FastifyRequest)=>Promise<string>):void{
   const scope=async(req:FastifyRequest,admin=false)=>{
-    const {tenantId}=req.params as {tenantId:string};
-    const tenantId=uuid.parse(tenantId),user=await authenticated(req);
+    const {tenantId:rawTenantId}=req.params as {tenantId:string};
+    const tenantId=uuid.parse(rawTenantId),user=await authenticated(req);
     await requireTenant(user,tenantId,admin);
     return {tenantId,user};
   };
