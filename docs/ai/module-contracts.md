@@ -170,3 +170,7 @@ Web 端从 `GET /projects` 初始化项目列表和设置面板。该接口返�
 - `apps/api/src/pm-routes.ts` 的 `GET /projects/:projectId/pm` 读取登记簿，`POST /projects/:projectId/pm/:kind` 创建正式目标/里程碑/交付物/问题/决策/变更申请（kind 白名单）；独立状态接口处理交付物 submit/review、变更审批及任务依赖。新 POST 请求必须传 UUID idempotencyKey，状态变更还必须传 expectedVersion。
 - `apps/worker/src/worker.ts` 消费 domain.changed 时校验它确实引用了同项目 domain_events，不发消息、不调用模型、不得改变业务状态；未知类型仍失败重试。
 - `tools/test/smoke.mjs` 和权限单元回归覆盖跨项目、重复请求、审批和依赖环。项目管理专门 UI 与统一旧 Task API 命令化是后续内容，不可声称已经交付。
+
+## ADR-031 · 项目治理工作台 UI 契约
+
+`WorkspaceDetails` 增加 `governance` 页签，仅在当前项目范围挂载 `PmRegisterPanel`；子组件 GET /projects/:id/pm 与 GET /projects/:id/pm/dependencies，POST /projects/:id/pm/:kind / deliverables submit/review / changes decide / dependencies。单次用户提交生成 UUID idempotencyKey，状态更新传 expectedVersion。不要跨项目复用旧登记簿状态；项目角色仅用于 UI 按钮可见性，后端仍强制鉴权。新 UI 使用现有同源客户端 request/json 和公共样式，不传 AI Key，不赋予 AI 直接修改正式记录权限。

@@ -26,6 +26,12 @@ npm run admin:grant -- --email=admin@example.com --confirm
 
 ---
 
+
+### 正式项目治理工作台
+
+在具体项目中打开「项目治理」页签，可维护目标、里程碑、交付物、已发生问题、决策与变更申请，查看任务依赖。项目负责人和管理者可以录入治理事项；实际负责人提交交付物，独立审核者验收或退回，重要变更由项目负责人审批。聊天中的 AI 建议不会自动成为交付物验收或基线变更。界面暂不提供跨项目资源优化或自动决策引擎。
+
+
 ## English
 
 ### Organization and project structure
@@ -47,3 +53,7 @@ Organization management writes—including departments, portfolios, programs, pr
 
 ### Limitations
 Experimental: SSO, invitation emails, cross-project benefits analytics, universal model compatibility certification and production security acceptance remain outstanding.
+### Formal PM governance workspace
+
+Open the “Project Governance” tab within a project to maintain goals, milestones, deliverables, issues, decisions and change requests, and to view task dependencies. Project owners and managers can register governance items; assignees submit deliverables, separate authorized reviewers accept or return them, and project owners approve critical changes. AI suggestions from chat never automatically become delivery acceptance or baseline changes. Cross-project resource optimization and autonomous decisions are not offered by this UI.
+
