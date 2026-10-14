@@ -19,7 +19,7 @@ export function registerGovernanceRoutes(app:FastifyInstance,
   // Department, program and portfolio are separate organizational dimensions.
   app.get('/tenants/:tenantId/structure',async req=>{
     const {tenantId}=await scope(req);
-    const [departments,portfolios,programs,projects]=await Promise.all([
+    const [departments,portfolios,programs]=await Promise.all([
       pool.query('SELECT id,name,parent_id FROM departments WHERE tenant_id=$1 ORDER BY name',[tenantId]),
       pool.query('SELECT id,name,description FROM portfolios WHERE tenant_id=$1 ORDER BY name',[tenantId]),
       pool.query('SELECT id,name,description,portfolio_id FROM programs WHERE tenant_id=$1 ORDER BY name',[tenantId]),
