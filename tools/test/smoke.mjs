@@ -772,7 +772,7 @@ try{
   const blockedRemoval=await api('/projects/'+pid+'/members/'+second.data.user.id,{method:'DELETE'});
   assert.equal(blockedRemoval.status,409,'Members with unfinished assigned tasks must be reassigned first');
   const reassigned=await api('/projects/'+pid+'/tasks/'+linked.rows[0].id,{
-    method:'PATCH',body:{version:1,assigneeId:uid}});
+    method:'PATCH',body:{idempotencyKey:randomUUID(),version:1,assigneeId:uid}});
   assert.equal(reassigned.status,200,'Owner can reassign unfinished work before removing a member');
   const historical=await api('/projects/'+pid+'/tasks',{method:'POST',body:{idempotencyKey:randomUUID(),
     title:'保留历史负责人',assigneeId:second.data.user.id,dueDate:null}});
