@@ -1,6 +1,9 @@
 import { serverConfig } from '../../../packages/core/src/config.ts';
 import { callStructuredLLM, modelAuditIdentity } from '../../../packages/core/src/llm-transport.ts';
-import { publicModelSettings, resolveProjectModel, updateProjectModel } from '../../../packages/core/src/project-model.ts';
+import { resolveProjectModel } from '../../../packages/core/src/project-model.ts';
+import { assertProject, canProject, isSystemAdmin, type ProjectRole } from '../../../packages/core/src/permissions.ts';
+import { registerAdminModelRoutes } from './admin-model-routes.ts';
+import { registerGovernanceRoutes } from './governance-routes.ts';
 import { randomUUID } from 'node:crypto';
 import Fastify from 'fastify';
 import cors from '@fastify/cors';
@@ -63,11 +66,11 @@ async function member(userId:string, projectId:string) {
      JOIN tenant_members tm ON tm.tenant_id=p.tenant_id AND tm.user_id=pm.user_id
      WHERE pm.project_id=$1 AND pm.user_id=$2`,[projectId,userId]);
   if (!rows[0]) fail(404,'项目不存在或无权限');
-  return rows[0] as {role:'owner'|'member',tenant_id:string,ai_enabled:boolean,
+  return rows[0] as {role:ProjectRole,tenant_id:string,ai_enabled:boolean,
     timezone:string,work_start:number|null,work_end:number|null,cooldown_hours:number|null};
 }
 function owner(m:{role:string}) {
-  if (m.role !== 'owner') fail(403,'仅项目负责人可以执行此操作');
+  assertProject(m.role as ProjectRole,'members.manage');
 }
 async function issueSession(reply:{setCookie:Function},userId:string) {
   reply.setCookie('chatpm_session',await createSession(userId),{
@@ -114,7 +117,7 @@ app.post('/auth/logout',async(req,reply)=>{
 app.get('/me',async req=>{
   const userId=await authenticated(req);
   const {rows}=await pool.query('SELECT id,email,display_name FROM users WHERE id=$1',[userId]);
-  return {user:rows[0]};
+  return {user:{...rows[0],is_system_admin:await isSystemAdmin(userId)}};
 });
 
 app.get('/tenants',async req=>{
@@ -237,64 +240,6 @@ app.patch('/projects/:id/settings',async req=>{
     return {ok:true};
   });
 });
-const modelSchema=z.object({
-  provider:z.enum(['server','openai','deepseek']),
-  model:z.string().trim().max(150),
-  style:z.enum(['responses','chat-completions']),
-  reasoning:z.enum(['auto','none','low','medium','high','max']),
-  maxOutputTokens:z.number().int().min(512).max(131072),
-  contextChars:z.number().int().min(2000).max(250000),
-  apiKey:z.string().min(1).max(500).regex(/^[^\r\n]+$/).optional(),
-  clearKey:z.boolean().optional(),
-});
-app.get('/projects/:id/model',async req=>{
-  const id=uuid.parse((req.params as {id:string}).id);
-  owner(await member(await authenticated(req),id));
-  return {model:await publicModelSettings(id)};
-});
-app.put('/projects/:id/model',async req=>{
-  const id=uuid.parse((req.params as {id:string}).id);
-  const userId=await authenticated(req);
-  owner(await member(userId,id));
-  const input=modelSchema.parse(req.body);
-  await transaction(async db=>{
-    await updateProjectModel(db,id,input);
-    await audit(db,id,userId,'project.model_configured',id,
-      {provider:input.provider,model:input.model,style:input.style,
-       reasoning:input.reasoning,maxOutputTokens:input.maxOutputTokens,
-       contextChars:input.contextChars,keyChanged:Boolean(input.apiKey||input.clearKey)});
-  });
-  return {model:await publicModelSettings(id)};
-});
-app.post('/projects/:id/model/test',async req=>{
-  const id=uuid.parse((req.params as {id:string}).id);
-  const actor=await authenticated(req);
-  owner(await member(actor,id));
-  const config=await resolveProjectModel(id).catch(()=>
-    fail(400,'该项目尚未配置可用的模型密钥或模型参数'));
-  const allowed=await pool.query(`INSERT INTO ai_model_checks(project_id,last_test_at)
-    VALUES($1,NOW()) ON CONFLICT(project_id) DO UPDATE SET
-      last_test_at=NOW() WHERE ai_model_checks.last_test_at<NOW()-INTERVAL '30 seconds'
-    RETURNING project_id`,[id]);
-  if(!allowed.rowCount)fail(429,'连接测试最多每 30 秒一次');
-  const started=Date.now();
-  const schema={type:'object',additionalProperties:false,required:['ok'],
-    properties:{ok:{type:'boolean'}}};
-  try {
-    const response=await callStructuredLLM(config,
-      '这是匿名连接测试，不含任何项目资料。请只返回 JSON 对象 {"ok":true}。',schema);
-    if(!response||typeof response!=='object'||(response as {ok?:unknown}).ok!==true)
-      throw new Error('MODEL_INVALID_TEST_RESPONSE');
-    await transaction(db=>audit(db,id,actor,'project.model_tested',id,
-      {ok:true,model:modelAuditIdentity(config)}));
-    return {ok:true,latencyMs:Date.now()-started,model:modelAuditIdentity(config)};
-  }catch(error) {
-    const code=error instanceof Error && /^MODEL_[A-Z0-9_]+$/.test(error.message)
-      ? error.message:'MODEL_CONNECTION_FAILED';
-    await transaction(db=>audit(db,id,actor,'project.model_tested',id,{ok:false,errorCode:code}));
-    fail(422,'模型测试失败：'+code);
-  }
-});
 app.get('/projects/:id/ai/runs',async req=>{
   const id=uuid.parse((req.params as {id:string}).id);
   owner(await member(await authenticated(req),id));
@@ -322,7 +267,7 @@ app.get('/projects/:id/messages',async req=>{
 app.post('/projects/:id/messages',async(req,reply)=>{
   const projectId=uuid.parse((req.params as {id:string}).id);
   const userId=await authenticated(req);
-  await member(userId,projectId);
+  assertProject((await member(userId,projectId)).role,'message.write');
   const {content,nonce}=z.object({content:text,nonce:z.string().uuid()}).parse(req.body);
   const message=await transaction(async db=>{
     let row=await insertMessage(db,{
@@ -352,7 +297,7 @@ app.get('/projects/:id/tasks',async req=>{
 app.post('/projects/:id/tasks',async(req,reply)=>{
   const projectId=uuid.parse((req.params as {id:string}).id);
   const userId=await authenticated(req);
-  owner(await member(userId,projectId));
+  assertProject((await member(userId,projectId)).role,'task.create');
   const v=z.object({title:z.string().trim().min(1).max(250),detail:z.string().max(5000).default(''),
     assigneeId:uuid.nullable().default(null),dueDate:dateOnly.nullable().default(null)}).parse(req.body);
   const row=await transaction(async db=>{
@@ -387,16 +332,16 @@ app.patch('/projects/:id/tasks/:taskId',async req=>{
     x.assigneeId!==undefined||x.dueDate!==undefined,
     '至少修改一个字段').parse(req.body);
   const changesMetadata=v.title!==undefined||v.assigneeId!==undefined||v.dueDate!==undefined;
-  if(changesMetadata && m.role!=='owner') fail(403,'只有项目负责人能调整任务计划');
+  if(changesMetadata)assertProject(m.role,'task.plan');
   return transaction(async db=>{
     const row=(await db.query('SELECT *,due_date::text AS due_date FROM tasks WHERE id=$1 AND project_id=$2 FOR UPDATE',
       [taskId,projectId])).rows[0];
     if(!row) fail(404,'任务不存在');
-    if(m.role!=='owner' && row.assignee_id!==userId) fail(403,'只有负责人或被指派者可更新状态');
+    if(v.status!==undefined)assertProject(m.role,'task.status',{isAssignee:row.assignee_id===userId});
     if(row.version!==v.version) fail(409,'任务版本已更新，请刷新');
     // Revalidate the acting assignee inside the transaction; a concurrent
     // membership revocation cannot authorize a late status update.
-    if(m.role!=='owner') await ensureAssignee(db,projectId,userId);
+    if(m.role==='member') await ensureAssignee(db,projectId,userId);
     const next={
       status:v.status??row.status,
       title:v.title??row.title,
@@ -432,7 +377,7 @@ app.post('/projects/:id/progress/:progressId/decision',async req=>{
   const {id,progressId}=req.params as {id:string,progressId:string};
   const projectId=uuid.parse(id),progress=uuid.parse(progressId);
   const userId=await authenticated(req);
-  owner(await member(userId,projectId));
+  assertProject((await member(userId,projectId)).role,'proposal.approve');
   const {decision}=z.object({decision:z.enum(['accepted','rejected'])}).parse(req.body);
   return transaction(async db=>{
     const {rows}=await db.query(`UPDATE task_progress_updates
@@ -470,7 +415,7 @@ app.post('/projects/:id/proposals/:proposalId/decision',async req=>{
   const {id,proposalId}=req.params as {id:string,proposalId:string};
   const projectId=uuid.parse(id),candidate=uuid.parse(proposalId);
   const userId=await authenticated(req);
-  owner(await member(userId,projectId));
+  assertProject((await member(userId,projectId)).role,'proposal.approve');
   const v=z.object({decision:z.enum(['accepted','rejected']),
     assigneeId:uuid.nullable().default(null),
     dueDate:dateOnly.nullable().optional()}).parse(req.body);
@@ -575,5 +520,7 @@ app.post('/projects/:id/reports/:reportId/publish',async req=>{
   });
 });
 
+registerAdminModelRoutes(app,authenticated);
+registerGovernanceRoutes(app,authenticated);
 app.addHook('onClose',async()=>{await pool.end();});
 await app.listen({port,host:serverConfig.API_HOST});
