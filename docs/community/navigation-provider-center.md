@@ -76,3 +76,18 @@ When an administrator clicks “Add Provider” while editing an existing connec
 
 ### English
 Compatible OpenAI-style GET /models endpoints provide discoverable model IDs and optional display names. A successful catalog lookup does not prove model inference, structured JSON output, reasoning options or token budgets. The server uses the encrypted provider credential; administrators can manually enter IDs and idempotently import up to 50 models per request. New models start disabled; run the anonymous compatibility test before enabling. Advanced settings expose request budgets and explicit reasoning mappings. Catalog rate limits and bounded responses reduce abuse, but production egress network rules remain necessary to protect internal services.
+
+
+## ADR-027 代理地址与模型测试 / Proxy paths and model diagnostics
+
+### 中文
+
+对于暴露 OpenAI 兼容接口的 Antigravity Tools，API 基础地址通常应为 `http://127.0.0.1:8045/v1` 而不是仅端口地址；ChatPM 会在该前缀后自行附加 `/models`、`/chat/completions` 或 `/responses`。其他厂商以其官方实际路径为准，不会按名称自动重写。
+
+“分级测试”将依次执行不附加 JSON 格式要求的匿名文本调用和结构化 JSON 兼容性调用；它可能触发两次计费。类似 CC Switch 的基础连通成功不等于 ChatPM 可以抽取任务、风险所需的结构化 JSON。界面分开显示文本/结构化结果和脱敏诊断代码。如果是 `MODEL_RESPONSE_FORMAT_MISMATCH`，检查所选 Responses 或 Chat Completions；如果是 `MODEL_REASONING_ONLY_OUTPUT`，检查模型思考与输出预算。私有凭据、上游原始响应体不得出现在报错里。
+
+### English
+
+For Antigravity Tools' OpenAI-compatible API, the typical base prefix is `http://127.0.0.1:8045/v1`. ChatPM appends `/models`, `/chat/completions` or `/responses` itself; other providers may have different valid paths, and ChatPM does not silently rewrite them.
+
+The two-stage test first makes an anonymous plain-text request without structured-output settings, then tests strict JSON output. It may incur two model calls. A connectivity check passing in CC Switch does not establish that a model can produce the structured JSON required for ChatPM's task and risk extraction. The interface distinguishes both test stages and reports stable, sanitized error codes. Never share private keys or raw upstream payloads in support requests.
