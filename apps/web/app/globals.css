@@ -193,7 +193,6 @@ label{display:grid;gap:7px;font-size:13px;color:#536174}label.check{display:flex
   .app-shell .details{order:2;min-height:calc(100dvh - 250px)}
   .app-shell.mobile-chat .details{display:none}
   .app-shell.mobile-work .chat-pane{display:none}
-  .app-shell .new-project{display:none}
   .app-shell .details .detail-content{max-height:none}
   .app-rail{padding-bottom:max(7px,env(safe-area-inset-bottom))}
   .composer{padding-bottom:max(12px,env(safe-area-inset-bottom))}
