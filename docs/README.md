@@ -13,4 +13,6 @@
 
 **当前状态：** 可运行的实验性应用，尚未具备生产级敏感数据处理能力。[实施状态与限制](design/implementation-status.md) 是当前范围的单一事实入口。
 
+组织和 AI 管理专项：[设计](design/organization-governance.md) · [工程契约](ai/organization-governance.md) · [中英使用指南](community/organization-governance.md)。
+
 工程变更需同步当前设计和契约，并执行 [文档检查](../.agents/skills/docs-sync/SKILL.md)。贡献者从 [CONTRIBUTING](../CONTRIBUTING.md) 开始。
