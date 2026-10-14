@@ -31,15 +31,21 @@ export default function AdminModelPanel(){
   const [busy,setBusy]=useState(false);
   const [notice,setNotice]=useState('');
 
-  const refresh=async()=>{
+  const refresh=async(initial=false)=>{
     const [p,m]=await Promise.all([
       request<{providers:Provider[]}>('/admin/ai/providers'),
       request<{models:Model[]}>('/admin/ai/models'),
     ]);
     setProviders(p.providers);setModels(m.models);
     setSelected(old=>old&&p.providers.some(x=>x.id===old)?old:p.providers[0]?.id??null);
+    if(initial&&p.providers[0]){
+      const first=p.providers[0];
+      setProviderEditing(first.id);
+      setProviderForm({name:first.name,baseUrl:first.baseUrl,style:first.style,
+        enabled:first.enabled,apiKey:''});
+    }
   };
-  useEffect(()=>{void refresh().catch(e=>setNotice(e.message));},[]);
+  useEffect(()=>{void refresh(true).catch(e=>setNotice(e.message));},[]);
   useEffect(()=>{if(creating)nameInput.current?.focus();},[creating]);
   const active=providers.find(x=>x.id===selected);
   const activeModels=models.filter(x=>x.providerId===selected);
@@ -104,6 +110,7 @@ export default function AdminModelPanel(){
       <div><h2>AI 服务中心</h2><p className="hint">系统管理员维护供应商连接和可用模型，项目成员无需接触 API Key。</p></div>
       <button onClick={addProvider} disabled={busy} type="button" aria-controls="provider-editor">＋ 添加供应商</button>
     </header>
+    {notice&&<p role="status" className="notice">{notice}</p>}
     <div className="provider-workspace">
       <aside className="provider-list" aria-label="供应商连接">
         <h3>供应商连接 <span className="count">{providers.length}</span></h3>
@@ -137,6 +144,8 @@ export default function AdminModelPanel(){
               placeholder="https://api.example.com/v1"
               onChange={e=>setProviderForm({...providerForm,baseUrl:e.target.value})}/>
               <small className="hint">这是模型 API 地址，不是服务商官网。系统会依据协议补充具体接口路径。</small>
+              {/^(http:\/\/)(localhost|127\.0\.0\.1|\[::1\])(?=[:/]|$)/i.test(providerForm.baseUrl)&&
+                <small className="hint" role="note">注意：127.0.0.1 / localhost 指向 ChatPM 服务进程所在环境。如果 ChatPM 在 NAS 或 Docker 内运行，这不是你电脑上的模型代理地址，请先验证容器到代理的可达性。</small>}
             </label>
             <label>请求协议<select value={providerForm.style}
               onChange={e=>setProviderForm({...providerForm,style:e.target.value as Wire})}>
@@ -223,6 +232,5 @@ export default function AdminModelPanel(){
         </section>}
       </div>
     </div>
-    {notice&&<p role="status" className="notice">{notice}</p>}
   </div>;
 }
