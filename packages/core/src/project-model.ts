@@ -194,15 +194,27 @@ export async function importModelConfigs(
   for(const item of items){
     if(visited.has(item.id)){skipped++;continue;}
     visited.add(item.id);
-    const result=await db.query(
-      `INSERT INTO ai_model_configs
-        (name,model_id,provider_id,reasoning,reasoning_format,
-         max_output_tokens,context_chars,enabled,is_default)
-       VALUES($1,$2,$3,'auto','none',8192,32768,FALSE,FALSE)
-       ON CONFLICT (provider_id,model_id) DO NOTHING RETURNING id`,
-      [importModelName(item),item.id,providerId],
-    );
-    if(result.rowCount)created++;else skipped++;
+    const preferred=importModelName(item);
+    const fallback=importModelName({id:item.id});
+    let handled=false;
+    // Two remote IDs may carry the same display name. Retain a friendly
+    // label when free, otherwise fall back to a stable ID-derived name.
+    for(const label of new Set([preferred,fallback])){
+      const result=await db.query(
+        `INSERT INTO ai_model_configs
+          (name,model_id,provider_id,reasoning,reasoning_format,
+           max_output_tokens,context_chars,enabled,is_default)
+         VALUES($1,$2,$3,'auto','none',8192,32768,FALSE,FALSE)
+         ON CONFLICT DO NOTHING RETURNING id`,
+        [label,item.id,providerId],
+      );
+      if(result.rowCount){created++;handled=true;break;}
+      const existing=await db.query(
+        'SELECT 1 FROM ai_model_configs WHERE provider_id=$1 AND model_id=$2',
+        [providerId,item.id]);
+      if(existing.rowCount){skipped++;handled=true;break;}
+    }
+    if(!handled)throw new Error('MODEL_IMPORT_NAME_CONFLICT');
   }
   return {created,skipped};
 }
