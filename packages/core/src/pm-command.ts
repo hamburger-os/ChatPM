@@ -12,6 +12,7 @@ export type PmMutation<T> = {
   aggregateType:string;
   aggregateId:string;
   aggregateVersion:number;
+  auditDetails?:Record<string,unknown>;
 };
 
 export type PmCommand<T> = {
@@ -49,7 +50,7 @@ export async function executePmCommand<T>(command:PmCommand<T>):Promise<T> {
     const created=await command.mutate(db,member.role);
     await audit(db,command.projectId,command.actorId,command.kind,
       created.aggregateId,{version:created.aggregateVersion,
-        receiptId:inserted.rows[0].id});
+        receiptId:inserted.rows[0].id,...created.auditDetails});
     const event=await db.query<{id:string}>(`
       INSERT INTO domain_events(tenant_id,project_id,kind,aggregate_type,
         aggregate_id,aggregate_version,command_receipt_id,payload)
