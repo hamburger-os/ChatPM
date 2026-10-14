@@ -87,9 +87,18 @@ export default function Home(){
         });
       }
     }
-    void update().catch(e=>{if(active)setNotice(e.message);});
-    const timer=setInterval(()=>void update().catch(e=>{if(active)setNotice(e.message);}),5000);
-    return ()=>{active=false;clearInterval(timer);};
+    let inFlight=false;
+    const poll=async()=>{
+      if(!active||document.hidden||inFlight)return;
+      inFlight=true;
+      try{await update();}catch(e){if(active)setNotice(e instanceof Error?e.message:'消息刷新失败');}
+      finally{inFlight=false;}
+    };
+    void poll();
+    const timer=setInterval(()=>void poll(),5000);
+    const visible=()=>{if(!document.hidden)void poll();};
+    document.addEventListener('visibilitychange',visible);
+    return ()=>{active=false;clearInterval(timer);document.removeEventListener('visibilitychange',visible);};
   },[selected,view]);
   useEffect(()=>{if(view==='projects')bottom.current?.scrollIntoView({behavior:'smooth'});},[messages.length,view]);
   async function action(fn:()=>Promise<void>){
