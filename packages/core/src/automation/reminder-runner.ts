@@ -1,6 +1,7 @@
 import { transaction, audit } from '../db.ts';
 import { canSendReminder, localClock, nextReminderAt, followupIntervalDays } from '../policy.ts';
 import { insertMessage } from '../messages.ts';
+import { reminderCopy } from './reminder-copy.ts';
 
 export async function processReminders() {
   await transaction(async db=>{
@@ -32,11 +33,10 @@ export async function processReminders() {
       if(eligible) {
         const remaining=Math.round((Date.parse(p.due_date+'T12:00:00Z')-
           Date.parse(localClock(now,p.timezone).date+'T12:00:00Z'))/86400000);
-        const content='@'+p.display_name+'，'+
-          ((p.status==='blocked'||p.latest_progress_kind==='blocker')?'【阻塞需关注】':remaining<0?'【已逾期】':
-            remaining<=3?'【临近截止】':'【阶段进展检查】')+
-          '任务「'+p.title+'」距截止还有 '+Math.max(0,remaining)+' 天。'+
-          '请更新已完成成果、剩余工作、阻塞和预计交付日期。';
+        const content=reminderCopy({
+          displayName:p.display_name,title:p.title,daysUntilDue:remaining,
+          blocked:p.status==='blocked'||p.latest_progress_kind==='blocker',
+        });
         const key='followup:'+p.task_id+':v'+p.version+':'+
           new Date().toISOString().slice(0,13);
         const inserted=await insertMessage(db,{
