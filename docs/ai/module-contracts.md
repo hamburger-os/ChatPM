@@ -178,3 +178,7 @@ Web 端从 `GET /projects` 初始化项目列表和设置面板。该接口返�
 ## ADR-032 · AI 撤权与模型账本契约
 
 新增迁移 `013_ai_authorization_ledger.sql` 维持 projects.ai_enabled 单一事实来源；数据库触发器在切换时增量更新 ai_authorization_version。受控 `ConfiguredLLMProvider.request` 在预留额度后、出站之前重新核验开启状态与版本；关闭或版本变化时必须安全失败，不能调用上游。已实际发出的尝试保存脱敏 ModelInvocation，外部模型请求失败、Zod 格式失败均记录，重试独立记录；不保存消息原文、密钥或上游原始错误；无真实 Usage 时 token 字段为 null。项目 Owner 可读取摘要 API，普通成员/系统管理员无权仅凭平台身份读取跨项目调用记录。完整 capability grant 与 Playbook 执行仍为目标设计。
+
+## ADR-033 · Worker 模块边界当前实施契约
+
+规则提醒与周期报告 Runner 的应用入口归 `packages/core/src/automation/reminder-runner.ts`、`packages/core/src/reporting/period-runner.ts` 所有。Worker 进程只触发 `processReminders()` 与 `processReports()`、调度和心跳。事务原子性、UTC/项目时区、冷却、报告周期键和消息 nonce 不能改变；不以拆文件声称已有全域应用命令接口。继续用既有集成/Smoke/跨平台构建验收。
