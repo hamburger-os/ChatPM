@@ -103,3 +103,23 @@ CREATE TABLE ai_model_checks (
   model_config_id UUID PRIMARY KEY REFERENCES ai_model_configs(id) ON DELETE CASCADE,
   last_test_at TIMESTAMPTZ NOT NULL
 );
+
+-- Organization and platform operations need an audit trail even without a project.
+CREATE TABLE organization_audit_entries (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  tenant_id UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+  actor_id UUID REFERENCES users(id),
+  action TEXT NOT NULL,
+  target_id UUID,
+  metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX idx_organization_audit_tenant ON organization_audit_entries(tenant_id,created_at DESC);
+CREATE TABLE system_audit_entries (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  actor_id UUID REFERENCES users(id),
+  action TEXT NOT NULL,
+  target_id UUID,
+  metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
