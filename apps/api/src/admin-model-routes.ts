@@ -83,10 +83,10 @@ export function registerAdminModelRoutes(app:FastifyInstance,
     await admin(req);
     const id=uuid.parse((req.params as {id:string}).id);
     // A DB-backed throttle also works across multiple API processes.
-    const allowed=await pool.query(\`INSERT INTO ai_provider_checks(provider_id,last_checked_at)
+    const allowed=await pool.query(`INSERT INTO ai_provider_checks(provider_id,last_checked_at)
       VALUES($1,NOW()) ON CONFLICT(provider_id) DO UPDATE SET last_checked_at=NOW()
       WHERE ai_provider_checks.last_checked_at<NOW()-INTERVAL '10 seconds'
-      RETURNING provider_id\`,[id]);
+      RETURNING provider_id`,[id]);
     if(!allowed.rowCount)denied(429,'请等待 10 秒再重新获取模型目录');
     const connection=await resolveProviderCatalogConfig(id);
     try{return await discoverProviderModels(connection);}
@@ -118,8 +118,8 @@ export function registerAdminModelRoutes(app:FastifyInstance,
     }).strict().parse(req.body);
     const result=await transaction(async db=>{
       const imported=await importModelConfigs(db,input.providerId,input.models);
-      await db.query(\`INSERT INTO system_audit_entries(actor_id,action,target_id,metadata)
-        VALUES($1,'ai.models_imported',$2,$3)\`,[actor,input.providerId,
+      await db.query(`INSERT INTO system_audit_entries(actor_id,action,target_id,metadata)
+        VALUES($1,'ai.models_imported',$2,$3)`,[actor,input.providerId,
         JSON.stringify({...imported,count:input.models.length})]);
       return imported;
     });
