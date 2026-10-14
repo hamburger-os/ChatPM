@@ -11,13 +11,14 @@ export async function lockTaskDependencyGraph(db:DbClient,projectId:string):Prom
 export async function assertPrerequisitesCompleted(
   db:DbClient,projectId:string,taskId:string,
 ):Promise<void>{
-  const {rows}=await db.query<{id:string}>(`
-    SELECT pre.id FROM task_dependencies d
+  // Lock ALL prerequisites, including currently finished ones. A "done"
+  // prerequisite cannot be reopened between this check and our own commit.
+  const {rows}=await db.query<{id:string;status:string}>(`
+    SELECT pre.id,pre.status FROM task_dependencies d
     JOIN tasks pre ON pre.project_id=d.project_id AND pre.id=d.prerequisite_task_id
-    WHERE d.project_id=$1 AND d.dependent_task_id=$2 AND pre.status<>'done'
-    LIMIT 1
+    WHERE d.project_id=$1 AND d.dependent_task_id=$2 FOR SHARE OF pre
   `,[projectId,taskId]);
-  if(rows.length)throw Object.assign(
+  if(rows.some(row=>row.status!=='done'))throw Object.assign(
     new Error('存在未完成的前置任务，请先完成或调整依赖关系'),
     {statusCode:409});
 }
