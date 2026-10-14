@@ -2,8 +2,9 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import type { Person, Progress, Project, Proposal, Report, Risk, Task, User } from './client';
 import { json, request } from './client';
+import PmRegisterPanel from './PmRegisterPanel';
 
-type Tab='tasks'|'proposals'|'reports'|'settings';
+type Tab='tasks'|'governance'|'proposals'|'reports'|'settings';
 export default function WorkspaceDetails({project,user}:{
   project:Project|null;user:User;
 }){
@@ -88,9 +89,9 @@ export default function WorkspaceDetails({project,user}:{
   }
   return <aside className="details">
     <div className="tabs">
-      {(['tasks','proposals','reports','settings'] as Tab[]).map(t=>
+      {(['tasks','governance','proposals','reports','settings'] as Tab[]).map(t=>
         <button key={t} className={tab===t?'active':''} onClick={()=>setTab(t)}>
-          {({tasks:'任务',proposals:'AI 待确认',reports:'汇报',settings:'项目设置'})[t]}
+          {({tasks:'任务',governance:'项目治理',proposals:'AI 待确认',reports:'汇报',settings:'项目设置'})[t]}
         </button>)}
     </div>
     <div className="detail-content">
@@ -141,6 +142,8 @@ export default function WorkspaceDetails({project,user}:{
       {risks.map(x=><article className="item" key={x.id}><strong>{x.title}</strong>
         <small>{x.status==='open'?'尚未解决':'已解决'}</small></article>)}
     </>}
+    {project&&tab==='governance'&&<PmRegisterPanel key={project.id}
+      project={project} user={user} people={people} tasks={tasks}/>}
     {project&&tab==='proposals'&&<>
       <h3>AI 候选事项</h3><p className="hint">AI 仅生成建议，不会直接修改正式任务。</p>
       {proposals.filter(p=>p.status==='pending').map(p=><ProposalItem
