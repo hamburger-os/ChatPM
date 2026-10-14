@@ -8,10 +8,10 @@
 组织管理员可以在工作台的「组织管理」中建立部门、项目集、项目组合，给项目指定主部门及项目集或直属组合。部门管理人员与资源，不与项目集或组合等同。一个人员可加入多个项目，项目聊天仍按项目成员授权。组织管理支持输入已注册邮箱将用户添加至组织；当前**没有邮件邀请或接受流程**。
 
 ### 权限
-项目 owner 可以授权 manager、member、observer；manager 管理计划并审核候选，普通 member 仅修改自己任务状态，observer 仅查看。项目成员必须先由组织管理员加入该组织。系统总管理员不能仅凭该身份查看其他组织的聊天。
+项目 owner 可以授权 manager、member、observer；manager 管理计划并审核候选，普通 member 仅修改自己任务状态，observer 仅查看。项目成员必须先由组织管理员加入该组织。系统管理员不能仅凭该身份查看其他组织的聊天。
 
 ### AI 模型
-模型配置改为系统总管理员的「系统 AI」面板，普通项目成员无需填写密钥。初次部署时，先配置 `MODEL_ENCRYPTION_KEY`，创建账号后在本机受控命令行执行：
+模型配置由系统管理员在最左侧「系统管理 → AI 服务中心」操作，普通项目成员无需填写密钥。初次部署时，先配置 `MODEL_ENCRYPTION_KEY`，创建账号后在本机受控命令行执行：
 ```sh
 npm run admin:grant -- --email=admin@example.com --confirm
 ```
@@ -35,7 +35,7 @@ Only the platform system administrator can edit models in the "System AI" panel;
 ```sh
 npm run admin:grant -- --email=admin@example.com --confirm
 ```
-Log in as the promoted account, add a model with its endpoint, protocol, identifier and API key, enable it and select it as the default. Project owners may enable or disable AI for their project. Rotating `MODEL_ENCRYPTION_KEY` makes previously encrypted model credentials unreadable and requires a planned reconfiguration. Do not run sensitive deployments over public HTTP.
+Log in as the promoted account. Open System Management → AI Service Center, create a provider connection (endpoint, protocol and encrypted API key), then register its models and select an enabled default. Project owners may enable or disable AI for their project. Rotating `MODEL_ENCRYPTION_KEY` makes previously encrypted model credentials unreadable and requires a planned reconfiguration. Do not run sensitive deployments over public HTTP.
 
 ### Limitations
 Experimental: SSO, invitation emails, cross-project benefits analytics, universal model compatibility certification and production security acceptance remain outstanding.
