@@ -4,6 +4,7 @@ import { resolveProjectModel } from '../../../packages/core/src/project-model.ts
 import { assertProject, canProject, isSystemAdmin, type ProjectRole } from '../../../packages/core/src/permissions.ts';
 import { registerAdminModelRoutes } from './admin-model-routes.ts';
 import { registerGovernanceRoutes } from './governance-routes.ts';
+import { registerPmRoutes } from './pm-routes.ts';
 import { randomUUID } from 'node:crypto';
 import { signedQuotaKey } from '../../../packages/core/src/quota-key.ts';
 import Fastify from 'fastify';
@@ -555,5 +556,6 @@ app.post('/projects/:id/reports/:reportId/publish',async req=>{
 
 registerAdminModelRoutes(app,authenticated);
 registerGovernanceRoutes(app,authenticated);
+registerPmRoutes(app,authenticated);
 app.addHook('onClose',async()=>{await pool.end();});
 await app.listen({port,host:serverConfig.API_HOST});
