@@ -169,11 +169,11 @@ export default function Home(){
       {(['projects',...(canOrg?['organization' as const]:[]),
         ...(user.is_system_admin?['system' as const]:[])] as View[]).map(item=>
         <button className={'rail-action '+(view===item?'active':'')} key={item}
-          title={{projects:'项目协作',organization:'组织管理',system:'系统管理'}[item]}
+          title={{projects:'项目协作',organization:'组织管理',system:'系统管理',account:'个人设置'}[item]}
           aria-label={{projects:'项目协作',organization:'组织管理',system:'系统管理'}[item]}
           aria-current={view===item?'page':undefined} onClick={()=>navigate(item)}>
           <RailIcon view={item}/><span className="rail-label">
-            {{projects:'项目',organization:'组织',system:'系统'}[item]}</span>
+            {{projects:'项目',organization:'组织',system:'系统',account:'我的'}[item]}</span>
         </button>)}
       <button className={'rail-action rail-account '+(view==='account'?'active':'')}
         title="个人设置" aria-label="个人设置" aria-current={view==='account'?'page':undefined}
