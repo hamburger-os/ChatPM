@@ -82,13 +82,13 @@ export function registerAdminModelRoutes(app:FastifyInstance,
   app.post('/admin/ai/providers/:id/discover',async req=>{
     await admin(req);
     const id=uuid.parse((req.params as {id:string}).id);
+    const connection=await resolveProviderCatalogConfig(id);
     // A DB-backed throttle also works across multiple API processes.
     const allowed=await pool.query(`INSERT INTO ai_provider_checks(provider_id,last_checked_at)
       VALUES($1,NOW()) ON CONFLICT(provider_id) DO UPDATE SET last_checked_at=NOW()
       WHERE ai_provider_checks.last_checked_at<NOW()-INTERVAL '10 seconds'
       RETURNING provider_id`,[id]);
     if(!allowed.rowCount)denied(429,'请等待 10 秒再重新获取模型目录');
-    const connection=await resolveProviderCatalogConfig(id);
     try{return await discoverProviderModels(connection);}
     catch(error){
       const code=error instanceof Error?error.message:'';
