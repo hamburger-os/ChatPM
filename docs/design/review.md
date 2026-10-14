@@ -119,3 +119,7 @@ CI 新增 `tools/test/task-linkage-smoke.mjs`：PostgreSQL 创建正式任务与
 ## ADR-037 · P1/P2 依赖与权限竞态 /review
 
 审查任务关闭与依赖新增是否按同一项目 advisory lock 串行、锁顺序是否统一，前置状态 todo/doing/blocked/cancelled 均不能满足 done，已完成任务不可加未完成前置，跨项目 UUID 不可引用。旧 Task 创建/状态/负责人调整是否在事务内重新验证当前项目与组织成员（FOR SHARE of pm,tm），并发撤权的真实 PostgreSQL 锁测试必须失败于错误操作而非在已撤权状态下提交。既有 followup 冷却、task optimistic version、审计及 Worker 不可回退。测试覆盖未经满足的依赖拒绝、独立任务完结、完成前置后的成功、目标已完成时新建依赖的拒绝以及角色撤销的竞态。实际结果仅由最终 PR Head 的 CI 证明。
+
+## ADR-038 · Evidence/Claim 证据链 /review 核对点
+
+审查是否对源消息使用 `(project_id,id)` 复合外键并在服务端锁定、只接受真实 user 消息、不让上游文本赋予工具权限；Unicode code-point 范围必须在原文内，引用文本不可由客户端自报或篡改；必须有 tenant/project 当前访问授权，member 仅能引用自己发言，只有原作者可确认自己的主张，manager/owner 才可驳回其他人的错误解释。证据与主张、CommandReceipt、DomainEvent、Outbox 和 Audit 在同一事务，重放不会复制数据；文案明确来源确认不是 Task done 或交付物 accepted。API JSON 校验、引文泄漏风险、分页跨项目 404、浏览器异步页签切换、Docker/native/security/docs CI 均需检查。数据库超级用户仍可删历史，不能把应用审计当作法律不可篡改证明。

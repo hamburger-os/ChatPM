@@ -36,6 +36,10 @@ npm run admin:grant -- --email=admin@example.com --confirm
 
 项目治理中的“已发生问题”允许负责人和管理者填写处理说明后确认解决；若问题再次发生，可以重新打开。每次状态变更均受项目权限、乐观版本和幂等机制约束，并保留处理人、时间与说明。项目其他成员可查看授权项目的问题处理历史；AI 的猜测不会直接解决或重新打开正式问题。项目风险自动转问题和全部跨项目关联尚未支持。
 
+### 聊天证据与待核实主张
+
+项目治理中可以从当前项目聊天引用原始消息的精确片段，登记“进度线索、完成声称、个人承诺、阻塞、风险/问题/决策/变更线索”等待核实主张。普通成员只能引用自己的发言；项目负责人和管理者可以记录项目内其他成员发言。只有原发言人可以确认自己表达的意思，项目管理者可以驳回错误解释；任何此类确认均**不等同于任务完成、交付物验收或批准变更**。系统按项目权限隔离证据。当前尚不支持 AI 自动抽取/冲突调解。
+
 ## English
 
 ### Organization and project structure
@@ -64,4 +68,8 @@ Open the “Project Governance” tab within a project to maintain goals, milest
 ### Issue resolution and reopening
 
 Project owners and managers can record a resolution note for an occurred issue and reopen it if the impact returns. Every state transition checks current project authorization, optimistic versioning and idempotency, and keeps the actor, time and explanation in a project-scoped history. Authorized project members can read that history. AI guesses cannot resolve or reopen official issues. Automatic risk-to-issue conversion and full cross-project traceability remain out of scope.
+
+### Chat evidence and unverified claims
+
+The Project Governance workspace can cite exact spans of a project member's existing chat message and register a pending claim about progress, completion statements, personal commitments, blockers, and risk/issue/decision/change signals. Members can cite their own messages; project owners and managers may register interpretations of other project members' messages. Only the original speaker may acknowledge their wording, while authorized managers can dismiss inaccurate claims. **Acknowledgment does not mean a task is done, a deliverable is accepted, or a change is approved.** Project membership limits access to citations. Automated model extraction and conflict adjudication are not implemented.
 

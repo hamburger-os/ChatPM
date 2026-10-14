@@ -1,6 +1,7 @@
 'use client';
 import { useEffect, useRef, useState, type FormEvent } from 'react';
-import type { Person, Project, Task, User } from './client';
+import type { Message,Person, Project, Task, User } from './client';
+import EvidencePanel from './EvidencePanel';
 import { json, request } from './client';
 
 type Kind='goals'|'milestones'|'deliverables'|'issues'|'decisions'|'changes';
@@ -31,8 +32,8 @@ const statusText:Record<string,string>={
   pending:'待审批',approved:'已批准',rejected:'已拒绝',
 };
 
-export default function PmRegisterPanel({project,user,people,tasks}:{
-  project:Project;user:User;people:Person[];tasks:Task[];
+export default function PmRegisterPanel({project,user,people,tasks,messages}:{
+  project:Project;user:User;people:Person[];tasks:Task[];messages:Message[];
 }){
   const [data,setData]=useState<Registry>(empty);
   const [dependencies,setDependencies]=useState<Dependency[]>([]);
@@ -289,6 +290,7 @@ export default function PmRegisterPanel({project,user,people,tasks}:{
         {taskNames.get(d.dependent_task_id)||'历史任务'} 依赖 → {taskNames.get(d.prerequisite_task_id)||'历史任务'}
       </p>)}
     </section>
+    <EvidencePanel project={project} user={user} messages={messages}/>
     {notice&&<p className="notice" role="alert">{notice}</p>}
     <button className="secondary" disabled={busy} onClick={()=>void execute(async()=>{})}>刷新登记簿</button>
   </div>;

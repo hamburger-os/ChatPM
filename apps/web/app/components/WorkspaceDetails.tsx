@@ -1,12 +1,12 @@
 'use client';
 import { useEffect, useState, type FormEvent } from 'react';
-import type { Person, Progress, Project, Proposal, Report, Risk, Task, User } from './client';
+import type { Message,Person, Progress, Project, Proposal, Report, Risk, Task, User } from './client';
 import { json, request } from './client';
 import PmRegisterPanel from './PmRegisterPanel';
 
 type Tab='tasks'|'governance'|'proposals'|'reports'|'settings';
-export default function WorkspaceDetails({project,user}:{
-  project:Project|null;user:User;
+export default function WorkspaceDetails({project,user,messages}:{
+  project:Project|null;user:User;messages:Message[];
 }){
   const [tab,setTab]=useState<Tab>('tasks');
   const [tasks,setTasks]=useState<Task[]>([]);
@@ -143,7 +143,7 @@ export default function WorkspaceDetails({project,user}:{
         <small>{x.status==='open'?'尚未解决':'已解决'}</small></article>)}
     </>}
     {project&&tab==='governance'&&<PmRegisterPanel key={project.id}
-      project={project} user={user} people={people} tasks={tasks}/>}
+      project={project} user={user} people={people} tasks={tasks} messages={messages}/>}
     {project&&tab==='proposals'&&<>
       <h3>AI 候选事项</h3><p className="hint">AI 仅生成建议，不会直接修改正式任务。</p>
       {proposals.filter(p=>p.status==='pending').map(p=><ProposalItem

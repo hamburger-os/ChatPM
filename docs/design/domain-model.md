@@ -64,3 +64,11 @@ Issue 是已经发生并影响项目的事实，不是未来可能发生的 Risk
 该校验是**完成时的事实不变量**，并不禁止后来因真实缺陷重新打开已完成的前置任务；那种重新打开是新事实，须由风险/问题治理处理对下游交付的影响，不能静默将历史“已完成”声明倒写删除。
 
 旧任务创建/更新 API 不再只依赖事务开始前的角色快照。事务内加锁查询项目成员与租户成员的当前状态，再执行 `task.create`/`task.plan`/`task.status` 的服务端权限判定。被移出组织的用户即使仍留在项目成员表，也不能继续被分配新任务或更新正式状态。复用正式 PM 命令的成员验证语义，不需要全系统一次性接口兼容改造。
+
+## ADR-038 · 可溯源消息片段与项目主张（Evidence Span / Claim）
+
+从聊天到正式项目事实之间增加严格同项目隔离的证据层。EvidenceSpan 引用 `messages(project_id,id)`，记录基于 Unicode **code point**（非 JavaScript UTF-16 code unit）的零起始、左闭右开片段偏移和由服务器直接截取的原始引文。客户端不能提交并替换引文原文；服务器在同一事务中从消息记录读取，不接受 AI 消息充当“人员承诺”的来源。原始消息仍是唯一原文，引用中的片段是可核对的显示快照，不是第三套正式聊天历史。
+
+ProjectClaim 引用 EvidenceSpan（复合项目外键），记录 `kind`、解释摘要、`pending/source_acknowledged/dismissed` 状态、版本及人工操作者。项目 owner/manager 可根据本项目成员发言创建待核实主张；普通成员可从**自己**发送的消息创建主张；只允许消息**原作者**对其主张执行 source_acknowledged，owner/manager 可以 dismiss 不符合上下文的主张。此处的“来源作者已确认”只确认他确实认可自己表述的解释，并不意味着工作已完成或交付物已验收；任何正式 Task/Change/Decision/Acceptance 仍由独立的正式命令和审批维护。
+
+对照来源：server 从数据库同项目锁定原消息，验证片段范围、长度与非空，查询返回来源 UUID、原作者、时间、引文及主张，不能在另一个项目检索同一消息 UUID。所有创建/确认/驳回是幂等受控 Command，复用业务写入/审计/事件/Outbox 原子事务。未来 AI 只能提出带来源的候选，不可自行 source_acknowledged。本切片是 Evidence/Claim 基础，不是自动 Claim 冲突解决、工作承诺引擎或全部 AI Playbook。

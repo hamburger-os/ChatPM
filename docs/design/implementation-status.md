@@ -74,3 +74,7 @@
 ## ADR-037 · 完成任务的前置依赖检查与事务内权限重检
 
 已将旧 Task create/update 的项目权限检查移到正式数据库事务，复用 `lockProjectAccess` 联合检查项目及组织有效成员身份，使用 `FOR SHARE OF pm,tm` 与并发角色撤销互斥。负责人分配要求当前项目与组织成员资格。正式 PM Command 也复用同一鉴权 helper。任务状态尝试转为 done 时同依赖图修改共享项目级事务锁，若存在未完成前置任务则 409 回滚；已完成任务不能被新增未完成前置依赖。任务真实复发后可以重新打开，仍待正式下游影响评估。旧 Task 写入尚未迁移到统一 CommandReceipt/DomainEvent，完整 P1/P2 不算完成。
+
+## ADR-038 · 同项目消息证据与来源作者待核实主张
+
+已在本次分支实现 015_evidence_claims.sql、新增 `project_evidence_spans` 与 `project_claims` 表（按项目复合外键）、`evidence/claim-commands.ts` 原子创建/审核应用命令、只读分页 API，以及项目治理内的来源摘录/待核实主张 UI。引文由服务器根据同项目原始 user 消息和 Unicode code-point 偏移直接截取；owner/manager 可以记录项目内来源发言，普通成员仅能引用自己发言。只有原发言人可以执行 `source_acknowledged`，项目 owner/manager 可以驳回；无论来源确认与否都**绝不自动改变 Task/Deliverable/Decision/ChangeRequest 正式状态**。API Smoke 对 code-point emoji、幂等重放、不同 payload 409、非法范围、越权、项目隔离和审计/事件原子数进行检查。本切片尚不实现自动 LLM Claim 抽取、语义冲突消解、面向任务的事实版本图或生产数据保留策略；不能视作 P1/P3 全部验收完成。实际测试通过与否以 PR 最新 SHA 的五项 CI 为准。
