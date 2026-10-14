@@ -1,6 +1,7 @@
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { z } from 'zod';
-import { pool, transaction } from '../../../packages/core/src/db.ts';
+import { pool } from '../../../packages/core/src/db.ts';
+import { organizationCommand } from '../../../packages/core/src/organization-commands.ts';
 import { requireTenant } from '../../../packages/core/src/permissions.ts';
 
 const uuid=z.string().uuid();
@@ -23,8 +24,6 @@ export function registerGovernanceRoutes(app:FastifyInstance,
       pool.query('SELECT id,name,parent_id FROM departments WHERE tenant_id=$1 ORDER BY name',[tenantId]),
       pool.query('SELECT id,name,description FROM portfolios WHERE tenant_id=$1 ORDER BY name',[tenantId]),
       pool.query('SELECT id,name,description,portfolio_id FROM programs WHERE tenant_id=$1 ORDER BY name',[tenantId]),
-      pool.query(`SELECT id,name,department_id,program_id,portfolio_id FROM projects
-        WHERE tenant_id=$1 ORDER BY name`,[tenantId]),
     ]);
     // Only return project classification for projects explicitly visible to this member.
     const user=await authenticated(req);
@@ -40,40 +39,53 @@ export function registerGovernanceRoutes(app:FastifyInstance,
       programs:programs.rows,projects:visible.rows};
   });
   app.post('/tenants/:tenantId/departments',async(req,reply)=>{
-    const {tenantId}=await scope(req,true);
+    const {tenantId,user}=await scope(req,true);
     const v=z.object({name,parentId:uuid.nullable().default(null)}).parse(req.body);
-    const {rows}=await pool.query(`INSERT INTO departments(tenant_id,name,parent_id)
-      VALUES($1,$2,$3) RETURNING id,name,parent_id`,[tenantId,v.name,v.parentId]);
-    return reply.code(201).send({department:rows[0]});
+    const department=await organizationCommand(tenantId,user,'department.created',async db=>{
+      const {rows}=await db.query(`INSERT INTO departments(tenant_id,name,parent_id)
+        VALUES($1,$2,$3) RETURNING id,name,parent_id`,[tenantId,v.name,v.parentId]);
+      return {value:rows[0],targetId:rows[0].id,metadata:{parentId:v.parentId}};
+    });
+    return reply.code(201).send({department});
   });
   app.post('/tenants/:tenantId/portfolios',async(req,reply)=>{
-    const {tenantId}=await scope(req,true);
+    const {tenantId,user}=await scope(req,true);
     const v=z.object({name,description:z.string().max(2000).default('')}).parse(req.body);
-    const {rows}=await pool.query(`INSERT INTO portfolios(tenant_id,name,description)
-      VALUES($1,$2,$3) RETURNING id,name,description`,[tenantId,v.name,v.description]);
-    return reply.code(201).send({portfolio:rows[0]});
+    const portfolio=await organizationCommand(tenantId,user,'portfolio.created',async db=>{
+      const {rows}=await db.query(`INSERT INTO portfolios(tenant_id,name,description)
+        VALUES($1,$2,$3) RETURNING id,name,description`,[tenantId,v.name,v.description]);
+      return {value:rows[0],targetId:rows[0].id};
+    });
+    return reply.code(201).send({portfolio});
   });
   app.post('/tenants/:tenantId/programs',async(req,reply)=>{
-    const {tenantId}=await scope(req,true);
+    const {tenantId,user}=await scope(req,true);
     const v=z.object({name,description:z.string().max(2000).default(''),
       portfolioId:uuid.nullable().default(null)}).parse(req.body);
-    const {rows}=await pool.query(`INSERT INTO programs(tenant_id,name,description,portfolio_id)
-      VALUES($1,$2,$3,$4) RETURNING id,name,description,portfolio_id`,
-      [tenantId,v.name,v.description,v.portfolioId]);
-    return reply.code(201).send({program:rows[0]});
+    const program=await organizationCommand(tenantId,user,'program.created',async db=>{
+      const {rows}=await db.query(`INSERT INTO programs(tenant_id,name,description,portfolio_id)
+        VALUES($1,$2,$3,$4) RETURNING id,name,description,portfolio_id`,
+        [tenantId,v.name,v.description,v.portfolioId]);
+      return {value:rows[0],targetId:rows[0].id,metadata:{portfolioId:v.portfolioId}};
+    });
+    return reply.code(201).send({program});
   });
   app.patch('/tenants/:tenantId/projects/:projectId/classification',async req=>{
-    const {tenantId}=await scope(req,true);
+    const {tenantId,user}=await scope(req,true);
     const projectId=uuid.parse((req.params as {projectId:string}).projectId);
     const v=z.object({departmentId:uuid.nullable(),programId:uuid.nullable(),
       portfolioId:uuid.nullable()}).refine(x=>!x.programId||!x.portfolioId,
       '项目属于项目集时，通过项目集汇总到组合').parse(req.body);
-    const {rows}=await pool.query(`UPDATE projects SET department_id=$3,program_id=$4,
-      portfolio_id=$5 WHERE tenant_id=$1 AND id=$2
-      RETURNING id,department_id,program_id,portfolio_id`,
-      [tenantId,projectId,v.departmentId,v.programId,v.portfolioId]);
-    if(!rows.length)deny(404,'项目不存在');
-    return {project:rows[0]};
+    const project=await organizationCommand(tenantId,user,'project.classification_changed',async db=>{
+      const {rows}=await db.query(`UPDATE projects SET department_id=$3,program_id=$4,
+        portfolio_id=$5 WHERE tenant_id=$1 AND id=$2
+        RETURNING id,department_id,program_id,portfolio_id`,
+        [tenantId,projectId,v.departmentId,v.programId,v.portfolioId]);
+      if(!rows.length)deny(404,'项目不存在');
+      return {value:rows[0],targetId:projectId,
+        metadata:{departmentId:v.departmentId,programId:v.programId,portfolioId:v.portfolioId}};
+    });
+    return {project};
   });
   app.get('/tenants/:tenantId/members',async req=>{
     const {tenantId}=await scope(req,true);
@@ -83,22 +95,22 @@ export function registerGovernanceRoutes(app:FastifyInstance,
     return {members:rows};
   });
   app.post('/tenants/:tenantId/members',async req=>{
-    const {tenantId}=await scope(req,true);
+    const {tenantId,user}=await scope(req,true);
     const v=z.object({email:z.string().email().transform(x=>x.toLowerCase())}).parse(req.body);
-    const found=await pool.query('SELECT id FROM users WHERE email=$1',[v.email]);
-    if(!found.rowCount)deny(404,'请先让该人员注册账号（邀请机制仍在规划中）');
-    await pool.query(`INSERT INTO tenant_members(tenant_id,user_id,role)
-      VALUES($1,$2,'member') ON CONFLICT DO NOTHING`,[tenantId,found.rows[0].id]);
-    return {ok:true};
+    return organizationCommand(tenantId,user,'tenant.member_added',async db=>{
+      const found=await db.query('SELECT id FROM users WHERE email=$1',[v.email]);
+      if(!found.rowCount)deny(404,'请先让该人员注册账号（邀请机制仍在规划中）');
+      const memberId=found.rows[0].id as string;
+      const inserted=await db.query(`INSERT INTO tenant_members(tenant_id,user_id,role)
+        VALUES($1,$2,'member') ON CONFLICT DO NOTHING RETURNING user_id`,[tenantId,memberId]);
+      return {value:{ok:true},targetId:memberId,metadata:{created:Boolean(inserted.rowCount)}};
+    });
   });
   app.patch('/tenants/:tenantId/members/:memberId',async req=>{
     const {tenantId,user}=await scope(req,true);
     const memberId=uuid.parse((req.params as {memberId:string}).memberId);
     const {role}=z.object({role:z.enum(['admin','member'])}).parse(req.body);
-    return transaction(async db=>{
-      // Serialize changes to tenant admins; never leave a tenant without an admin.
-      await db.query('SELECT pg_advisory_xact_lock(hashtextextended($1, 0))',
-        ['tenant-admin:'+tenantId]);
+    return organizationCommand(tenantId,user,'tenant.member_role_changed',async db=>{
       if(role==='member'){
         const admins=await db.query(`SELECT user_id FROM tenant_members
           WHERE tenant_id=$1 AND role='admin' FOR UPDATE`,[tenantId]);
@@ -108,26 +120,21 @@ export function registerGovernanceRoutes(app:FastifyInstance,
       const {rows}=await db.query(`UPDATE tenant_members SET role=$3
         WHERE tenant_id=$1 AND user_id=$2 RETURNING user_id,role`,[tenantId,memberId,role]);
       if(!rows.length)deny(404,'人员不属于该组织');
-      await db.query(`INSERT INTO organization_audit_entries
-        (tenant_id,actor_id,action,target_id,metadata)
-        VALUES($1,$2,'tenant.member_role_changed',$3,$4)`,
-        [tenantId,user,memberId,JSON.stringify({role})]);
-      return {member:rows[0]};
+      return {value:{member:rows[0]},targetId:memberId,metadata:{role}};
     });
   });
   app.post('/tenants/:tenantId/departments/:departmentId/members',async req=>{
     const {tenantId,user}=await scope(req,true);
     const departmentId=uuid.parse((req.params as {departmentId:string}).departmentId);
     const v=z.object({userId:uuid,role:z.enum(['lead','member']).default('member')}).parse(req.body);
-    const {rows}=await pool.query(`INSERT INTO department_members
-      (tenant_id,department_id,user_id,role) VALUES($1,$2,$3,$4)
-      ON CONFLICT(department_id,user_id) DO UPDATE SET role=EXCLUDED.role
-      RETURNING department_id,user_id,role`,[tenantId,departmentId,v.userId,v.role]);
-    await pool.query(`INSERT INTO organization_audit_entries
-      (tenant_id,actor_id,action,target_id,metadata)
-      VALUES($1,$2,'department.member_assigned',$3,$4)`,
-      [tenantId,user,v.userId,JSON.stringify({departmentId,role:v.role})]);
-    return {member:rows[0]};
+    return organizationCommand(tenantId,user,'department.member_assigned',async db=>{
+      const {rows}=await db.query(`INSERT INTO department_members
+        (tenant_id,department_id,user_id,role) VALUES($1,$2,$3,$4)
+        ON CONFLICT(department_id,user_id) DO UPDATE SET role=EXCLUDED.role
+        RETURNING department_id,user_id,role`,[tenantId,departmentId,v.userId,v.role]);
+      return {value:{member:rows[0]},targetId:v.userId,
+        metadata:{departmentId,role:v.role}};
+    });
   });
   app.get('/tenants/:tenantId/allocations',async req=>{
     const {tenantId}=await scope(req,true);
@@ -137,17 +144,22 @@ export function registerGovernanceRoutes(app:FastifyInstance,
     return {allocations:rows};
   });
   app.post('/tenants/:tenantId/allocations',async(req,reply)=>{
-    const {tenantId}=await scope(req,true);
+    const {tenantId,user}=await scope(req,true);
     const v=z.object({projectId:uuid,userId:uuid,percentage:z.number().int().min(1).max(100),
       startDate:z.string().date(),endDate:z.string().date()})
       .refine(x=>x.startDate<=x.endDate,'结束日期不得早于开始日期').parse(req.body);
-    const {rows}=await pool.query(`INSERT INTO resource_allocations
-      (tenant_id,project_id,user_id,percentage,start_date,end_date)
-      SELECT p.tenant_id,p.id,pm.user_id,$4,$5,$6
-      FROM projects p JOIN project_members pm ON pm.project_id=p.id AND pm.user_id=$3
-      WHERE p.tenant_id=$1 AND p.id=$2 RETURNING id`,
-      [tenantId,v.projectId,v.userId,v.percentage,v.startDate,v.endDate]);
-    if(!rows.length)deny(400,'资源只能分配给本组织内已加入该项目的成员');
-    return reply.code(201).send({allocation:{id:rows[0].id}});
+    const allocation=await organizationCommand(tenantId,user,'allocation.recorded',async db=>{
+      const {rows}=await db.query(`INSERT INTO resource_allocations
+        (tenant_id,project_id,user_id,percentage,start_date,end_date)
+        SELECT p.tenant_id,p.id,pm.user_id,$4,$5,$6
+        FROM projects p JOIN project_members pm ON pm.project_id=p.id AND pm.user_id=$3
+        WHERE p.tenant_id=$1 AND p.id=$2 RETURNING id`,
+        [tenantId,v.projectId,v.userId,v.percentage,v.startDate,v.endDate]);
+      if(!rows.length)deny(400,'资源只能分配给本组织内已加入该项目的成员');
+      return {value:{id:rows[0].id as string},targetId:rows[0].id as string,
+        metadata:{projectId:v.projectId,userId:v.userId,percentage:v.percentage,
+          startDate:v.startDate,endDate:v.endDate}};
+    });
+    return reply.code(201).send({allocation});
   });
 }
