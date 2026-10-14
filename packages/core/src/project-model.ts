@@ -1,21 +1,31 @@
 import { createCipheriv, createDecipheriv, createHash, randomBytes } from 'node:crypto';
 import { pool, type DbClient } from './db.ts';
-import { readLLMSettings, type LLMSettings, type LLMApiStyle } from './llm-transport.ts';
+import { readLLMSettings, type LLMSettings, type LLMApiStyle, type ReasoningFormat } from './llm-transport.ts';
 
 type Reasoning='auto'|'none'|'low'|'medium'|'high'|'max';
-export type ModelInput={
-  name:string; model:string; baseUrl:string; style:LLMApiStyle;
-  reasoning:Reasoning; maxOutputTokens:number; contextChars:number;
-  enabled:boolean; isDefault:boolean; apiKey?:string;
+export type ProviderInput={
+  name:string; baseUrl:string; style:LLMApiStyle; enabled:boolean; apiKey?:string;
 };
-export type ModelPublic=Omit<ModelInput,'apiKey'> & {id:string;hasKey:boolean};
+export type ProviderPublic=Omit<ProviderInput,'apiKey'> & {id:string;hasKey:boolean};
+export type ModelInput={
+  name:string; model:string; providerId:string;
+  reasoning:Reasoning; reasoningFormat:ReasoningFormat;
+  maxOutputTokens:number; contextChars:number;
+  enabled:boolean; isDefault:boolean;
+};
+export type ModelPublic=ModelInput & {id:string};
+type ProviderRow={
+  id:string;name:string;base_url:string;api_style:LLMApiStyle;
+  api_key_ciphertext:string|null;enabled:boolean;
+};
 type ModelRow={
-  id:string;name:string;model_id:string;base_url:string;api_style:LLMApiStyle;
-  api_key_ciphertext:string|null;reasoning:Reasoning;max_output_tokens:number;
+  id:string;name:string;model_id:string;provider_id:string;
+  reasoning:Reasoning;reasoning_format:ReasoningFormat;max_output_tokens:number;
   context_chars:number;enabled:boolean;is_default:boolean;
 };
+type EffectiveRow=ModelRow & {base_url:string;api_style:LLMApiStyle;
+  api_key_ciphertext:string|null;provider_enabled:boolean};
 
-// Different rotation lifecycle from the login session signing secret.
 function key(){
   const secret=process.env.MODEL_ENCRYPTION_KEY;
   if(!secret || secret.length<32)throw new Error('MODEL_ENCRYPTION_NOT_CONFIGURED');
@@ -36,7 +46,6 @@ export function decryptModelKey(value:string):string{
     return Buffer.concat([cipher.update(data.subarray(28)),cipher.final()]).toString('utf8');
   }catch{throw new Error('MODEL_KEY_DECRYPTION_FAILED');}
 }
-
 export function validateModelUrl(value:string):string{
   let url:URL;
   try{url=new URL(value);}catch{throw new Error('MODEL_INVALID_URL');}
@@ -52,61 +61,96 @@ export function validateModelUrl(value:string):string{
   if(/\/(responses|chat\/completions)$/.test(prefix))throw new Error('MODEL_INVALID_URL');
   return url.origin+prefix;
 }
-function asPublic(r:ModelRow):ModelPublic{
-  return {id:r.id,name:r.name,model:r.model_id,baseUrl:r.base_url,
-    style:r.api_style,reasoning:r.reasoning,maxOutputTokens:r.max_output_tokens,
-    contextChars:r.context_chars,enabled:r.enabled,isDefault:r.is_default,
-    hasKey:Boolean(r.api_key_ciphertext)};
+function providerPublic(r:ProviderRow):ProviderPublic{
+  return {id:r.id,name:r.name,baseUrl:r.base_url,style:r.api_style,
+    enabled:r.enabled,hasKey:Boolean(r.api_key_ciphertext)};
+}
+function modelPublic(r:ModelRow):ModelPublic{
+  return {id:r.id,name:r.name,model:r.model_id,providerId:r.provider_id,
+    reasoning:r.reasoning,reasoningFormat:r.reasoning_format,
+    maxOutputTokens:r.max_output_tokens,contextChars:r.context_chars,
+    enabled:r.enabled,isDefault:r.is_default};
+}
+export async function listProviders():Promise<ProviderPublic[]>{
+  const {rows}=await pool.query<ProviderRow>(
+    'SELECT * FROM ai_provider_connections ORDER BY name');
+  return rows.map(providerPublic);
 }
 export async function listModelConfigs():Promise<ModelPublic[]>{
-  const {rows}=await pool.query<ModelRow>('SELECT * FROM ai_model_configs ORDER BY is_default DESC,name');
-  return rows.map(asPublic);
+  const {rows}=await pool.query<ModelRow>(
+    'SELECT * FROM ai_model_configs ORDER BY is_default DESC,name');
+  return rows.map(modelPublic);
+}
+export async function saveProvider(db:DbClient,id:string|null,value:ProviderInput):Promise<ProviderPublic>{
+  const url=validateModelUrl(value.baseUrl);
+  const existing=id?(await db.query<ProviderRow>(
+    'SELECT * FROM ai_provider_connections WHERE id=$1 FOR UPDATE',[id])).rows[0]:null;
+  if(id&&!existing)throw new Error('PROVIDER_NOT_FOUND');
+  const cipher=value.apiKey?encryptModelKey(value.apiKey):existing?.api_key_ciphertext??null;
+  if(value.enabled&&!cipher)throw new Error('MODEL_KEY_REQUIRED');
+  const fields=[value.name,url,value.style,cipher,value.enabled];
+  const {rows}=id
+    ?await db.query<ProviderRow>(`UPDATE ai_provider_connections SET name=$1,base_url=$2,
+       api_style=$3,api_key_ciphertext=$4,enabled=$5,updated_at=NOW()
+       WHERE id=$6 RETURNING *`,[...fields,id])
+    :await db.query<ProviderRow>(`INSERT INTO ai_provider_connections
+       (name,base_url,api_style,api_key_ciphertext,enabled)
+       VALUES($1,$2,$3,$4,$5) RETURNING *`,fields);
+  return providerPublic(rows[0]);
+}
+export async function deleteProvider(db:DbClient,id:string):Promise<boolean>{
+  const {rowCount}=await db.query('DELETE FROM ai_provider_connections WHERE id=$1',[id]);
+  return Boolean(rowCount);
 }
 export async function saveModelConfig(db:DbClient,id:string|null,value:ModelInput):Promise<ModelPublic>{
-  const url=validateModelUrl(value.baseUrl);
-  // There may be only one default; serialize across all administrators.
   await db.query('SELECT pg_advisory_xact_lock(21844,7302)');
   const existing=id?(await db.query<ModelRow>(
     'SELECT * FROM ai_model_configs WHERE id=$1 FOR UPDATE',[id])).rows[0]:null;
   if(id&&!existing)throw new Error('MODEL_NOT_FOUND');
-  const cipher=value.apiKey?encryptModelKey(value.apiKey):existing?.api_key_ciphertext??null;
-  if(value.enabled&&!cipher)throw new Error('MODEL_KEY_REQUIRED');
-  if(value.isDefault && !value.enabled)throw new Error('MODEL_DEFAULT_MUST_BE_ENABLED');
-  if(value.isDefault)await db.query('UPDATE ai_model_configs SET is_default=FALSE WHERE is_default=TRUE');
-  const fields=[value.name,value.model,url,value.style,cipher,value.reasoning,
+  const provider=(await db.query<ProviderRow>(
+    'SELECT * FROM ai_provider_connections WHERE id=$1 FOR UPDATE',[value.providerId])).rows[0];
+  if(!provider)throw new Error('PROVIDER_NOT_FOUND');
+  if(value.isDefault&&(!value.enabled||!provider.enabled||!provider.api_key_ciphertext))
+    throw new Error('MODEL_DEFAULT_UNAVAILABLE');
+  if(value.reasoning!=='auto'&&value.reasoningFormat==='none'&&value.reasoning!=='none')
+    throw new Error('MODEL_REASONING_UNSUPPORTED');
+  if(value.reasoningFormat==='responses-effort'&&provider.api_style!=='responses'||
+     value.reasoningFormat==='chat-completions-effort'&&provider.api_style!=='chat-completions')
+    throw new Error('MODEL_REASONING_STYLE_MISMATCH');
+  if(value.isDefault)
+    await db.query('UPDATE ai_model_configs SET is_default=FALSE WHERE is_default=TRUE');
+  const fields=[value.name,value.model,value.providerId,value.reasoning,value.reasoningFormat,
     value.maxOutputTokens,value.contextChars,value.enabled,value.isDefault];
   const {rows}=id
-    ?await db.query<ModelRow>(`UPDATE ai_model_configs SET
-       name=$1,model_id=$2,base_url=$3,api_style=$4,api_key_ciphertext=$5,
-       reasoning=$6,max_output_tokens=$7,context_chars=$8,enabled=$9,
-       is_default=$10,updated_at=NOW() WHERE id=$11 RETURNING *`,[...fields,id])
+    ?await db.query<ModelRow>(`UPDATE ai_model_configs SET name=$1,model_id=$2,
+      provider_id=$3,reasoning=$4,reasoning_format=$5,max_output_tokens=$6,
+      context_chars=$7,enabled=$8,is_default=$9,updated_at=NOW()
+      WHERE id=$10 RETURNING *`,[...fields,id])
     :await db.query<ModelRow>(`INSERT INTO ai_model_configs
-       (name,model_id,base_url,api_style,api_key_ciphertext,reasoning,
-        max_output_tokens,context_chars,enabled,is_default)
-       VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING *`,fields);
-  return asPublic(rows[0]);
+      (name,model_id,provider_id,reasoning,reasoning_format,max_output_tokens,
+       context_chars,enabled,is_default) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING *`,fields);
+  return modelPublic(rows[0]);
 }
 export async function deleteModelConfig(db:DbClient,id:string):Promise<boolean>{
   const {rowCount}=await db.query('DELETE FROM ai_model_configs WHERE id=$1',[id]);
   return Boolean(rowCount);
 }
 export async function resolveModelConfig(id?:string):Promise<LLMSettings>{
-  const {rows}=await pool.query<ModelRow>(id
-    ?'SELECT * FROM ai_model_configs WHERE id=$1'
-    :'SELECT * FROM ai_model_configs WHERE enabled=TRUE AND is_default=TRUE',
-    id?[id]:[]);
+  const {rows}=await pool.query<EffectiveRow>(`SELECT m.*,p.base_url,p.api_style,
+       p.api_key_ciphertext,p.enabled AS provider_enabled
+    FROM ai_model_configs m JOIN ai_provider_connections p ON p.id=m.provider_id
+    WHERE ${id?'m.id=$1':'m.enabled=TRUE AND m.is_default=TRUE'}`,id?[id]:[]);
   const model=rows[0];
-  if(!model || (!id && !model.enabled))throw new Error('MODEL_NOT_CONFIGURED');
-  if(!model.api_key_ciphertext)throw new Error('MODEL_NOT_CONFIGURED');
+  if(!model||!model.provider_enabled||!model.api_key_ciphertext||
+     (!id&&!model.enabled))throw new Error('MODEL_NOT_CONFIGURED');
   const config=readLLMSettings({
     LLM_API_KEY:decryptModelKey(model.api_key_ciphertext),
     LLM_BASE_URL:validateModelUrl(model.base_url),
     LLM_MODEL:model.model_id,LLM_API_STYLE:model.api_style,
   });
-  return {...config,reasoning:model.reasoning,maxOutputTokens:model.max_output_tokens,
-    contextChars:model.context_chars};
+  return {...config,reasoning:model.reasoning,reasoningFormat:model.reasoning_format,
+    maxOutputTokens:model.max_output_tokens,contextChars:model.context_chars};
 }
-// Project scope remains explicit; all projects use the platform-managed default.
 export async function resolveProjectModel(projectId:string):Promise<LLMSettings>{
   const found=await pool.query('SELECT 1 FROM projects WHERE id=$1',[projectId]);
   if(!found.rowCount)throw new Error('PROJECT_NOT_FOUND');
