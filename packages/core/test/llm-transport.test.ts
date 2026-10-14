@@ -81,7 +81,7 @@ test('rejects upstream errors, incomplete responses, refusals, empty and non-JSO
   )),/MODEL_INCOMPLETE_OUTPUT/);
   await assert.rejects(callStructuredLLM(chat,'msg',schema,async()=>new Response(
     JSON.stringify({choices:[{finish_reason:'stop',message:{content:json,refusal:'no'}}]}),{status:200}
-  )),/MODEL_INCOMPLETE_OUTPUT/);
+  )),/MODEL_REFUSED/);
 });
 
 test('audit identity distinguishes endpoints without exposing credentials or private URL paths',()=>{
