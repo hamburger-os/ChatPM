@@ -171,3 +171,9 @@
 ## ADR-033 · Worker 调度与核心业务 Runner 分离（2026-10-14）
 
 **选择：** 将三条独立 Runner——AI 事件、规则提醒与周期报告——从 apps/worker/src/worker.ts 的进程启动文件移到 packages/core/src/conversation/ai-event-runner.ts、packages/core/src/automation/reminder-runner.ts 与 packages/core/src/reporting/period-runner.ts，保留同一 PostgreSQL 事务/工作时区/重试设计与实际运行行为。Worker 仅引用 runner 并负责 tick、心跳与 graceful shutdown。**不选：** 跨进程 RPC、额外队列、改变消息事件消费业务语义、引入新的通用调度框架。**复审：** 多 Worker 租约与 SQL 语义出现实际性能需求后再调整。验收以 CI 事件/提醒/报告集成与原生/Docker 运行测试为准。
+
+## ADR-034 · 运行边界可执行守卫与运维心跳（2026-10-15）
+
+**决定：** Worker 入口不再直接写任何数据库表，心跳/成功与失败的存储逻辑归 `operations/worker-heartbeat.ts` 所有，主进程只负责 tick、停止与调用 Runner。CI 增加零依赖的静态架构守卫，保证 Worker 启动文件不引入领域 SQL、不会重新聚合事件/提醒/报告实现，且能正常调用三个 Runner。**范围：** 守卫目前只覆盖 Worker bootstrap；遗留 API/治理路由有直接业务 SQL，尚不能误报它们已实现全部无跨模块 SQL。后续逐模块迁移 API 时扩大规则。
+
+**取舍：** 使用精准且窄范围的源码断言，而不是为现有 560 行 API 建立大量豁免的复杂 ESLint 插件；不修改数据库 schema、Outbox 重试或 Win11 进程模型。守卫自身要纳入 GitHub CI 并能够通过主动违反约束的测试证明会失败。

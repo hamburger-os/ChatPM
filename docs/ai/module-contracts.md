@@ -182,3 +182,7 @@ Web 端从 `GET /projects` 初始化项目列表和设置面板。该接口返�
 ## ADR-033 · Worker 模块边界当前实施契约
 
 AI 事件、规则提醒与周期报告 Runner 的应用入口分别归 `packages/core/src/conversation/ai-event-runner.ts`、`packages/core/src/automation/reminder-runner.ts`、`packages/core/src/reporting/period-runner.ts` 所有。Worker 进程只触发 `processEvents()`、`processReminders()` 与 `processReports()`，并负责调度、健康心跳和优雅关闭。事务原子性、UTC/项目时区、冷却、报告周期键和消息 nonce 不能改变；不以拆文件声称已有全域应用命令接口。继续用既有集成/Smoke/跨平台构建验收。
+
+## ADR-034 · Bootstrap / Operations Boundary
+
+`apps/worker/src/worker.ts` 仅管理进程生命周期、定时 tick 和业务 Runner 调度。`recordWorkerHeartbeat` 由 `packages/core/src/operations/worker-heartbeat.ts` 实现，保存工作进程健康遥测而非领域事实。CI 的 `tools/test/architecture-boundaries.test.mjs` 保证该入口不含 SQL、仍分别调用 processEvents/processReminders/processReports；不可借本规则宣称整个 API/Worker 已完全领域解耦。
