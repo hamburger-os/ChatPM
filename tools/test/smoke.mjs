@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
 import { setTimeout as delay } from 'node:timers/promises';
 import { randomUUID } from 'node:crypto';
+import { createServer } from 'node:http';
 import pg from 'pg';
 
 const port=33217;
@@ -114,6 +115,64 @@ try{
     enabled:false,isDefault:false,
   }});
   assert.equal(secondModel.status,201,'A provider must support multiple models');
+  // Discovery and batch import: a local fixture proves that no real vendor
+  // service or production project content is required for acceptance.
+  const catalogServer=createServer((req,res)=>{
+    assert.equal(req.headers.authorization,'Bearer smoke-catalog-secret');
+    res.setHeader('Content-Type','application/json');
+    if(req.method==='GET'&&req.url==='/v1/models'){
+      res.end(JSON.stringify({data:[
+        {id:'smoke-discovered-a',name:'Same display label'},
+        {id:'smoke-discovered-b',name:'Same display label'},
+      ]}));return;
+    }
+    if(req.method==='POST'&&req.url==='/v1/chat/completions'){
+      res.end(JSON.stringify({choices:[{
+        finish_reason:'stop',message:{content:'{"ok":true}'},
+      }]}));return;
+    }
+    res.statusCode=404;res.end('{}');
+  });
+  await new Promise(resolve=>catalogServer.listen(0,'127.0.0.1',resolve));
+  try{
+    const localPort=catalogServer.address().port;
+    const local=await api('/admin/ai/providers',{method:'POST',body:{
+      name:'Catalog smoke '+suffix,baseUrl:'http://127.0.0.1:'+localPort+'/v1',
+      style:'chat-completions',enabled:false,apiKey:'smoke-catalog-secret',
+    }});
+    assert.equal(local.status,201,JSON.stringify(local.data));
+    const connectionId=local.data.provider.id;
+    const deniedCatalog=await api('/admin/ai/providers/'+connectionId+'/discover',{
+      method:'POST',cookie:cookieB});
+    assert.equal(deniedCatalog.status,403);
+    const discovered=await api('/admin/ai/providers/'+connectionId+'/discover',{method:'POST'});
+    assert.equal(discovered.status,200,JSON.stringify(discovered.data));
+    assert.deepEqual(discovered.data.models.map(m=>m.id),
+      ['smoke-discovered-a','smoke-discovered-b']);
+    assert.ok(!JSON.stringify(discovered.data).includes('smoke-catalog-secret'));
+    const throttled=await api('/admin/ai/providers/'+connectionId+'/discover',{method:'POST'});
+    assert.equal(throttled.status,429,'Directory should be throttled across API processes');
+    const selection={providerId:connectionId,models:discovered.data.models};
+    const deniedImport=await api('/admin/ai/models/import',{
+      method:'POST',cookie:cookieB,body:selection});
+    assert.equal(deniedImport.status,403);
+    const imported=await api('/admin/ai/models/import',{method:'POST',body:selection});
+    assert.equal(imported.status,201,JSON.stringify(imported.data));
+    assert.equal(imported.data.created,2,'Same display labels should not break batch import');
+    const again=await api('/admin/ai/models/import',{method:'POST',body:selection});
+    assert.equal(again.status,201);
+    assert.equal(again.data.created,0);
+    assert.equal(again.data.skipped,2,'Reimport must be idempotent');
+    const importedList=await api('/admin/ai/models');
+    const found=importedList.data.models.filter(m=>m.providerId===connectionId);
+    assert.equal(found.length,2);
+    assert.ok(found.every(m=>!m.enabled&&!m.isDefault));
+    assert.equal(new Set(found.map(m=>m.name)).size,2);
+    const testedInactive=await api('/admin/ai/models/'+found[0].id+'/test',{method:'POST'});
+    assert.equal(testedInactive.status,200,JSON.stringify(testedInactive.data));
+    assert.equal(testedInactive.data.ok,true,
+      'Disabled provider and model must be testable before production enablement');
+  }finally{await new Promise(resolve=>catalogServer.close(resolve));}
   const deniedConnection=await api('/admin/ai/providers',{cookie:cookieB});
   assert.equal(deniedConnection.status,403,'Non-administrators cannot read provider configuration');
   const forbidWrite=await api('/admin/ai/models',{method:'POST',cookie:cookieB,
