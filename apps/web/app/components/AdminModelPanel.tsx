@@ -47,6 +47,7 @@ export default function AdminModelPanel(){
   };
   const editProvider=(p:Provider)=>{
     setSelected(p.id);setProviderEditing(p.id);
+    setModelEditing(null);setModelForm(newModel(p.id));
     setProviderForm({name:p.name,baseUrl:p.baseUrl,style:p.style,
       enabled:p.enabled,apiKey:''});
     setPanel('providers');
@@ -140,7 +141,7 @@ export default function AdminModelPanel(){
                   setSelected(null);setProviderEditing(null);setProviderForm(newProvider());
                 })}>删除连接</button>}</div>
           </form>
-          {active&&<p className="hint">当前连接：{active.name} · {active.hasKey?'密钥已配置':'缺少密钥'}。
+          {providerEditing&&active&&<p className="hint">当前连接：{active.name} · {active.hasKey?'密钥已配置':'缺少密钥'}。
             系统仅显示密钥状态，不返回密钥内容。</p>}
         </section>}
         {panel==='models'&&<section className="management-editor">
