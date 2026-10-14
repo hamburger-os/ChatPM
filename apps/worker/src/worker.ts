@@ -1,5 +1,6 @@
 import 'dotenv/config';
 import { pool } from '../../../packages/core/src/db.ts';
+import { recordWorkerHeartbeat } from '../../../packages/core/src/operations/worker-heartbeat.ts';
 import { processEvents } from '../../../packages/core/src/conversation/ai-event-runner.ts';
 import { processReminders } from '../../../packages/core/src/automation/reminder-runner.ts';
 import { processReports } from '../../../packages/core/src/reporting/period-runner.ts';
@@ -24,14 +25,7 @@ async function tick() {
   catch(e) { console.error('Worker tick failed',e instanceof Error?e.message:e); }
   finally {
     try {
-      await pool.query(`INSERT INTO worker_health(name,last_seen_at,last_success_at,last_failure_at)
-        VALUES('default',NOW(),CASE WHEN $1::boolean THEN NOW() ELSE NULL END,
-          CASE WHEN $1::boolean THEN NULL ELSE NOW() END)
-        ON CONFLICT (name) DO UPDATE SET
-          last_seen_at=NOW(),
-          last_success_at=CASE WHEN $1::boolean THEN NOW() ELSE worker_health.last_success_at END,
-          last_failure_at=CASE WHEN $1::boolean THEN worker_health.last_failure_at ELSE NOW() END`,
-        [succeeded]);
+      await recordWorkerHeartbeat(succeeded);
     } catch(e) {
       console.error('Worker heartbeat failed',e instanceof Error?e.name:'UnknownFailure');
     }

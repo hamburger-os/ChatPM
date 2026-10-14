@@ -58,3 +58,7 @@
 ## ADR-033 · Worker 运行入口与领域 Runner 分离
 
 已将 Outbox/AI 消息事件、规则提醒与周期报告的处理函数分离为 `packages/core/src/conversation/ai-event-runner.ts`、`packages/core/src/automation/reminder-runner.ts`、`packages/core/src/reporting/period-runner.ts`；`apps/worker/src/worker.ts` 只保留调度、心跳和停止生命周期。迁移没有新数据库表，也没有新消息队列。独立更正提醒文案：逾期天数、今天截止、阻塞优先级。**尚未完成**：旧 API 的薄路由命令化、单元级职责彻底隔离、全域 CommandReceipt 化、细粒度异步事件版控、外部系统实测。
+
+## ADR-034 · Worker 架构边界静态守卫
+
+将 Worker 心跳写入抽离至 Operations 模块，进程入口不再含直接 SQL；新增一条 CI 测试检查 Worker bootstrap 不包含 `SELECT/UPDATE/INSERT/DELETE` 业务 SQL、不允许直接调用 `pool.query`/事务/审计函数、保留完整三个 Runner 调度。该测试能防止该入口重新长成巨石文件，但**不代表** API/server.ts 和 governance-routes.ts 已无跨领域 SQL。完整 P2 的静态边界校验、应用命令移交和多 Worker 故障注入仍待完成。

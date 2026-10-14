@@ -13,6 +13,7 @@
     "dev:web": "next dev apps/web -p 3000",
     "db:migrate": "tsx packages/core/src/migrate.ts",
     "test": "tsx --test packages/core/test/*.test.ts",
+    "test:architecture": "node --test tools/test/architecture-boundaries.test.mjs",
     "typecheck": "tsc --noEmit",
     "build:web": "next build apps/web",
     "check:docs": "node tools/docs/check-docs.mjs",

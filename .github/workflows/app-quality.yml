@@ -45,6 +45,8 @@ jobs:
         run: npm run typecheck
       - name: Unit tests
         run: npm test
+      - name: Architecture boundaries
+        run: npm run test:architecture
       - name: Deployment bootstrap tests
         run: npm run test:ops
       - name: Database schema
