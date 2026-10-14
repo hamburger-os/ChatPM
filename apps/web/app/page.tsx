@@ -160,7 +160,11 @@ export default function Home(){
         <button disabled={working}>{register?'注册并创建组织':'登录'}</button>
       </form><button className="text-button" onClick={()=>setRegister(!register)}>
         {register?'已有账号？登录':'没有账号？创建组织'}
-      </button>{notice&&<p role="alert" className="notice">{notice}</p>}
+      </button>
+      <details className="login-help"><summary>系统管理员如何登录？</summary>
+        <p>系统管理员使用同一邮箱和密码登录。首次部署时须由服务器操作员先为已注册账号授权；登录后在最左侧进入「系统管理」。组织管理员或项目负责人不自动具有系统管理权限。</p>
+      </details>
+      {notice&&<p role="alert" className="notice">{notice}</p>}
     </section></main>;
 
   return <main className={'app-shell '+(view==='projects'&&showDetails?'has-details':'without-details')}>
