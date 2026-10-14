@@ -1,0 +1,221 @@
+'use client';
+import { useEffect, useState, type FormEvent } from 'react';
+import type { Person, Progress, Project, Proposal, Report, Risk, Task, User } from './client';
+import { json, request } from './client';
+import AdminModelPanel from './AdminModelPanel';
+import OrganizationPanel from './OrganizationPanel';
+
+type Tab='tasks'|'proposals'|'reports'|'settings'|'organization'|'admin';
+export default function WorkspaceDetails({project,tenantId,user}:{
+  project:Project|null;tenantId:string;user:User;
+}){
+  const [tab,setTab]=useState<Tab>('tasks');
+  const [tasks,setTasks]=useState<Task[]>([]);
+  const [people,setPeople]=useState<Person[]>([]);
+  const [risks,setRisks]=useState<Risk[]>([]);
+  const [proposals,setProposals]=useState<Proposal[]>([]);
+  const [progress,setProgress]=useState<Progress[]>([]);
+  const [reports,setReports]=useState<Report[]>([]);
+  const [taskName,setTaskName]=useState('');
+  const [assignee,setAssignee]=useState('');
+  const [due,setDue]=useState('');
+  const [email,setEmail]=useState('');
+  const [notice,setNotice]=useState('');
+  const [busy,setBusy]=useState(false);
+  const [settings,setSettings]=useState({aiEnabled:false,workStart:null as number|null,
+    workEnd:null as number|null,cooldownHours:null as number|null});
+  const id=project?.id;
+  const owner=project?.role==='owner',manager=owner||project?.role==='manager';
+  async function reload(pid:string){
+    const base='/projects/'+pid;
+    const [t,m,r,p,u,reports]=await Promise.all([
+      request<{tasks:Task[]}>(base+'/tasks'),
+      request<{members:Person[]}>(base+'/members'),
+      request<{risks:Risk[]}>(base+'/risks'),
+      request<{proposals:Proposal[]}>(base+'/proposals'),
+      request<{updates:Progress[]}>(base+'/progress'),
+      request<{reports:Report[]}>(base+'/reports'),
+    ]);
+    return {tasks:t.tasks,people:m.members,risks:r.risks,proposals:p.proposals,
+      progress:u.updates,reports:reports.reports};
+  }
+  useEffect(()=>{
+    if(!id)return;
+    let active=true;
+    setTab('tasks');
+    setSettings({aiEnabled:project.ai_enabled,workStart:project.work_start,
+      workEnd:project.work_end,cooldownHours:project.cooldown_hours});
+    const update=()=>{void reload(id).then(x=>{
+      if(!active)return;
+      setTasks(x.tasks);setPeople(x.people);setRisks(x.risks);
+      setProposals(x.proposals);setProgress(x.progress);setReports(x.reports);
+    }).catch(e=>{if(active)setNotice(e.message);});};
+    update();const interval=setInterval(update,5000);
+    return ()=>{active=false;clearInterval(interval);};
+  },[id]);
+  async function act(fn:()=>Promise<void>){
+    if(!id)return;
+    setBusy(true);setNotice('');
+    try{await fn();const x=await reload(id);
+      setTasks(x.tasks);setPeople(x.people);setRisks(x.risks);
+      setProposals(x.proposals);setProgress(x.progress);setReports(x.reports);
+    }catch(e){setNotice(e instanceof Error?e.message:'操作失败');}
+    finally{setBusy(false);}
+  }
+  const base='/projects/'+id;
+  function createTask(e:FormEvent){
+    e.preventDefault();void act(async()=>{
+      await request(base+'/tasks',{method:'POST',body:json({title:taskName,
+        assigneeId:assignee||null,dueDate:due||null})});
+      setTaskName('');setAssignee('');setDue('');
+    });
+  }
+  function patchTask(task:Task,change:Record<string,unknown>){
+    void act(async()=>{await request(base+'/tasks/'+task.id,
+      {method:'PATCH',body:json({version:task.version,...change})});});
+  }
+  function decide(p:Proposal,decision:'accepted'|'rejected',assigneeId:string|null=null,dueDate?:string|null){
+    void act(async()=>{await request(base+'/proposals/'+p.id+'/decision',{
+      method:'POST',body:json({decision,assigneeId,dueDate})});});
+  }
+  return <aside className="details">
+    <div className="tabs">
+      {(['tasks','proposals','reports','settings',
+        ...(tenantId?['organization' as const]:[]),
+        ...(user.is_system_admin?['admin' as const]:[])] as Tab[]).map(t=>
+        <button key={t} className={tab===t?'active':''} onClick={()=>setTab(t)}>
+          {({tasks:'任务',proposals:'AI 待确认',reports:'汇报',settings:'设置',
+            organization:'组织管理',admin:'系统 AI'})[t]}
+        </button>)}
+    </div>
+    <div className="detail-content">
+    {tab==='admin'&&user.is_system_admin&&<AdminModelPanel/>}
+    {tab==='organization'&&tenantId&&<OrganizationPanel tenantId={tenantId}/>}
+    {!project&&tab!=='admin'&&tab!=='organization'&&<p className="hint">请先选择或创建项目。</p>}
+    {project&&tab==='tasks'&&<>
+      <h3>待审核的进度证据 ({progress.filter(x=>x.status==='pending').length})</h3>
+      {progress.filter(x=>x.status==='pending').map(x=><article className="item" key={x.id}>
+        <strong>{x.task_title}</strong><p>{x.summary}</p><small>{x.kind}</small>
+        {manager&&<div className="actions">
+          <button disabled={busy} onClick={()=>void act(async()=>{await request(base+'/progress/'+x.id+'/decision',
+            {method:'POST',body:json({decision:'accepted'})});})}>确认进度</button>
+          <button disabled={busy} className="secondary" onClick={()=>void act(async()=>{await request(base+'/progress/'+x.id+'/decision',
+            {method:'POST',body:json({decision:'rejected'})});})}>忽略</button>
+        </div>}
+      </article>)}
+      <h3>正式任务 ({tasks.length})</h3>
+      {manager&&<form className="stack" onSubmit={createTask}>
+        <input required placeholder="任务名称" value={taskName} onChange={e=>setTaskName(e.target.value)}/>
+        <select aria-label="任务负责人" value={assignee} onChange={e=>setAssignee(e.target.value)}>
+          <option value="">负责人待定</option>{people.filter(x=>x.role!=='observer').map(x=>
+            <option value={x.id} key={x.id}>{x.display_name}</option>)}
+        </select>
+        <input aria-label="任务截止日期" type="date" value={due} onChange={e=>setDue(e.target.value)}/>
+        <button disabled={busy}>创建任务</button>
+      </form>}
+      {tasks.map(task=><article className="item" key={task.id}>
+        <strong>{task.title}</strong>
+        <small>负责人：{task.assignee||'待指派'} · 截止：{task.due_date||'未设置'}</small>
+        <select aria-label={'任务状态：'+task.title} value={task.status}
+          disabled={busy||!(manager||(project.role==='member'&&task.assignee_id===user.id))}
+          onChange={e=>patchTask(task,{status:e.target.value})}>
+          <option value="todo">待开始</option><option value="doing">进行中</option>
+          <option value="blocked">阻塞</option><option value="done">已完成</option>
+          <option value="cancelled">已取消</option>
+        </select>
+        {manager&&<div className="task-options">
+          <label>负责人<select value={task.assignee_id||''} onChange={e=>patchTask(task,{assigneeId:e.target.value||null})}>
+            <option value="">未指定</option>{people.filter(x=>x.role!=='observer').map(x=>
+              <option value={x.id} key={x.id}>{x.display_name}</option>)}
+          </select></label>
+          <label>截止日期<input key={task.id+':'+task.version} type="date"
+            defaultValue={task.due_date||''} onBlur={e=>{
+              if(e.target.value!==(task.due_date||''))patchTask(task,{dueDate:e.target.value||null});
+            }}/></label>
+        </div>}
+      </article>)}
+      <h3>当前风险 ({risks.length})</h3>
+      {risks.map(x=><article className="item" key={x.id}><strong>{x.title}</strong>
+        <small>{x.status==='open'?'尚未解决':'已解决'}</small></article>)}
+    </>}
+    {project&&tab==='proposals'&&<>
+      <h3>AI 候选事项</h3><p className="hint">AI 仅生成建议，不会直接修改正式任务。</p>
+      {proposals.filter(p=>p.status==='pending').map(p=><ProposalItem
+        key={p.id} proposal={p} people={people} manager={Boolean(manager)} busy={busy}
+        onDecide={decide}/>)}
+    </>}
+    {project&&tab==='reports'&&<>
+      <h3>周报与月报</h3>
+      {owner&&<div className="actions">
+        {(['week','month'] as const).map(kind=><button key={kind} disabled={busy}
+          onClick={()=>void act(async()=>{await request(base+'/reports',
+            {method:'POST',body:json({kind})});})}>生成{kind==='week'?'周':'月'}报</button>)}
+      </div>}
+      {reports.map(x=><details className="item" key={x.id}>
+        <summary><strong>{x.kind==='week'?'周报':'月报'} · {x.period_key}</strong></summary>
+        <pre>{x.content}</pre>
+        {owner&&x.state==='draft'&&<button disabled={busy} onClick={()=>void act(async()=>{
+          await request(base+'/reports/'+x.id+'/publish',{method:'POST'});
+        })}>审核并发布</button>}
+      </details>)}
+    </>}
+    {project&&tab==='settings'&&<>
+      <h3>项目成员</h3>
+      {people.map(x=><div className="member" key={x.id}>
+        <strong>{x.display_name}</strong><small>{x.email}</small>
+        {owner&&x.role!=='owner'?<select aria-label={'角色：'+x.display_name}
+          disabled={busy} value={x.role} onChange={e=>void act(async()=>{
+          await request(base+'/members/'+x.id,{method:'PATCH',body:json({role:e.target.value})});
+        })}><option value="manager">项目管理者</option><option value="member">项目成员</option>
+          <option value="observer">观察者</option></select>:<small>{x.role}</small>}
+      </div>)}
+      {owner&&<form className="row-form" onSubmit={e=>{e.preventDefault();void act(async()=>{
+        await request(base+'/members',{method:'POST',body:json({email})});setEmail('');
+      });}}>
+        <input type="email" placeholder="添加组织内已注册成员" required value={email} onChange={e=>setEmail(e.target.value)}/>
+        <button disabled={busy}>加入</button>
+      </form>}
+      {owner&&<div className="stack">
+        <h3>AI 助手</h3>
+        <label className="check"><input type="checkbox" checked={settings.aiEnabled}
+          onChange={e=>setSettings({...settings,aiEnabled:e.target.checked})}/>启用 AI 消息分析</label>
+        <p className="hint">供应商、模型与密钥仅由系统总管理员统一管理。</p>
+        <h3>工作日提醒</h3>
+        <label className="check"><input type="checkbox" checked={settings.workStart!==null}
+          onChange={e=>setSettings({...settings,workStart:e.target.checked?9:null,
+            workEnd:e.target.checked?18:null,cooldownHours:e.target.checked?24:null})}/>启用提醒</label>
+        {settings.workStart!==null&&<div className="triple">
+          {(['workStart','workEnd','cooldownHours'] as const).map(field=><label key={field}>{field}
+            <input type="number" value={settings[field]??''} onChange={e=>setSettings({...settings,
+              [field]:e.target.value===''?null:Number(e.target.value)})}/></label>)}
+        </div>}
+        <button disabled={busy} onClick={()=>void act(async()=>{
+          await request(base+'/settings',{method:'PATCH',body:json(settings)});
+        })}>保存设置</button>
+      </div>}
+    </>}
+    {notice&&<p role="alert" className="notice">{notice}</p>}
+    </div>
+  </aside>;
+}
+function ProposalItem({proposal:p,people,manager,busy,onDecide}:{
+  proposal:Proposal;people:Person[];manager:boolean;busy:boolean;
+  onDecide:(p:Proposal,d:'accepted'|'rejected',a?:string|null,date?:string|null)=>void;
+}){
+  const [assignee,setAssignee]=useState('');
+  const [date,setDate]=useState('');
+  return <article className="item">
+    <strong>{p.title}</strong><p>{p.detail}</p>
+    <small>{p.kind==='risk'?'风险':'任务'} · {p.evidence_text||'待核实'}</small>
+    {manager&&<>
+      {p.kind==='task'&&<><select value={assignee} onChange={e=>setAssignee(e.target.value)}>
+        <option value="">待指派</option>{people.filter(x=>x.role!=='observer').map(x=>
+          <option value={x.id} key={x.id}>{x.display_name}</option>)}
+      </select><input type="date" value={date} onChange={e=>setDate(e.target.value)}/></>}
+      <div className="actions">
+        <button disabled={busy} onClick={()=>onDecide(p,'accepted',assignee||null,date||undefined)}>确认</button>
+        <button disabled={busy} className="secondary" onClick={()=>onDecide(p,'rejected')}>忽略</button>
+      </div>
+    </>}
+  </article>;
+}
