@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import { pool } from '../src/db.ts';
 import { lockProjectAccess } from '../src/identity/project-access.ts';
+import { assertPrerequisitesCompleted, lockTaskDependencyGraph } from '../src/delivery/dependency-policy.ts';
 import { assertProject } from '../src/permissions.ts';
 
 const marker=randomUUID();
@@ -46,6 +47,37 @@ try{
   assert.equal(current.role,'observer');
   assert.throws(()=>assertProject(current.role,'task.create'),/没有执行该操作的权限/);
   await a.query('COMMIT');
+
+
+  const {rows:tasks}=await pool.query(`
+    INSERT INTO tasks(project_id,title,status)
+    VALUES($1,'Prerequisite','done'),($1,'Dependent','todo') RETURNING id,title
+  `,[projectId]);
+  const prerequisite=tasks.find(t=>t.title==='Prerequisite')!.id as string;
+  const dependent=tasks.find(t=>t.title==='Dependent')!.id as string;
+  await pool.query(`
+    INSERT INTO task_dependencies(project_id,dependent_task_id,prerequisite_task_id,created_by)
+    VALUES($1,$2,$3,$4)
+  `,[projectId,dependent,prerequisite,actorId]);
+  await a.query('BEGIN');
+  await lockTaskDependencyGraph(a,projectId);
+  await assertPrerequisitesCompleted(a,projectId,dependent);
+
+  await b.query('BEGIN');
+  await b.query("SET LOCAL lock_timeout='150ms'");
+  await assert.rejects(
+    b.query("UPDATE tasks SET status='doing' WHERE id=$1 AND project_id=$2",
+      [prerequisite,projectId]),
+    (e:unknown)=>(e as {code?:string}).code==='55P03',
+    'Reopening a completed prerequisite must wait for the dependent completion');
+  await b.query('ROLLBACK');
+  await a.query('COMMIT');
+  await pool.query("UPDATE tasks SET status='doing' WHERE id=$1",[prerequisite]);
+  await a.query('BEGIN');
+  await lockTaskDependencyGraph(a,projectId);
+  await assert.rejects(assertPrerequisitesCompleted(a,projectId,dependent),
+    /存在未完成的前置任务/);
+  await a.query('ROLLBACK');
 
   // An organization revocation is checked independently of project role.
   await pool.query("DELETE FROM tenant_members WHERE tenant_id=$1 AND user_id=$2",
