@@ -253,3 +253,10 @@ label{display:grid;gap:7px;font-size:13px;color:#536174}label.check{display:flex
 .pm-actions{margin-top:9px;flex-wrap:wrap}
 .pm-actions button{font-size:12px;padding:8px 10px}
 .pm-dependency{font-size:12px;color:#425772;border-radius:9px;background:#fff;padding:12px;overflow-wrap:anywhere}
+
+/* ADR-036 issue lifecycle notes and project-scoped timeline. */
+.pm-issue-actions{display:flex;flex-direction:column;gap:8px;margin:12px 0}
+.pm-issue-actions textarea{min-height:62px;max-width:100%}
+.pm-issue-history{padding:10px 12px;border:1px solid #e2e9f3;
+  border-radius:9px;margin:8px 0;overflow-wrap:anywhere}
+.pm-issue-history p{line-height:1.6;font-size:12px}

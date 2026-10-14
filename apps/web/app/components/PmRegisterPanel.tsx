@@ -13,6 +13,11 @@ type Entry={
 };
 type Registry=Record<Kind,Entry[]>;
 type Dependency={dependent_task_id:string;prerequisite_task_id:string};
+type IssueTransition={
+  id:string;from_status:'open'|'resolved';to_status:'open'|'resolved';
+  issue_version:number;note:string;actor_id:string;occurred_at:string;
+};
+type IssueHistoryPage={history:IssueTransition[];nextBeforeVersion:number|null};
 const kinds:Kind[]=['goals','milestones','deliverables','issues','decisions','changes'];
 const labels:Record<Kind,string>={
   goals:'项目目标',milestones:'里程碑',deliverables:'交付与验收',
@@ -43,6 +48,10 @@ export default function PmRegisterPanel({project,user,people,tasks}:{
   const [dependent,setDependent]=useState('');
   const [prerequisite,setPrerequisite]=useState('');
   const [notice,setNotice]=useState('');
+  const [issueNotes,setIssueNotes]=useState<Record<string,string>>({});
+  const [issueHistory,setIssueHistory]=useState<Record<string,IssueHistoryPage>>({});
+  // Reuse a command key when the same user action is retried after a network error.
+  const commandKeys=useRef(new Map<string,string>());
   const [busy,setBusy]=useState(false);
   const keyRef=useRef<string|null>(null);
   const base='/projects/'+project.id+'/pm';
@@ -105,9 +114,24 @@ export default function PmRegisterPanel({project,user,people,tasks}:{
     });
   }
   function transition(path:string,body:Record<string,unknown>){
+    const signature=JSON.stringify([project.id,path,body]);
+    const idempotencyKey=commandKeys.current.get(signature)??crypto.randomUUID();
+    commandKeys.current.set(signature,idempotencyKey);
     void execute(async()=>{
-      await request(base+path,{method:'POST',
-        body:json({idempotencyKey:crypto.randomUUID(),...body})});
+      await request(base+path,{method:'POST',body:json({idempotencyKey,...body})});
+    });
+  }
+  function loadIssueHistory(issueId:string,beforeVersion?:number){
+    void execute(async()=>{
+      const next=await request<IssueHistoryPage>(
+        base+'/issues/'+issueId+'/history'+
+        (beforeVersion?'?beforeVersion='+beforeVersion:''));
+      setIssueHistory(prev=>({
+        ...prev,[issueId]:{
+          history:beforeVersion?[...(prev[issueId]?.history??[]),...next.history]:next.history,
+          nextBeforeVersion:next.nextBeforeVersion,
+        },
+      }));
     });
   }
   const memberNames=new Map(people.map(x=>[x.id,x.display_name]));
@@ -178,6 +202,39 @@ export default function PmRegisterPanel({project,user,people,tasks}:{
         {item.impact&&<p>影响：{item.impact}</p>}
         {item.due_date&&<small>日期：{item.due_date.slice(0,10)}</small>}
         {item.assignee_id&&<small>负责人：{memberNames.get(item.assignee_id)||'历史成员'}</small>}
+        {k==='issues'&&<>
+          {canPlan&&item.version&&<div className="pm-issue-actions">
+            <label>处理说明
+              <textarea rows={2} maxLength={2000} value={issueNotes[item.id]??''}
+                placeholder={item.status==='open'?'说明如何解决及验证':'说明复发原因与影响'}
+                onChange={e=>setIssueNotes(prev=>({...prev,[item.id]:e.target.value}))}/>
+            </label>
+            <button disabled={busy||!(issueNotes[item.id]??'').trim()}
+              onClick={()=>{
+                const decision=item.status==='open'?'resolve':'reopen';
+                transition('/issues/'+item.id+'/transition',{
+                  expectedVersion:item.version,decision,note:(issueNotes[item.id]??'').trim(),
+                });
+              }}>
+              {item.status==='open'?'确认问题解决':'重新打开问题'}
+            </button>
+          </div>}
+          <button className="secondary" disabled={busy}
+            onClick={()=>loadIssueHistory(item.id)}>查看处理历史</button>
+          {issueHistory[item.id]&&<div className="pm-issue-history">
+            {issueHistory[item.id].history.length===0&&<p className="hint">尚无状态转换历史</p>}
+            {issueHistory[item.id].history.map(record=><p key={record.id}>
+              v{record.issue_version} · {record.to_status==='resolved'?'已解决':'重新打开'}
+              · {memberNames.get(record.actor_id)||'历史成员'}：
+              {record.note}
+            </p>)}
+            {issueHistory[item.id].nextBeforeVersion&&
+              <button className="secondary" disabled={busy}
+                onClick={()=>loadIssueHistory(item.id,issueHistory[item.id].nextBeforeVersion!)}>
+                加载更早记录
+              </button>}
+          </div>}
+        </>}
         {k==='deliverables'&&item.version&&
           <div className="actions pm-actions">
             {item.assignee_id===user.id&&['planned','returned'].includes(item.status||'')&&
