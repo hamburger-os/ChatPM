@@ -23,9 +23,10 @@ export function prepareDockerEnv(source) {
     if (matches.length > 1) throw new Error('Duplicate setting: ' + key);
     const index = matches[0];
     const raw = index === undefined ? '' : lines[index].slice(key.length + 1).trim();
-    const placeholder = key === 'SESSION_SECRET' && raw === exampleSecret;
-    if (key === 'SESSION_SECRET' && raw && !placeholder && raw.length < 32) {
-      throw new Error('SESSION_SECRET must contain at least 32 characters. Existing value was preserved.');
+    const placeholder = (key === 'SESSION_SECRET' && raw === exampleSecret) ||
+      (key === 'MODEL_ENCRYPTION_KEY' && raw === 'replace-with-a-separate-long-random-model-key');
+    if ((key === 'SESSION_SECRET' || key === 'MODEL_ENCRYPTION_KEY') && raw && !placeholder && raw.length < 32) {
+      throw new Error(key + ' must contain at least 32 characters. Existing value was preserved.');
     }
     if (!raw || placeholder) {
       const value = generateSecret();
