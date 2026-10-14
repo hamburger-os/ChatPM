@@ -183,13 +183,34 @@ app.post('/projects/:id/members',async req=>{
   return transaction(async db=>{
     const person=(await db.query('SELECT id FROM users WHERE email=$1',[email])).rows[0];
     if (!person) fail(404,'该邮箱尚未注册');
-    await db.query(
-      `INSERT INTO tenant_members(tenant_id,user_id,role) VALUES($1,$2,'member')
-       ON CONFLICT DO NOTHING`,[m.tenant_id,person.id]);
+    const existing=await db.query(
+      'SELECT 1 FROM tenant_members WHERE tenant_id=$1 AND user_id=$2',[m.tenant_id,person.id]);
+    if(!existing.rowCount)fail(403,'请先由组织管理员将人员加入该组织');
     await db.query(
       `INSERT INTO project_members(project_id,user_id,role) VALUES($1,$2,'member')
        ON CONFLICT DO NOTHING`,[projectId,person.id]);
     await audit(db,projectId,userId,'project.member_added',person.id);
+    return {ok:true};
+  });
+});
+app.patch('/projects/:id/members/:memberId',async req=>{
+  const {id,memberId}=req.params as {id:string;memberId:string};
+  const projectId=uuid.parse(id),target=uuid.parse(memberId);
+  const actor=await authenticated(req);
+  owner(await member(actor,projectId));
+  const {role}=z.object({role:z.enum(['manager','member','observer'])}).parse(req.body);
+  return transaction(async db=>{
+    const existing=await db.query(`SELECT role FROM project_members
+      WHERE project_id=$1 AND user_id=$2 FOR UPDATE`,[projectId,target]);
+    if(!existing.rowCount || existing.rows[0].role==='owner')fail(403,'不能修改项目负责人的角色');
+    if(role==='observer'){
+      const assigned=await db.query(`SELECT 1 FROM tasks WHERE project_id=$1 AND assignee_id=$2
+        AND status NOT IN ('done','cancelled') LIMIT 1`,[projectId,target]);
+      if(assigned.rowCount)fail(409,'该人员仍有未完成任务，请先移交任务');
+    }
+    await db.query('UPDATE project_members SET role=$3 WHERE project_id=$1 AND user_id=$2',
+      [projectId,target,role]);
+    await audit(db,projectId,actor,'project.member_role_changed',target,{role});
     return {ok:true};
   });
 });
@@ -314,7 +335,7 @@ app.post('/projects/:id/tasks',async(req,reply)=>{
 });
 async function ensureAssignee(db: DbClient, projectId:string,userId:string) {
   const r=await db.query(
-    'SELECT 1 FROM project_members WHERE project_id=$1 AND user_id=$2 FOR KEY SHARE',
+    "SELECT 1 FROM project_members WHERE project_id=$1 AND user_id=$2 AND role<>'observer' FOR KEY SHARE",
     [projectId,userId]);
   if (!r.rowCount) fail(400,'负责人不属于本项目');
 }
