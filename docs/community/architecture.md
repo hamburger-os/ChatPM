@@ -85,3 +85,9 @@ English: Synthetic project conversations form a versioned golden set for task/pr
 中文：在项目治理中登记的任务依赖是完成前置约束。若前置任务尚未完成，下游任务不能被标记为完成；为已完成任务新增未完成的前置任务也会被拒绝。服务器在写入事务内重新检查项目与组织成员权限，防止成员被撤权后继续修改计划。此前已完成工作因实际质量问题重新打开时，仍需要项目经理处理下游影响；这不是自动项目变更或验收替代。
 
 English: Registered task dependencies are finish-before-completion constraints. A dependent task cannot be marked done while any predecessor is incomplete, and a completed task cannot gain a new incomplete predecessor. The server rechecks both project and organization membership inside write transactions. Reopening genuinely defective earlier work remains possible and requires human assessment of downstream impact; this is not automatic baseline change management.
+
+### 任务写入幂等与正式事件 / Idempotent task commands
+
+中文：新增和修改正式任务现使用受服务端权限约束的幂等命令；每次操作生成一个客户端 UUID 命令键，同一操作网络重试不会重复新增任务或增加版本。任务修改保留乐观版本冲突判断，正式任务、审计、领域事件和提醒计划在同一数据库事务。AI 候选仍需人审核，部分旧候选审批的正式写入通道尚未迁移到统一命令运行时。
+
+English: Direct task creation and edits now use server-authorized idempotent commands. Each action has a client UUID key; retrying the same request will not duplicate work or increment the version. Optimistic version checks remain, while task changes, audit, domain events and follow-up scheduling share a database transaction. AI proposals still require human approval, and some older proposal-approval write paths have not yet migrated into the shared command runtime.

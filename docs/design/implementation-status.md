@@ -78,3 +78,7 @@
 ## ADR-038 · 同项目消息证据与来源作者待核实主张
 
 已在本次分支实现 015_evidence_claims.sql、新增 `project_evidence_spans` 与 `project_claims` 表（按项目复合外键）、`evidence/claim-commands.ts` 原子创建/审核应用命令、只读分页 API，以及项目治理内的来源摘录/待核实主张 UI。引文由服务器根据同项目原始 user 消息和 Unicode code-point 偏移直接截取；owner/manager 可以记录项目内来源发言，普通成员仅能引用自己发言。只有原发言人可以执行 `source_acknowledged`，项目 owner/manager 可以驳回；无论来源确认与否都**绝不自动改变 Task/Deliverable/Decision/ChangeRequest 正式状态**。API Smoke 对 code-point emoji、幂等重放、不同 payload 409、非法范围、越权、项目隔离和审计/事件原子数进行检查。本切片尚不实现自动 LLM Claim 抽取、语义冲突消解、面向任务的事实版本图或生产数据保留策略；不能视作 P1/P3 全部验收完成。实际测试通过与否以 PR 最新 SHA 的五项 CI 为准。
+
+## ADR-039 · 直接 Task 写入正式命令统一
+
+已将旧直写 Task create/update 路由抽离到 `apps/api/src/task-routes.ts`，要求客户端 UUID idempotencyKey（更新还需乐观 version），并用 `executePmCommand` 统一权限、任务表、提醒计划、详细 before/after 审计、DomainEvent、Outbox 与回执的同事务提交；重复同输入不重复创建/增加版本，同 key 不同输入返回 409。公共 `delivery/task-assignee.ts` 检查当前项目和组织成员，其他仍使用的候选审批通道复用该成员校验。项目 Web 发送稳定意图键。**仍未完成**：提案审批等遗留正式任务/风险写入路径还没有迁入全域 CommandReceipt；全部业务 API 薄路由与模型发现/确认链路尚不齐全。对应验证必须看本 PR 最新 SHA 全五项 CI。
