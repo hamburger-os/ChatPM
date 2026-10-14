@@ -13,7 +13,8 @@ type ProviderForm={name:string;baseUrl:string;style:Wire;enabled:boolean;apiKey:
 type ModelForm=Omit<Model,'id'>;
 type CatalogModel={id:string;name:string;ownedBy:string|null};
 type Catalog={models:CatalogModel[];latencyMs:number;truncated:boolean};
-type TestOutcome={ok:boolean;textOk:boolean;structuredOk:boolean;
+type TestMode='quick'|'full';
+type TestOutcome={ok:boolean;mode:TestMode;textOk:boolean|null;structuredOk:boolean;
   errorCode?:string;latencyMs:number;textLatencyMs?:number};
 const testHelp:Record<string,string>={
   MODEL_HTTP_404:'接口不存在。检查基础地址是否遗漏 /v1，并确认所选协议和代理实际路由一致。',
@@ -110,10 +111,12 @@ export default function AdminModelPanel(){
     else{setSelected(null);setDraft(emptyProvider());}
   };
   const loadCatalog=async(id:string)=>{
-    setCatalogError('');setCatalog(null);setChecked(new Set());
+    setCatalogError('');
     try{
       const result=await request<Catalog>('/admin/ai/providers/'+id+'/discover',{method:'POST'});
       setCatalog(result);
+      const available=new Set(result.models.map(m=>m.id));
+      setChecked(current=>new Set([...current].filter(id=>available.has(id))));
       return result;
     }catch(e){setCatalogError(errorMessage(e));return null;}
   };
@@ -204,19 +207,23 @@ export default function AdminModelPanel(){
     }catch(e){setNotice(errorMessage(e));}
     finally{setBusy('');}
   };
-  const testModel=async(m:Model)=>{
-    if(busy)return;setBusy('test:'+m.id);setNotice('');
+  const testModel=async(m:Model,mode:TestMode)=>{
+    if(busy)return;
+    setBusy('test:'+m.id+':'+mode);setNotice('');
     try{
       const result=await request<TestOutcome>('/admin/ai/models/'+m.id+'/test',
-        {method:'POST'});
+        {method:'POST',body:json({mode})});
       setTestResults(old=>({...old,[m.id]:result}));
       if(result.ok){
         setTested(old=>({...old,[m.id]:Date.now()}));
-        setNotice(m.name+'：基础调用和结构化输出均通过，用时 '+
-          result.latencyMs+' ms。测试产生两次匿名模型调用，可能计费。');
+        setNotice(m.name+'：'+(mode==='quick'?'快速测试':'完整诊断')+
+          '通过，耗时 '+result.latencyMs+' ms。'+
+          (mode==='quick'?'已验证真实结构化输出（一次可能计费的请求）。':
+            '已验证基础文本和结构化输出（两次可能计费的请求）。'));
       }else{
         setTested(old=>{const next={...old};delete next[m.id];return next;});
-        const stage=result.textOk?'基础调用通过，但结构化输出失败':'基础调用未通过';
+        const stage=mode==='quick'?'结构化输出未通过':
+          result.textOk?'基础调用通过，但结构化输出失败':'基础调用未通过';
         setNotice(m.name+'：'+stage+'（'+result.errorCode+'）。'+
           (testHelp[result.errorCode??'']??'请检查代理地址、协议及模型配置。'));
       }
@@ -331,15 +338,15 @@ export default function AdminModelPanel(){
         </section>}
         {tab==='models'&&<section className="management-editor">
           <div className="between">
-            <div><h3>模型管理</h3><p className="hint">添加模型默认不启用。分级测试会先验证普通文本调用，再验证结构化 JSON 输出，最多产生两次匿名计费请求。</p></div>
+            <div><h3>模型管理</h3><p className="hint">添加模型默认不启用。快速测试只进行一次结构化 JSON 推理；遇到兼容问题时使用完整诊断（两次调用）。</p></div>
             <button type="button" className="secondary" disabled={!!busy||!selected}
-              onClick={()=>void discover()}>{busy==='discover'?'正在获取…':'↻ 获取模型列表'}</button>
+              onClick={()=>void discover()}>{busy==='discover'?'正在获取…':'↻ 刷新模型列表'}</button>
           </div>
           <div className="catalog-box">
             <div className="between"><strong>从远端模型目录选择</strong>
               <span className="hint">{catalog?'发现 '+catalog.models.length+' 个':'尚未加载目录'}</span></div>
             {catalogError&&<p className="catalog-error" role="alert">{catalogError}
-              <span className="hint">仍可手动填写模型 ID。</span></p>}
+              <span className="hint">{catalog?'已保留上次成功获取的模型列表和选择，重试即可更新。':'仍可手动填写模型 ID。'}</span></p>}
             {catalog&&<>
               <label className="catalog-search">搜索模型（按名称或 ID）
                 <input value={query} onChange={e=>setQuery(e.target.value)}
@@ -389,15 +396,21 @@ export default function AdminModelPanel(){
               <p className="hint">{m.enabled?'已启用':'未启用'}{m.isDefault?' · 平台默认':''}
                 {tested[m.id]?' · 本次会话结构化测试通过':''}</p>
               {testResults[m.id]&&<p className="hint" role="status">
-                基础文本：{testResults[m.id].textOk?'通过':'未通过'} · 结构化 JSON：
-                {testResults[m.id].structuredOk?'通过':testResults[m.id].textOk?'未通过':'未测试'}
+                {testResults[m.id].mode==='quick'?'快速测试':'完整诊断'} · 基础文本：{testResults[m.id].textOk===null?'未单独测试':
+                  testResults[m.id].textOk?'通过':'未通过'} · 结构化 JSON：
+                {testResults[m.id].structuredOk?'通过':
+                  testResults[m.id].mode==='full'&&!testResults[m.id].textOk?'未测试':'未通过'}
                 {testResults[m.id].errorCode?' · '+testResults[m.id].errorCode:''}
                 {testResults[m.id].errorCode&&<span> — {testHelp[testResults[m.id].errorCode??'']??'请检查模型设置。'}</span>}
               </p>}
             </div>
             <div className="actions">
               <button type="button" className="secondary" disabled={!!busy}
-                onClick={()=>void testModel(m)}>{busy==='test:'+m.id?'测试中…':'分级测试'}</button>
+                onClick={()=>void testModel(m,'quick')}>
+                {busy==='test:'+m.id+':quick'?'测试中…':'快速测试'}</button>
+              <button type="button" className="secondary" disabled={!!busy}
+                onClick={()=>void testModel(m,'full')}>
+                {busy==='test:'+m.id+':full'?'诊断中…':'完整诊断'}</button>
               <button type="button" className="secondary" disabled={!!busy}
                 onClick={()=>{if(busy||!confirmLeave())return;setEditingModel(m.id);
                   const next=fromModel(m);setModelDraft(next);
