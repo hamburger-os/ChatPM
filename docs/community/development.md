@@ -136,6 +136,14 @@ docker compose --env-file .env -f infra/compose.prod.yml exec -T postgres pg_dum
 
 ---
 
+### QNAP NAS、局域网域名与 IPv6 试运行（须实机验收）
+
+1. QNAP Container Station 所在宿主机需要提供 Docker Compose、持久数据库卷与足够资源；检查 NAS CPU 架构和镜像支持，先在局域网验证构建及数据库恢复。首次在仓库根目录按现有 `npm run deploy:docker` 初始化，不能覆盖已建立的数据卷或既有密钥。
+2. 在根目录 `.env` 把 `WEB_ORIGIN` 设为用户实际访问的唯一 HTTPS 域名，例如 `https://pm.example.com`。修改后重建 API/Worker 容器并重新登录，勿把 127.0.0.1、HTTP 内网地址与 HTTPS 域名混用为两个登录入口；写请求按 Origin 严格检查。
+3. 默认 `infra/compose.prod.yml` **只发布宿主机 127.0.0.1:3000**，这是安全默认设置。QNAP 宿主机反向代理若能访问该回环端口，可将子域名的 HTTPS 443 代理到 Web；若代理运行在另一容器，则用受控共享 Docker 网络连接 Web，**不能**把容器自身的 127.0.0.1 当作 QNAP 宿主机。不要公布 API 3001、数据库 5432 或内网管理端口。
+4. 域名 A/AAAA/DDNS、IPv6 入站防火墙、TLS 证书续期与路由器连接均依实际网络条件配置。使用不同网络的电脑、手机 Wi-Fi、手机蜂窝网分别实测，含登录续期、发送消息、任务写入、AI Key 保密、服务重启及数据库备份恢复。私人团队优先通过受控 VPN 远程访问；未完成安全验收前不建议开放注册和公网业务数据。
+5. 容器内模型连接填写 `http://127.0.0.1:8045` 表示**同一容器**的 8045，并非你的 Windows 电脑或 NAS 宿主机；需要可达、受信的模型代理地址及防止未授权内网出站的配置。当前 URL 校验不代表完成 DNS/SSRF 安全隔离。
+
 ## English
 
 ### System-admin provider configuration (Windows / Linux / Docker)
@@ -245,3 +253,12 @@ After stopping Web/API/Worker and selecting a disposable restore target, use `do
 中文：`npm run stop` 只停止当前仓库使用 `npm start`/`npm run dev` 注册的前台进程组，不会结束所有 `node.exe`、PostgreSQL、Docker 容器或 Windows/Linux 系统服务；如果没有启动实例则安全返回，若发现通道失联且 PID 存在则提示人工检查。更早版本启动的进程不能由新命令接管。`npm ci` 网络下载问题、被安全软件锁定的文件仍需另外排查。
 
 English: `npm run stop` only stops the foreground API/Worker/Web group registered by this checkout's `npm start` or `npm run dev`. It never mass-kills `node.exe` and does not affect PostgreSQL, Docker containers or system services. A missing runner is a no-op; an unreachable live runner fails closed. It cannot adopt processes started with older scripts and does not fix `npm ci` network errors or antivirus file locks.
+
+### QNAP NAS, LAN hostname, and IPv6 trial (hardware validation required)
+
+1. Container Station requires Docker Compose, persistent PostgreSQL volumes and adequate hardware resources. Verify NAS CPU architecture and the target image; validate database backup and restoration on the real host. Use the existing `npm run deploy:docker` bootstrap and never silently replace live volumes or secrets.
+2. Set `WEB_ORIGIN` in the root `.env` to one actual externally visible HTTPS origin, e.g. `https://pm.example.com`. Recreate affected service containers after changing the environment, then sign in again. Do not mix HTTP LAN IP access with HTTPS public access as two independent origins; mutating requests validate their Origin.
+3. Production Compose publishes **only host loopback 127.0.0.1:3000**. Point the QNAP host reverse proxy from the HTTPS vhost to this host-local Web endpoint if reachable. Containerized reverse proxies require a verified internal Docker network; their own 127.0.0.1 is not the host. Never publish API 3001, database 5432 or NAS management endpoints.
+4. Configure DNS A/AAAA/DDNS, IPv6 inbound firewalls, TLS certificate renewals and router paths to suit actual networking. Test LAN, Wi-Fi, mobile data, cookie persistence, mutations, AI key secrecy, service restarts and a recovery rehearsal. Prefer a trusted VPN for private deployments; do not enable public registration or sensitive production traffic without a security review.
+5. From an application container `http://127.0.0.1:8045` addresses **that container**, not a Windows laptop or the NAS host. Verify a trusted reachable LLM proxy route. Existing URL validation is not a full DNS-rebinding/SSRF egress control.
+
