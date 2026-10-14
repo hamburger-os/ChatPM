@@ -4,7 +4,7 @@
 - `departments`、`department_members`、`portfolios`、`programs`、`resource_allocations` 属于 Organization/Governance 模块。租户 id 不允许由客户端作为越权选择器；每次读写必须检验租户成员资格。
 - `project_members` 项目角色是 owner、manager、member、observer。命令授权集中在 `packages/core/src/permissions.ts`，不能只依赖 Web 隐藏按钮。
 - `users.is_system_admin` 仅可通过本机运营命令提升。全局 AI 模型 API 用 `requireSystemAdmin`，不使用租户 admin 或项目 owner 冒充系统管理员。
-- `ai_model_configs` 是唯一模型路由配置表，Worker 选择已启用的默认配置。项目仍显式开启 AI，未配置默认模型时开启失败；模型只能生成候选。
+- `ai_provider_connections` 保存连接/密文凭据，`ai_model_configs` 保存实际模型/预算与默认配置；Worker 仅解析启用的默认模型及其启用连接。项目仍显式开启 AI，未配置默认模型时开启失败；模型只能生成候选。
 - API `/tenants/:tenantId/structure` 返回组织结构；人员、部门、组合、项目集和资源投入各有隔离作用域。
 - 自定义模型地址只允许管理员控制，密钥在 `MODEL_ENCRYPTION_KEY` 下 AES-GCM 加密；不可回传。切换默认配置不授予跨项目消息访问权。
 
