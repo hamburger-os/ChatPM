@@ -119,6 +119,14 @@ export default function PmRegisterPanel({project,user,people,tasks}:{
     commandKeys.current.set(signature,idempotencyKey);
     void execute(async()=>{
       await request(base+path,{method:'POST',body:json({idempotencyKey,...body})});
+      if(path.startsWith('/issues/')&&path.endsWith('/transition')){
+        const issueId=path.split('/')[2];
+        setIssueNotes(prev=>({...prev,[issueId]:''}));
+        // A previously opened timeline is stale after a successful transition.
+        setIssueHistory(prev=>{
+          const next={...prev};delete next[issueId];return next;
+        });
+      }
     });
   }
   function loadIssueHistory(issueId:string,beforeVersion?:number){
