@@ -3,21 +3,23 @@ import { pool } from './db.ts';
 export type ProjectRole='owner'|'manager'|'member'|'observer';
 export type ProjectAction='read'|'message.write'|'task.create'|'task.plan'|
   'task.status'|'proposal.approve'|'report.manage'|'members.manage'|
-  'settings.manage'|'operations.manage';
+  'settings.manage'|'operations.manage'|'pm.plan'|'pm.submit'|'pm.accept'|'pm.approve';
 
 const grants:Record<ProjectRole,ReadonlySet<ProjectAction>>={
   owner:new Set(['read','message.write','task.create','task.plan','task.status',
-    'proposal.approve','report.manage','members.manage','settings.manage','operations.manage']),
+    'proposal.approve','report.manage','members.manage','settings.manage','operations.manage',
+    'pm.plan','pm.submit','pm.accept','pm.approve']),
   manager:new Set(['read','message.write','task.create','task.plan','task.status',
-    'proposal.approve']),
-  member:new Set(['read','message.write','task.status']),
+    'proposal.approve','pm.plan','pm.submit','pm.accept']),
+  member:new Set(['read','message.write','task.status','pm.submit']),
   observer:new Set(['read']),
 };
 
 export function canProject(role:ProjectRole,action:ProjectAction,
   options:{isAssignee?:boolean}={}):boolean{
   if(!grants[role]?.has(action))return false;
-  return action!=='task.status'||role==='owner'||role==='manager'||options.isAssignee===true;
+  return (action!=='task.status' && action!=='pm.submit')||
+    role==='owner'||role==='manager'||options.isAssignee===true;
 }
 export function assertProject(role:ProjectRole,action:ProjectAction,
   options:{isAssignee?:boolean}={}):void{
