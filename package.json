@@ -14,6 +14,8 @@
     "db:migrate": "tsx packages/core/src/migrate.ts",
     "test": "tsx --test packages/core/test/*.test.ts",
     "test:architecture": "node --test tools/test/architecture-boundaries.test.mjs",
+    "test:ai-evals": "node --import tsx --test tools/evals/pm-golden.test.mjs",
+    "eval:pm:live": "node --import tsx tools/evals/run-pm-golden.mjs",
     "typecheck": "tsc --noEmit",
     "build:web": "next build apps/web",
     "check:docs": "node tools/docs/check-docs.mjs",

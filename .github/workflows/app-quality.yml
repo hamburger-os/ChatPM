@@ -47,6 +47,8 @@ jobs:
         run: npm test
       - name: Architecture boundaries
         run: npm run test:architecture
+      - name: Synthetic PM golden corpus and scorer
+        run: npm run test:ai-evals
       - name: Deployment bootstrap tests
         run: npm run test:ops
       - name: Database schema

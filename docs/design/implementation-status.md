@@ -62,3 +62,7 @@
 ## ADR-034 · Worker 架构边界静态守卫
 
 将 Worker 心跳写入抽离至 Operations 模块，进程入口不再含直接 SQL；新增一条 CI 测试检查 Worker bootstrap 不包含 `SELECT/UPDATE/INSERT/DELETE` 业务 SQL、不允许直接调用 `pool.query`/事务/审计函数、保留完整三个 Runner 调度。该测试能防止该入口重新长成巨石文件，但**不代表** API/server.ts 和 governance-routes.ts 已无跨领域 SQL。完整 P2 的静态边界校验、应用命令移交和多 Worker 故障注入仍待完成。
+
+## ADR-035 · 版本化 PM 黄金评测基础
+
+现有 AI `PROMPT_VERSION`/`ACTIVITY_SCHEMA` 与 Live Evaluation CLI 共享生产构建器，增加 16 个合成用例（10 个 Schema 支持情景 + 6 个明确标记不支持的正式 PM 行为）、纯评测器以及 `npm run test:ai-evals` CI。此测试只校验合成数据覆盖、版本、评分器拒绝越权/虚构日期/虚构负责人和 Schema 错误，**不是模型准确率实测**。部署管理员若决定自行承担真实推理请求费用，可在独立环境中传入可信 `LLM_API_KEY`、`LLM_BASE_URL`、`LLM_MODEL`、`LLM_API_STYLE` 和 `PM_EVAL_LIVE=1`，执行 `npm run eval:pm:live`，生成仅包含匿名化案例 ID 和分数的输出。不经真实厂商推理与人工判读不能声明“模型质量通过”。
