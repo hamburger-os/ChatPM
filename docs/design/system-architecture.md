@@ -43,6 +43,6 @@ Identity/Tenancy、Projects、Conversations、Work、Risk/Decision、AI Orchestr
 
 ## ADR-033 · Worker 运行任务模块边界
 
-Worker 是独立部署的调度进程，而非所有领域业务的所有者。将规则提醒、周期报告分为 `Automation.ReminderRunner` 与 `Reporting.PeriodRunner`，在 `packages/core/src/` 内共享数据库事务与项目时区策略；Worker 仅调度，不重复实现相关 SQL。现有消息事件/AI 候选处理继续保留当前工作逻辑，后续另批迁移，以避免将多种大型语义改动和未验证功能合并在单次发布。
+Worker 是独立部署的调度进程，而非所有领域业务的所有者。将事件/AI 候选处理、规则提醒、周期报告分为 `Conversation.AIEventRunner`、`Automation.ReminderRunner` 与 `Reporting.PeriodRunner`，在 `packages/core/src/` 内共享数据库事务与项目时区策略；Worker 仅调度，不重复实现相关 SQL。消息事件/AI 候选逻辑保持原有 SQL 与模型行为，但代码移入 `packages/core/src/conversation/ai-event-runner.ts`。进程入口只调度、心跳和优雅关闭。
 
 该抽取不改变 Outbox 至少一次投递、提醒静默窗口/冷却时间、消息 nonce 幂等或历史报告的“当前项目周期状态快照”限制，也不引入 Redis、微服务或复杂工作流引擎。API/Worker 同源对领域命令的完全收敛仍为目标，非本批已完成。

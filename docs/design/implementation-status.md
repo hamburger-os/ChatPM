@@ -54,3 +54,7 @@
 ## ADR-032 · 版本化 AI 启用与逐次模型调用流水
 
 新增迁移 013_ai_authorization_ledger.sql：以 `projects.ai_enabled` 为唯一有效启用状态，由数据库触发器只在状态变化时增加 ai_authorization_version；每次实际模型请求前重新校验启用状态和授权版本。独立 ai_model_invocations 记录每次尝试的脱敏模型身份、Prompt 版本、授权版本、HMAC 输入指纹、状态、延时及脱敏错误；没有供应商报告的 token 用量是 null，不能等同精确费用。只有项目 Owner 可通过 API 查看授权版本与流水。**剩余：** 版本化细粒度能力许可、组织级出站敏感数据策略、全量 PM Playbook/干预、模型 usage/成本、网络级强制撤权及生产出站防火墙均未实现。自动化核验必须以本 PR 最终 Head 的 CI 为准。
+
+## ADR-033 · Worker 运行入口与领域 Runner 分离
+
+已将 Outbox/AI 消息事件、规则提醒与周期报告的处理函数分离为 `packages/core/src/conversation/ai-event-runner.ts`、`packages/core/src/automation/reminder-runner.ts`、`packages/core/src/reporting/period-runner.ts`；`apps/worker/src/worker.ts` 只保留调度、心跳和停止生命周期。迁移没有新数据库表，也没有新消息队列。独立更正提醒文案：逾期天数、今天截止、阻塞优先级。**尚未完成**：旧 API 的薄路由命令化、单元级职责彻底隔离、全域 CommandReceipt 化、细粒度异步事件版控、外部系统实测。

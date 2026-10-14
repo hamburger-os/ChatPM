@@ -170,4 +170,4 @@
 
 ## ADR-033 · Worker 调度与核心业务 Runner 分离（2026-10-14）
 
-**选择：** 先将两条独立且成熟的 Runner——规则提醒与周期报告——从 apps/worker/src/worker.ts 的进程启动文件移到 packages/core/src/automation/reminder-runner.ts 与 packages/core/src/reporting/period-runner.ts，保留同一 PostgreSQL 事务/工作时区/重试设计与实际运行行为。Worker 仅引用 runner 并负责 tick、心跳与 graceful shutdown。**不选：** 跨进程 RPC、额外队列、重写消息事件消费、引入新的通用调度框架。**复审：** 多 Worker 租约与 SQL 语义出现实际性能需求后再调整。验收以 CI 事件/提醒/报告集成与原生/Docker 运行测试为准。
+**选择：** 将三条独立 Runner——AI 事件、规则提醒与周期报告——从 apps/worker/src/worker.ts 的进程启动文件移到 packages/core/src/conversation/ai-event-runner.ts、packages/core/src/automation/reminder-runner.ts 与 packages/core/src/reporting/period-runner.ts，保留同一 PostgreSQL 事务/工作时区/重试设计与实际运行行为。Worker 仅引用 runner 并负责 tick、心跳与 graceful shutdown。**不选：** 跨进程 RPC、额外队列、改变消息事件消费业务语义、引入新的通用调度框架。**复审：** 多 Worker 租约与 SQL 语义出现实际性能需求后再调整。验收以 CI 事件/提醒/报告集成与原生/Docker 运行测试为准。
