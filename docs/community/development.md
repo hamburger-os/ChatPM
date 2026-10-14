@@ -20,7 +20,7 @@ npm run db:migrate
 npm run dev
 ```
 
-打开 http://localhost:3000，注册、创建项目、与成员聊天。系统默认不向外部模型发送内容；要启用 AI 需在服务端设置 `LLM_API_KEY` 并由项目负责人在设置页面明确开启。催办需任务负责人/期限及完整工作时间和冷却策略。
+打开 http://localhost:3000，注册、创建项目、与成员聊天。系统默认不向外部模型发送内容；要启用 AI，需由系统管理员在「系统管理 → AI 服务中心」设置供应商与默认模型，再由项目负责人在项目设置页面明确开启。催办需任务负责人/期限及完整工作时间和冷却策略。
 
 原生首次安装可执行 `npm run setup:local`：不存在 `.env` 时创建含随机会话密钥的配置；如数据库仍使用模板凭证，命令将停止并提示配置。完成数据库配置后重新执行。底层 `npm run setup:native`（安装依赖、构建、校验产物、执行迁移），然后 `npm start` 可在**单个前台终端**运行三进程；在另一终端执行 `npm run stop` 可以等待整组停止，也可在原终端按 `Ctrl+C`。长期运行应交给下述 Windows/Linux 系统服务管理器。浏览器请求统一使用同源 `/api`，服务端通过 `API_INTERNAL_URL` 连接 API（默认 127.0.0.1:3001）。
 
@@ -28,19 +28,21 @@ npm run dev
 
 未完成的功能和安全验收见 [实施状态](../design/implementation-status.md)。[English](#english)。
 
-### 模型 API 配置（Windows 11 / Linux / Docker）
+### 系统管理员配置供应商与模型（Windows 11 / Linux / Docker）
 
-在根目录 `.env` 配置 `LLM_API_KEY`、`LLM_BASE_URL`、`LLM_MODEL`、`LLM_API_STYLE`。默认 OpenAI Responses：`https://api.openai.com/v1`、`responses`、`gpt-4.1-mini`。若接入 DeepSeek，将三项改为 `https://api.deepseek.com`、`responses`、`deepseek-flash`，密钥填入 DeepSeek Key。
+`.env` 仅保留部署所需的数据库、会话及 `MODEL_ENCRYPTION_KEY` 等**根配置**，不再填写单个供应商的 `LLM_API_KEY`、`LLM_BASE_URL`、`LLM_MODEL`、`LLM_API_STYLE`。
 
-对于具备 JSON Object 模式的 Chat Completions 兼容服务，可设 `LLM_API_STYLE=chat-completions`；模型结果仍需本地 Zod 校验，不保证每个声称兼容的模型实际可用。本机 Ollama 可尝试 `LLM_BASE_URL=http://127.0.0.1:11434/v1`，`LLM_MODEL` 填已拉取模型名，`LLM_API_STYLE=chat-completions`，`LLM_API_KEY=local-test`（仅本地测试占位）。Docker 内 localhost 并非 Windows 宿主机；可通过受保护的 `host.docker.internal` 访问宿主，但应确认本地模型服务监听及防火墙，不能将未鉴权模型公网暴露。
+首次启动数据库迁移完成后，注册账号，由可信服务器操作员执行：
 
-模型密钥为空时不发送外部请求；即使配置密钥，也要项目负责人在 ChatPM 内明确启用 AI。不要提交含 Key 的 `.env`。修改后原生重启 `npm start`，Docker 重新运行 `npm run deploy:docker`。真实 DeepSeek/Ollama API 功能与费用未完成联调。
+```bash
+npm run admin:grant -- --email=admin@example.com --confirm
+```
 
-### 项目 AI 模型管理与连续对话
+系统管理员使用同一登录页进入最左侧「系统管理 → AI 服务中心」，添加供应商连接（API 请求基础地址、协议、API Key），再在该连接下创建一个或多个模型并设置默认。普通项目成员无需配置密钥；项目负责人仅显式开启项目 AI。支持 Responses API 与 Chat Completions；当前不支持原生 Anthropic Messages。模型/供应商真实接口需通过测试连接验证，可能产生费用。
 
-项目负责人进入右侧「AI 模型」页，选择「服务器配置」（沿用部署管理员配置的 `LLM_*`）或固定 OpenAI/DeepSeek 供应商，输入模型名称及独立 Key 后点击「保存模型配置」；再点击「测试连接」，只会发送无项目资料的固定测试请求（最多每 30 秒一次，可能计费）。密钥只以数据库加密形式保存，页面不会回显。DeepSeek Responses 模型示例 `deepseek-flash`，实际模型名称和接口是否支持由供应商决定。内置提供商 URL 不允许自定义；自托管模型请由可信部署管理员配置服务器 `.env` 并使用「服务器配置」。模型 Key 密文依赖 SESSION_SECRET，旋转它之后须在 UI 重新录入项目模型 Key，不能只恢复数据库。
+API Key 经过服务端 AES-256-GCM 加密保存到数据库，读接口只显示是否存在密钥。服务器根密钥 `MODEL_ENCRYPTION_KEY` 仍需由安全环境保存，不能在网页修改。Docker 容器内部 `localhost` 不等于 Windows 宿主机；可信的 `host.docker.internal` 本地代理需在封闭网络中验证。密钥/供应商连接更新不需要重启服务，修改服务器根密钥则需要计划维护。具体步骤及安全界限见 [供应商管理指南](navigation-provider-center.md#中文)。
 
-「输入预算」为字符预算，并不是模型的上下文 Token 窗口；系统带入最近的有界群聊和已确认项目事实，超出部分进行确定性裁剪。推理强度只有服务商真正支持才发送，目前 OpenAI 官方 Responses 端点支持对应参数，其余服务商保持 API 默认。模型及密钥配置保存后**不必重启** API/Worker；修改部署管理员的 `.env` 仍需重启。所有模型建议仍需负责人批准。发送 `@AI 请总结待办` 可要求 AI 基于只读项目状态答复；成员直接回复最近唯一的候选澄清问题通常无需复制 UUID，多个澄清线程则须明确引用编号。右侧「AI 模型」提供「AI 处理记录」区分分析中、无新建议、生成候选、澄清、回复和失败。自动任务提醒独立于 AI：正式任务有负责人、期限，且启用工作日工作时段/最短间隔才提醒。
+「输入预算」以字符计算而不是 Token。ChatPM 会在项目授权范围内组装有限上下文和已批准任务事实，AI 候选仍需负责人核准。向项目聊天室发送 `@AI` 可以调用只读问答，规则式任务提醒与外部 AI 模型相互独立。
 
 ### 任务进展、日期与提前催办（ADR-022）
 
@@ -48,7 +50,7 @@ npm run dev
 
 在聊天室讨论已有任务时，Worker 现在尝试将内容关联到同项目活动任务 ID：阶段进展、阻塞、完成声明只生成证据建议，在右侧「任务」标签页核对后才归入进度，不会自动将任务设置为完成；独立新工作仍由「AI 待确认」审批。系统优先过滤明显重复的规范化标题，不能保证所有语义重叠都正确匹配。要人工更正请在 AI 待确认忽略错误新任务并在任务页更新正式状态。任务有负责人、期限与合法提醒工作窗口时，将在任务登记后进入跟进队列，不再等到最后一天才首次检查；阻塞与临近截止会更频繁，按项目时区和冷却发送站内提醒。
 
-DeepSeek 配置允许根据任务增加模型输入字符预算和输出 Token 限额；默认分别为 32768 字符与 8192 Token，最大可配置 250000 字符与 131072 Token。这不是 DeepSeek 的 1M/384K 理论上限或真实 Token 压缩。建议根据模型费用和输出长度测试后调整。`MODEL_SCHEMA` 确定性错误不再无意义重复请求八次，隔离事件需修复根因后再由 Owner 重放。正式连续 Agent、依赖关键路径计算和实际 DeepSeek 大上下文压测仍未完成。
+系统管理员可调整模型输入字符预算和输出 Token 限额；默认分别为 32768 字符与 8192 Token，最大可配置 250000 字符与 131072 Token。它们是应用预算，不等于特定供应商宣称的模型窗口或真实 Token 压缩。建议根据模型费用和输出长度测试后调整。`MODEL_SCHEMA` 确定性错误不再无意义重复请求八次，隔离事件需修复根因后再由 Owner 重放。正式连续 Agent、依赖关键路径计算和实际 DeepSeek 大上下文压测仍未完成。
 
 ### 可靠性说明
 消息增量游标按项目提交顺序保证不漏读；重新调整任务不会绕过已发送提醒的冷却间隔。周/月报统计覆盖全项目，明细有条数上限；同周期草稿可以重新生成，已发布报告不可覆盖。这些行为可通过 `node tools/test/smoke.mjs` 在已迁移的 PostgreSQL 实例上回归。
@@ -136,12 +138,11 @@ docker compose --env-file .env -f infra/compose.prod.yml exec -T postgres pg_dum
 
 ## English
 
-### Model API configuration (Windows / Linux / Docker)
+### System-admin provider configuration (Windows / Linux / Docker)
 
-Set `LLM_API_KEY`, `LLM_BASE_URL`, `LLM_MODEL` and `LLM_API_STYLE` in the root `.env`. Defaults: OpenAI Responses (`https://api.openai.com/v1`, `responses`, `gpt-4.1-mini`). For DeepSeek Responses use `https://api.deepseek.com`, `responses`, `deepseek-flash`, and a DeepSeek API key. Set `chat-completions` for servers supporting Chat Completions JSON Object mode; all outputs are still checked with Zod. Real compatibility is not guaranteed.
+The root `.env` retains database credentials, session signing material and the server-only `MODEL_ENCRYPTION_KEY`. It does **not** contain per-provider `LLM_API_KEY`, `LLM_BASE_URL`, `LLM_MODEL` or `LLM_API_STYLE` entries. After migration and account registration, a trusted server operator runs `npm run admin:grant -- --email=admin@example.com --confirm`. The same account then signs in normally and opens **System Management → AI Service Center** on the global left rail. Add a provider connection (API base URL, supported protocol, API key), register models under it, select a default and test the connection. Project owners explicitly enable AI per project. Only Responses and Chat Completions transport adapters are implemented; vendor behavior must be verified.
 
-Local Ollama experiments may use `http://127.0.0.1:11434/v1`, `chat-completions`, an installed model name and a placeholder `LLM_API_KEY=local-test`. In containers, localhost is the container itself; `host.docker.internal` may be used only for a protected, reachable host API. Never expose an unauthenticated local model to the public internet. Blank keys disable outbound requests. A project owner must also opt in explicitly. Never commit `.env`. Restart native `npm start` or rerun `npm run deploy:docker` after config changes. Real DeepSeek/Ollama behavior, privacy and cost still need live validation.
-
+Provider keys are encrypted in PostgreSQL and never returned by read endpoints. The server-side `MODEL_ENCRYPTION_KEY` cannot be edited or retrieved in the browser. In a Docker container, localhost is not the Windows host; trust and network boundaries apply to `host.docker.internal`. Changing provider models or API keys requires no restart; rotating the root encryption key needs an explicit recovery plan. See [provider setup](navigation-provider-center.md#english).
 
 Node.js 24 LTS is recommended; Docker can provide a database-only development instance or a complete production-style Compose stack. Native Windows/Linux deployment is also supported. From the repository root:
 
@@ -159,7 +160,7 @@ Start all three development processes in **one terminal**; stop them from a seco
 npm run dev
 ```
 
-Open http://localhost:3000, register and create a project. External AI is disabled by default. To opt in, set `LLM_API_KEY` on the server and enable AI explicitly in project settings. Reminders require a task owner, due date, working hours and cooldown policy.
+Open http://localhost:3000, register and create a project. External AI is disabled by default. To opt in, ask the system administrator to configure a default provider/model in the UI, then explicitly enable AI in project settings. Reminders require a task owner, due date, working hours and cooldown policy.
 
 Native installation after configuring PostgreSQL and `.env`: run `npm run setup:local` (generates a missing secret and rejects the sample PostgreSQL password before invoking `setup:native`) to install, build, verify and migrate; `npm start` runs all three compiled processes in a single foreground terminal. Run `npm run stop` in another terminal to request graceful shutdown of that managed process group. For persistent production hosting, use the native system service manager below. The browser always uses same-origin `/api`, which is forwarded to `API_INTERNAL_URL` by Next.js.
 
@@ -167,11 +168,9 @@ Checks: `npm run typecheck`, `npm test`, `npm run build:web`, `npm run check:doc
 
 See [implementation gaps (Chinese)](../design/implementation-status.md) for unimplemented features and security limitations. [中文](#中文).
 
-### Project model settings and contextual AI collaboration
+### Model operations and project AI collaboration
 
-A project owner can open the "AI 模型" tab, choose server-managed `LLM_*` credentials or built-in fixed-HTTPS OpenAI/DeepSeek endpoints, enter a model name and private API key, and save it. "测试连接" uses only a non-project JSON probe and is limited to once per project per 30 seconds; provider charges may apply. Keys are stored encrypted in PostgreSQL and never returned to the browser. Built-in provider URLs cannot be replaced by untrusted users; administrators may configure custom/private endpoints in the server's `.env`. The encryption key derives from SESSION_SECRET; rotating that secret requires re-entering project keys. Database-level confidentiality also depends on server/backup access controls.
-
-Input budget is measured in characters, **not** the model context window in tokens. Only bounded recent project chat plus authoritative task/risk facts are included, and older discussion is trimmed without overwriting official facts. Reasoning effort is sent via supported provider-specific endpoints: OpenAI Responses and DeepSeek Responses / Chat Completions. Unsupported settings use provider defaults. Database-backed settings apply without restart; editing server `.env` requires restart. Send `@AI ...` for a read-only project answer. Plain natural-language answers to a unique recently asked clarification may be linked automatically; ambiguous multi-candidate cases still require the explicit candidate reference. Review progress/errors on the model tab. Rule-based due-task reminders work independently of the external LLM when owner, due date, reminder window and cooldown are configured.
+Models are maintained in **System Management**, not the project's right-side panel. A provider connection owns the encrypted API key and endpoint; multiple models can share it. Testing uses a non-project JSON probe, limited to one test per model every 30 seconds. Model parameters are sent only when explicitly supported by the selected adapter, never guessed from a branded hostname. Input budget is a character count, not the context window in tokens. Official project facts and recent conversation are assembled within a bounded scope; AI cannot approve its own proposed work. `@AI` requests a read-only answer; task reminders do not depend on an external LLM.
 
 ### Task progress, date-only deadlines and proactive check-ins (ADR-022)
 
