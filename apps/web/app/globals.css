@@ -238,3 +238,18 @@ label{display:grid;gap:7px;font-size:13px;color:#536174}label.check{display:flex
   .model-card .actions{gap:6px}
   .model-card .actions button{min-height:38px}
 }
+
+/* ADR-031 formal PM register within the existing project workspace. */
+.details .tabs{grid-template-columns:repeat(5,minmax(0,1fr))}
+.details .tabs button{padding:15px 3px;font-size:11px;line-height:1.4}
+.pm-register{min-width:0;padding-bottom:25px}
+.pm-register>h3{margin-top:14px}
+.pm-create{background:#fff;border:1px solid #e3eaf4;border-radius:12px;padding:13px;margin:14px 0}
+.pm-create label{min-width:0}
+.pm-create textarea{min-height:68px}
+.pm-category{border-top:1px solid #e2e9f3;margin-top:20px;padding-top:6px}
+.pm-category h3{margin:12px 0}
+.pm-category .item p{font-size:13px;line-height:1.6;overflow-wrap:anywhere}
+.pm-actions{margin-top:9px;flex-wrap:wrap}
+.pm-actions button{font-size:12px;padding:8px 10px}
+.pm-dependency{font-size:12px;color:#425772;border-radius:9px;background:#fff;padding:12px;overflow-wrap:anywhere}
