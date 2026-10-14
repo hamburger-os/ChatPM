@@ -141,14 +141,14 @@ export async function deleteModelConfig(db:DbClient,id:string):Promise<boolean>{
   const {rowCount}=await db.query('DELETE FROM ai_model_configs WHERE id=$1',[id]);
   return Boolean(rowCount);
 }
-export async function resolveModelConfig(id?:string):Promise<LLMSettings>{
+export async function resolveModelConfig(id?:string,allowDisabled=false):Promise<LLMSettings>{
   const {rows}=await pool.query<EffectiveRow>(`SELECT m.*,p.base_url,p.api_style,
        p.api_key_ciphertext,p.enabled AS provider_enabled
     FROM ai_model_configs m JOIN ai_provider_connections p ON p.id=m.provider_id
     WHERE ${id?'m.id=$1':'m.enabled=TRUE AND m.is_default=TRUE'}`,id?[id]:[]);
   const model=rows[0];
-  if(!model||!model.provider_enabled||!model.api_key_ciphertext||
-     (!id&&!model.enabled))throw new Error('MODEL_NOT_CONFIGURED');
+  if(!model||(!allowDisabled&&!model.provider_enabled)||!model.api_key_ciphertext||
+     (!allowDisabled&&!model.enabled))throw new Error('MODEL_NOT_CONFIGURED');
   const config=readLLMSettings({
     LLM_API_KEY:decryptModelKey(model.api_key_ciphertext),
     LLM_BASE_URL:validateModelUrl(model.base_url),
@@ -161,4 +161,60 @@ export async function resolveProjectModel(projectId:string):Promise<LLMSettings>
   const found=await pool.query('SELECT 1 FROM projects WHERE id=$1',[projectId]);
   if(!found.rowCount)throw new Error('PROJECT_NOT_FOUND');
   return resolveModelConfig();
+}
+
+
+/** Catalog probes are allowed before the connection is enabled. */
+export async function resolveProviderCatalogConfig(id:string):Promise<{baseUrl:string;apiKey:string}>{
+  const {rows}=await pool.query<ProviderRow>(
+    'SELECT * FROM ai_provider_connections WHERE id=$1',[id]);
+  const provider=rows[0];
+  if(!provider)throw new Error('PROVIDER_NOT_FOUND');
+  if(!provider.api_key_ciphertext)throw new Error('MODEL_KEY_REQUIRED');
+  return {baseUrl:validateModelUrl(provider.base_url),
+    apiKey:decryptModelKey(provider.api_key_ciphertext)};
+}
+
+export type CatalogImport={id:string;name?:string};
+export function importModelName(model:CatalogImport):string{
+  const name=model.name?.trim()||model.id;
+  if(name.length<=100)return name;
+  // Avoid collisions when different long identifiers share a prefix.
+  return name.slice(0,91)+'-'+createHash('sha256').update(model.id).digest('hex').slice(0,8);
+}
+
+/** All-or-nothing, idempotent import; imported models start disabled. */
+export async function importModelConfigs(
+  db:DbClient,providerId:string,items:CatalogImport[],
+):Promise<{created:number;skipped:number}>{
+  const provider=await db.query('SELECT 1 FROM ai_provider_connections WHERE id=$1 FOR UPDATE',[providerId]);
+  if(!provider.rowCount)throw new Error('PROVIDER_NOT_FOUND');
+  let created=0,skipped=0;
+  const visited=new Set<string>();
+  for(const item of items){
+    if(visited.has(item.id)){skipped++;continue;}
+    visited.add(item.id);
+    const preferred=importModelName(item);
+    const fallback=importModelName({id:item.id});
+    let handled=false;
+    // Two remote IDs may carry the same display name. Retain a friendly
+    // label when free, otherwise fall back to a stable ID-derived name.
+    for(const label of new Set([preferred,fallback])){
+      const result=await db.query(
+        `INSERT INTO ai_model_configs
+          (name,model_id,provider_id,reasoning,reasoning_format,
+           max_output_tokens,context_chars,enabled,is_default)
+         VALUES($1,$2,$3,'auto','none',8192,32768,FALSE,FALSE)
+         ON CONFLICT DO NOTHING RETURNING id`,
+        [label,item.id,providerId],
+      );
+      if(result.rowCount){created++;handled=true;break;}
+      const existing=await db.query(
+        'SELECT 1 FROM ai_model_configs WHERE provider_id=$1 AND model_id=$2',
+        [providerId,item.id]);
+      if(existing.rowCount){skipped++;handled=true;break;}
+    }
+    if(!handled)throw new Error('MODEL_IMPORT_NAME_CONFLICT');
+  }
+  return {created,skipped};
 }

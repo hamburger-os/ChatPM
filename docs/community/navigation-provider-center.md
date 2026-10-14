@@ -16,12 +16,12 @@ npm run admin:grant -- --email=admin@example.com --confirm
 
 ### 在界面添加供应商
 系统管理员进入「系统管理 → AI 服务中心」：
-1. 点击「添加供应商」，填写连接名称、**API 请求基础地址**（不是平台官网）、支持的接口协议和 API Key，启用并保存。
-2. 打开此供应商的「模型列表」，注册显示名称和服务商实际请求 model ID，可在同一供应商下增加多个模型。
-3. 指定已启用的默认模型，并使用「测试连接」验证是否能正确输出 JSON。
+1. 点击「添加连接」，填写名称、**API 请求基础地址**（不是平台官网）、协议和 API Key，然后保存。保存后自动尝试读取标准 GET /models 目录。
+2. 在「模型管理」中搜索、勾选并批量添加模型；若服务商没有标准目录，可以手工注册 model ID。新增模型默认禁用。
+3. 对模型运行匿名 JSON 兼容测试，再启用模型并选择平台默认模型。
 4. 项目负责人只需在项目设置中开关 AI。
 
-当前 HTTP 适配器支持 **Responses API** 和 **Chat Completions**。Anthropic Messages、自动获取任意厂商模型列表及其他未验证的接口不在当前兼容范围；不要照搬 CC Switch 中的 Claude Code 特有模型映射。模型能力、上下文和推理参数需以供应商真实测试为准。
+当前 HTTP 适配器支持 **Responses API** 和 **Chat Completions**。Anthropic Messages、对任意供应商的通用模型目录发现及其他未验证的接口不在当前兼容范围；不要照搬 CC Switch 中的 Claude Code 特有模型映射。模型能力、上下文和推理参数需以供应商真实测试为准。
 
 ### 密钥保护
 供应商 API Key 从管理页面提交，服务端使用 AES-256-GCM 加密存入数据库。查询接口只返回是否配置密钥，不返回明文或密文；修改连接时可留空保持原 Key。`MODEL_ENCRYPTION_KEY` 是服务器根加密密钥，仍需放在安全的环境变量或机密管理服务中，**不能由浏览器读取或编辑**。`.env` 不再用 `LLM_API_KEY` 等字段设置具体供应商。部署升级前必须备份数据库和旧环境密钥，否则可能无法恢复已有密文。
@@ -45,12 +45,12 @@ Log in or reload and open System Management on the left rail. Database migration
 
 ### Adding an AI provider
 In System Management → AI Service Center:
-1. Add a provider connection with a display name, **API request base URL** (not the provider website), protocol, API key, and enabled state.
-2. Register one or more models under that connection. Each model has a display name and actual request model ID.
-3. Choose an enabled default model and run a restricted JSON connection test.
+1. Add a connection with a display name, **API request base URL** (not the provider website), protocol and API key. Saving it attempts standard GET /models discovery.
+2. Search, select and batch-import catalog models, or manually provide the model ID if the provider has no compatible directory. Imported models start disabled.
+3. Run the anonymous JSON compatibility test, then enable a model and make it the platform default.
 4. Project owners may enable or disable AI for their own projects.
 
-Only **Responses API** and **Chat Completions** adapters are implemented. Native Anthropic Messages, universal remote model discovery and Claude Code-specific role mappings are not supported. Actual model capabilities must be verified against the provider.
+Only **Responses API** and **Chat Completions** adapters are implemented. Native Anthropic Messages, universal model catalog discovery and Claude Code-specific role mappings are not supported. Actual model capabilities must be verified against the provider.
 
 ### Secret handling
 The platform encrypts provider API keys using AES-256-GCM and exposes only a `hasKey` status to the UI. Empty password fields on edit retain the saved value. `MODEL_ENCRYPTION_KEY` remains a **server-only root encryption secret**, managed by a secure deployment environment or secrets manager. Individual `LLM_API_KEY`-style credentials do not belong in `.env`. Back up both the database and existing root encryption secret before an upgrade.
@@ -67,3 +67,12 @@ Experimental software. Production deployments still require HTTPS, DNS/SSRF and 
 ### English
 
 When an administrator clicks “Add Provider” while editing an existing connection, the UI enters a visibly distinct blank creation mode, removes the existing selection highlight and focuses the name input. Cancel returns to the previously selected connection, and only a successful save selects the new provider. On narrow phones, switch between Conversation and Workspace (tasks, AI proposals, reports and project settings); desktop retains its multi-column layout. The ChatPM navigation mark uses the application icon. Server-side authorization remains mandatory. Messaging still uses polling rather than real-time push.
+
+
+## ADR-026 模型目录发现 / Model catalog discovery
+
+### 中文
+标准 OpenAI 风格的 GET /models 可自动获取模型 ID 与可选名称。目录发现只意味着端点能列出模型，不保证请求协议、推理能力、JSON 输出或 Token 上限兼容。服务端使用加密保存的 Key 发起请求，支持手工 ID 兜底、每次至多 50 条幂等批量注册；管理员可在模型高级设置中调整预算和推理参数。新模型默认禁用，测试可在启用前进行。目录限频和响应上限保护服务稳定性；部署人员仍需用网络出站策略隔离内网地址，不能仅依赖 URL 与 DNS 预检。
+
+### English
+Compatible OpenAI-style GET /models endpoints provide discoverable model IDs and optional display names. A successful catalog lookup does not prove model inference, structured JSON output, reasoning options or token budgets. The server uses the encrypted provider credential; administrators can manually enter IDs and idempotently import up to 50 models per request. New models start disabled; run the anonymous compatibility test before enabling. Advanced settings expose request budgets and explicit reasoning mappings. Catalog rate limits and bounded responses reduce abuse, but production egress network rules remain necessary to protect internal services.
