@@ -274,6 +274,23 @@ app.patch('/projects/:id/settings',async req=>{
     return {ok:true};
   });
 });
+app.get('/projects/:id/ai/authorization',async req=>{
+  const id=uuid.parse((req.params as {id:string}).id);
+  owner(await member(await authenticated(req),id));
+  const {rows}=await pool.query(`SELECT ai_enabled AS enabled,
+    ai_authorization_version AS version FROM projects WHERE id=$1`,[id]);
+  return {authorization:{enabled:rows[0].enabled,version:Number(rows[0].version)}};
+});
+app.get('/projects/:id/ai/invocations',async req=>{
+  const id=uuid.parse((req.params as {id:string}).id);
+  owner(await member(await authenticated(req),id));
+  const {rows}=await pool.query(`SELECT id,authorization_version,model_identity,
+    prompt_version,status,error_code,latency_ms,input_tokens,output_tokens,
+    started_at,finished_at
+    FROM ai_model_invocations WHERE project_id=$1 ORDER BY started_at DESC LIMIT 60`,[id]);
+  return {invocations:rows};
+});
+
 app.get('/projects/:id/ai/runs',async req=>{
   const id=uuid.parse((req.params as {id:string}).id);
   owner(await member(await authenticated(req),id));
