@@ -22,3 +22,9 @@
 [仓库审查与验收结论](review.md) 聚合当前未关闭的风险。历史审查记录可从 GitHub PR 与提交记录查阅，不在当前设计索引重复列出。
 
 **原则：** AI 的观察和推断不是正式项目事实；高影响动作需后端策略许可和审计。设计不得把尚未完成的 SaaS、本地模型、知识库或企业功能写成已交付。
+
+15. [V2 目标架构与边界](v2-architecture.md)
+16. [命令、事件与事务契约](command-event-contracts.md)
+17. [AI 授权与可追溯运行时](ai-governance-v2.md)
+18. [项目管理方法与 Playbook](project-methods-playbooks.md)
+19. [V2 分期迁移与验收](v2-delivery-plan.md)
