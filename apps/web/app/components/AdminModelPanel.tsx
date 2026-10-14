@@ -42,7 +42,7 @@ export default function AdminModelPanel(){
     e.preventDefault();
     void run(async()=>{
       const path='/admin/ai/models'+(editing?'/'+editing:'');
-      await api(path,{method:editing?'PUT':'POST',body:JSON.stringify(form)});
+      await api(path,{method:editing?'PUT':'POST',body:JSON.stringify({...form,apiKey:form.apiKey||undefined})});
       await reload();setNotice('配置已保存');setEditing(null);setForm(blank);
     });
   };
