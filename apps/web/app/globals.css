@@ -172,3 +172,31 @@ label{display:grid;gap:7px;font-size:13px;color:#536174}label.check{display:flex
 .login-help{margin-top:20px;font-size:12px;color:#627187;line-height:1.6}
 .login-help summary{cursor:pointer;font-weight:600}
 .auth-card .login-help p{font-size:12px;margin:9px 0 0}
+
+/* ADR-025: one ChatPM mark for app navigation, login, and favicon. */
+.brand-mark{display:block;flex:none;border-radius:9px}
+.rail-logo{padding:0;background:transparent}
+.rail-logo img{display:block;width:42px;height:42px;border-radius:13px}
+.provider-create-indicator{color:#1f55b3;background:#e7efff;font-size:12px;
+  border-radius:10px;padding:12px;margin:8px 0;line-height:1.5}
+.provider-create-notice{background:#ecf4ff;border:1px solid #c9dfff;
+  border-radius:10px;padding:12px 14px;color:#174a92;font-size:13px;line-height:1.6}
+.mobile-project-tabs{display:none}
+.management-tabs button:disabled{opacity:.4;cursor:not-allowed}
+@media(max-width:760px){
+  .mobile-project-tabs{display:grid;grid-template-columns:1fr 1fr;order:1;
+    padding:8px 14px;background:#fff;gap:8px}
+  .mobile-project-tabs button{background:#eff4fc;color:#304e79;min-height:44px}
+  .mobile-project-tabs button.active{background:#2563eb;color:#fff}
+  .app-shell .chat-pane{order:2;min-height:0;height:calc(100dvh - 260px);
+    min-height:400px}
+  .app-shell .details{order:2;min-height:calc(100dvh - 250px)}
+  .app-shell.mobile-chat .details{display:none}
+  .app-shell.mobile-work .chat-pane{display:none}
+  .app-shell .new-project{display:none}
+  .app-shell .details .detail-content{max-height:none}
+  .app-rail{padding-bottom:max(7px,env(safe-area-inset-bottom))}
+  .composer{padding-bottom:max(12px,env(safe-area-inset-bottom))}
+  .management-heading{flex-wrap:wrap}
+  .management-heading button{min-height:44px}
+}
