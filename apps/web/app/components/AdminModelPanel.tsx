@@ -197,7 +197,9 @@ export default function AdminModelPanel(){
     finally{setBusy('');}
   };
   const deleteModel=async(m:Model)=>{
-    if(busy||!window.confirm('确定删除模型 '+m.name+'？'))return;
+    if(busy||!window.confirm(m.isDefault?
+      '该模型是平台默认模型，删除后 AI 功能将不可用，直到重新设置默认模型。确定删除吗？':
+      '确定删除模型 '+m.name+'？'))return;
     setBusy('delete:'+m.id);setNotice('');
     try{
       await request('/admin/ai/models/'+m.id,{method:'DELETE'});
@@ -213,7 +215,8 @@ export default function AdminModelPanel(){
   return <div className="management-layout">
     <header className="management-heading">
       <div><h2>AI 服务中心</h2>
-        <p className="hint">仅系统管理员维护模型连接。项目成员无需管理密钥。</p></div>
+        <p className="hint">仅系统管理员维护模型连接。项目成员无需管理密钥。{models.find(m=>m.isDefault)?
+          '当前默认模型：'+models.find(m=>m.isDefault)?.name:' 尚未设置平台默认模型。'}</p></div>
       <button type="button" onClick={startCreate} disabled={!!busy}>＋ 添加连接</button>
     </header>
     {notice&&<p className="notice" role="status">{notice}</p>}
@@ -370,7 +373,7 @@ export default function AdminModelPanel(){
                 onClick={()=>void updateModel(m,{enabled:!m.enabled})}>{m.enabled?'停用':'启用'}</button>
               {!m.isDefault&&<button type="button" className="secondary" disabled={!!busy}
                 onClick={()=>void updateModel(m,{isDefault:true,enabled:true})}>设为默认</button>}
-              <button type="button" className="secondary" disabled={!!busy||m.isDefault}
+              <button type="button" className="secondary" disabled={!!busy}
                 onClick={()=>void deleteModel(m)}>删除</button>
             </div>
           </article>)}
