@@ -36,7 +36,7 @@ export async function assertPublicModelHost(
     if(isPrivateModelAddress(url.hostname))throw new Error('MODEL_CATALOG_UNSAFE_ENDPOINT');
     return;
   }
-  let addresses:Awaited<ReturnType<typeof lookup>>;
+  let addresses:{address:string;family:number}[];
   try{addresses=await resolve(url.hostname,{all:true});}
   catch{throw new Error('MODEL_CATALOG_DNS_FAILED');}
   if(!Array.isArray(addresses)||addresses.length===0||
