@@ -47,10 +47,14 @@ try{
   await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));
   const port=server.address().port;
   await db.query('UPDATE ai_model_configs SET is_default=FALSE WHERE is_default=TRUE');
-  await db.query(`INSERT INTO ai_model_configs(name,model_id,base_url,api_style,
-    api_key_ciphertext,enabled,is_default) VALUES($1,$2,$3,'responses',$4,TRUE,TRUE)`,
-    ['worker-'+suffix,'mock-project-model','http://127.0.0.1:'+port,
-      encryptModelKey('mock-worker-key')]);
+  const connection=(await db.query(`INSERT INTO ai_provider_connections
+    (name,base_url,api_style,api_key_ciphertext,enabled)
+    VALUES($1,$2,'responses',$3,TRUE) RETURNING id`,[
+      'worker-provider-'+suffix,'http://127.0.0.1:'+port,
+      encryptModelKey('mock-worker-key'),
+    ])).rows[0];
+  await db.query(`INSERT INTO ai_model_configs(name,model_id,provider_id,enabled,is_default)
+    VALUES($1,$2,$3,TRUE,TRUE)`,['worker-'+suffix,'mock-project-model',connection.id]);
   worker=spawn(process.execPath,['--import','tsx','apps/worker/src/worker.ts'],{
     env:{...process.env},
     stdio:'ignore',
