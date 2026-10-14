@@ -187,3 +187,9 @@
 **决定：** 扩展已存在的 `project_issues`，而不是创建第二套不兼容的问题记录，新增按项目复合外键引用的 `project_issue_transitions` 状态事件表。现有问题保持 `open` 或 `resolved`；新增闭环 API 支持 resolve/reopen 两种受控状态转换，所有写入复用正式 PM CommandReceipt/DomainEvent/Outbox 事务。UI 为授权用户展示历史，只有 owner/manager 可更改状态，AI 不可自动解决。
 
 **选用原因：** 不丢失多次解决/复发历史，并为周报及整改后核验提供事实基础。**代价：** 更多小表和版本约束；不直接计算实际整改效果，也不标榜 PMBOK Issue/Change 的所有流程已实现。**不选：** 在单个 `resolution_note` 字段覆盖历史、跨项目引用和成员离职时删除操作者记录。
+
+## ADR-037 · 完成时校验依赖和事务内授权（2026-10-15）
+
+**决定：** 既有项目任务状态转为 done 时必须保证该时刻前置任务均为 done；新增依赖时若被依赖任务已 done 而前置任务未 done，拒绝创建；检查与插入使用 `pm-dependencies:{projectId}` 同一事务顾问锁。旧任务命令与正式 PM Command 均复用 `project-access.ts` 的项目/组织成员授权行锁，修复“服务端早先读到 manager，但事务提交前已被降级”的竞态。负责人指派也同时验证租户成员身份。
+
+**取舍：** 不为了任务状态扩展而重写已发布 Task API 的响应契约，也不把任务依赖变成全流程引擎；不禁止因真实问题重新打开已完成任务，但应由后续下游影响评估回应。此处只覆盖任务 create/update 与新 PM command 的授权统一，其他旧 API 的事务级角色校验仍待迁移。
