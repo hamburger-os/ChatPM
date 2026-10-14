@@ -95,3 +95,7 @@ CI 新增 `tools/test/task-linkage-smoke.mjs`：PostgreSQL 创建正式任务与
 ## ADR-030 · 正式 PM 登记簿的 /review 检查点
 
 审查独立领域表的同项目 FK、合法状态转移、project_members/tenant_members 在事务内的 role 撤权同步、owner/manager/member 对执行/提交/验收/基线审批权限、提交人和审核人职责分离、幂等键重放返回及 payload hash 冲突、事件与审计与正式写入原子回滚、数据库迁移重跑、防跨项目依赖和有向图环、未知事件失败/合法 domain.changed 无 AI 副作用、HTTP 访问隔离、报告/旧任务回归、Docker/native/安全/文档质量。运行结果以最新 PR Head CI 实测证据为准，实际 Windows/真实模型/生产安全尚未覆盖。
+
+## ADR-031 · /review UI 检查点
+
+核对新页签仅按当前 Project 加载登记簿；角色不越权；UI 不把“AI 声称完成”直接显示为“已验收”；只有本人能提交受指派交付物，独立 owner/manager 审核者能验收/退回，关键变更仅 owner 可审且不可自批；所有 POST 带 UUID 幂等键，版本变更带 expectedVersion；错误可见、响应式侧栏按钮可达、用户切项目不会串数据。校验 Next.js 类型检查/构建、部署与文档同步；没有实机浏览器的视觉核验不得写为已通过。
