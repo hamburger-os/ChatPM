@@ -11,16 +11,25 @@ const envFile = resolve(root, '.env');
 const placeholder = 'replace-with-a-long-random-secret-at-least-32-characters';
 
 export function prepareNativeEnv(source) {
-  const newline = source.includes('\r\n') ? '\r\n' : '\n';
-  const lines = source.split(/\r?\n/);
-  const indices = lines.flatMap((line, index) => line.startsWith('SESSION_SECRET=') ? [index] : []);
-  if (indices.length > 1) throw new Error('Duplicate SESSION_SECRET setting');
-  const current = indices.length ? lines[indices[0]].slice('SESSION_SECRET='.length).trim() : '';
-  if (current && current !== placeholder) return source;
-  const value = 'SESSION_SECRET=' + randomBytes(32).toString('hex');
-  if (indices.length) lines[indices[0]] = value;
-  else lines.splice(lines.at(-1) === '' ? lines.length - 1 : lines.length, 0, value);
-  return lines.join(newline);
+  let output=source;
+  for (const [key,template] of [
+    ['SESSION_SECRET',placeholder],
+    ['MODEL_ENCRYPTION_KEY','replace-with-a-separate-long-random-model-key'],
+  ]) {
+    const lines=output.split(/\r?\n/);
+    const matches=lines.flatMap((line,index)=>line.startsWith(key+'=')?[index]:[]);
+    if(matches.length>1)throw new Error('Duplicate '+key+' setting');
+    const raw=matches.length?lines[matches[0]].slice(key.length+1).trim():'';
+    if(raw&&raw!==template){
+      if(raw.length<32)throw new Error(key+' must contain at least 32 characters');
+      continue;
+    }
+    const value=key+'='+randomBytes(32).toString('hex');
+    if(matches.length)lines[matches[0]]=value;
+    else lines.splice(lines.at(-1)===''?lines.length-1:lines.length,0,value);
+    output=lines.join(source.includes('\r\n')?'\r\n':'\n');
+  }
+  return output;
 }
 
 export function validateNativeEnv(text) {
@@ -33,6 +42,9 @@ export function validateNativeEnv(text) {
     catch { errors.push('DATABASE_URL must be a valid PostgreSQL URI.'); }
   }
   if (get('NODE_ENV') !== 'production') errors.push('Set NODE_ENV=production.');
+  const modelKey=get('MODEL_ENCRYPTION_KEY');
+  if(!modelKey||modelKey.length<32||/replace|example|changeme/i.test(modelKey))
+    errors.push('Configure a strong MODEL_ENCRYPTION_KEY.');
   const secret = get('SESSION_SECRET');
   if (!secret || secret.length < 32 || /replace|example|changeme/i.test(secret))
     errors.push('Configure a strong SESSION_SECRET.');
