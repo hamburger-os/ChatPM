@@ -40,7 +40,7 @@ export default function WorkspaceDetails({project,tenantId,user}:{
       progress:u.updates,reports:reports.reports};
   }
   useEffect(()=>{
-    if(!id)return;
+    if(!id||!project)return;
     let active=true;
     setTab('tasks');
     setSettings({aiEnabled:project.ai_enabled,workStart:project.work_start,
