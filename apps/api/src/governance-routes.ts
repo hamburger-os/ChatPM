@@ -28,9 +28,14 @@ export function registerGovernanceRoutes(app:FastifyInstance,
     ]);
     // Only return project classification for projects explicitly visible to this member.
     const user=await authenticated(req);
-    const visible=await pool.query(`SELECT p.id,p.name,p.department_id,p.program_id,p.portfolio_id
-      FROM projects p JOIN project_members pm ON pm.project_id=p.id AND pm.user_id=$2
-      WHERE p.tenant_id=$1 ORDER BY p.name`,[tenantId,user]);
+    const member=await pool.query('SELECT role FROM tenant_members WHERE tenant_id=$1 AND user_id=$2',
+      [tenantId,user]);
+    const visible=member.rows[0]?.role==='admin'
+      ?await pool.query(`SELECT id,name,department_id,program_id,portfolio_id
+        FROM projects WHERE tenant_id=$1 ORDER BY name`,[tenantId])
+      :await pool.query(`SELECT p.id,p.name,p.department_id,p.program_id,p.portfolio_id
+        FROM projects p JOIN project_members pm ON pm.project_id=p.id AND pm.user_id=$2
+        WHERE p.tenant_id=$1 ORDER BY p.name`,[tenantId,user]);
     return {departments:departments.rows,portfolios:portfolios.rows,
       programs:programs.rows,projects:visible.rows};
   });
