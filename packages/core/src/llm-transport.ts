@@ -21,7 +21,7 @@ const systemInstruction =
 export function readLLMSettings(env:Readonly<Record<string,string|undefined>>):LLMSettings {
   const apiKey=env.LLM_API_KEY?.trim();
   if(!apiKey)throw new Error('MODEL_NOT_CONFIGURED');
-  const style=env.LLM_API_STYLE || 'responses';
+  const style=env.LLM_API_STYLE;
   if(style!=='responses' && style!=='chat-completions')throw new Error('MODEL_INVALID_STYLE');
   const model=env.LLM_MODEL?.trim();
   if(!model)throw new Error('MODEL_INVALID_MODEL');
