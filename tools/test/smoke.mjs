@@ -130,6 +130,96 @@ try{
   }});
   assert.equal(invited.status,200,'Owner should be able to add a registered project member');
   const pm='/projects/'+pid+'/pm';
+  // Sourced project claims: an author confirms a statement, never task acceptance.
+  const evidenceBase='/projects/'+pid+'/evidence/claims';
+  const ownerEvidenceText='🧩 我计划本周五完成环境配置，仍需验收。';
+  const ownerEvidencePost=await api('/projects/'+pid+'/messages',{method:'POST',body:{
+    content:ownerEvidenceText,nonce:randomUUID()}});
+  assert.equal(ownerEvidencePost.status,201,JSON.stringify(ownerEvidencePost.data));
+  const ownerEvidenceId=ownerEvidencePost.data.message.id;
+  const ownerClaimInput={idempotencyKey:randomUUID(),messageId:ownerEvidenceId,
+    startCp:0,endCp:Array.from(ownerEvidenceText).length,kind:'commitment',
+    summary:'来源作者计划完成环境配置，尚未正式验收'};
+  const ownerClaim=await api(evidenceBase,{method:'POST',body:ownerClaimInput});
+  assert.equal(ownerClaim.status,201,JSON.stringify(ownerClaim.data));
+  assert.equal(ownerClaim.data.evidence.quote,ownerEvidenceText);
+  const ownerClaimId=ownerClaim.data.claim.id;
+  const sameClaim=await api(evidenceBase,{method:'POST',body:ownerClaimInput});
+  assert.equal(sameClaim.status,201);
+  assert.equal(sameClaim.data.claim.id,ownerClaimId,'Same command must replay its receipt');
+  const conflictClaim=await api(evidenceBase,{method:'POST',body:{
+    ...ownerClaimInput,summary:'A different explanation'}});
+  assert.equal(conflictClaim.status,409,'Key reuse with changed explanation is invalid');
+  const shortEvidence=await api(evidenceBase,{method:'POST',body:{
+    ...ownerClaimInput,idempotencyKey:randomUUID(),startCp:999,endCp:1000}});
+  assert.equal(shortEvidence.status,400,'Out-of-range evidence offsets must be rejected');
+  const absentEvidence=await api(evidenceBase,{method:'POST',body:{
+    ...ownerClaimInput,idempotencyKey:randomUUID(),messageId:randomUUID()}});
+  assert.equal(absentEvidence.status,404,'Only same-project messages are citable');
+  const memberCannotCiteOwner=await api(evidenceBase,{method:'POST',cookie:cookieB,
+    body:{...ownerClaimInput,idempotencyKey:randomUUID()}});
+  assert.equal(memberCannotCiteOwner.status,403,'Members only cite their own messages');
+  const memberCannotAcknowledgeOwner=await api(evidenceBase+'/'+ownerClaimId+'/review',{
+    method:'POST',cookie:cookieB,body:{idempotencyKey:randomUUID(),
+      expectedVersion:1,decision:'acknowledge'}});
+  assert.equal(memberCannotAcknowledgeOwner.status,403);
+  const ownerAcknowledgmentInput={idempotencyKey:randomUUID(),
+    expectedVersion:1,decision:'acknowledge'};
+  const ownerAcknowledgment=await api(evidenceBase+'/'+ownerClaimId+'/review',{
+    method:'POST',body:ownerAcknowledgmentInput});
+  assert.equal(ownerAcknowledgment.status,200,JSON.stringify(ownerAcknowledgment.data));
+  assert.equal(ownerAcknowledgment.data.claim.status,'source_acknowledged');
+  const acknowledgmentReplay=await api(evidenceBase+'/'+ownerClaimId+'/review',{
+    method:'POST',body:ownerAcknowledgmentInput});
+  assert.equal(acknowledgmentReplay.status,200);
+  assert.equal(acknowledgmentReplay.data.claim.version,2);
+  const repeatedAcknowledgment=await api(evidenceBase+'/'+ownerClaimId+'/review',{
+    method:'POST',body:{idempotencyKey:randomUUID(),
+      expectedVersion:2,decision:'acknowledge'}});
+  assert.equal(repeatedAcknowledgment.status,409);
+  const memberEvidenceText='联调方案已经完成初稿，尚未验收。';
+  const memberEvidencePost=await api('/projects/'+pid+'/messages',{
+    method:'POST',cookie:cookieB,body:{content:memberEvidenceText,nonce:randomUUID()}});
+  assert.equal(memberEvidencePost.status,201,JSON.stringify(memberEvidencePost.data));
+  const memberEvidenceId=memberEvidencePost.data.message.id;
+  const memberClaimInput={idempotencyKey:randomUUID(),messageId:memberEvidenceId,
+    startCp:0,endCp:Array.from(memberEvidenceText).length,kind:'completion_claim',
+    summary:'成员声明完成初稿，并未经过验收'};
+  const memberClaim=await api(evidenceBase,{method:'POST',cookie:cookieB,
+    body:memberClaimInput});
+  assert.equal(memberClaim.status,201,JSON.stringify(memberClaim.data));
+  const memberClaimId=memberClaim.data.claim.id;
+  const ownerCannotAcknowledgeMember=await api(evidenceBase+'/'+memberClaimId+'/review',{
+    method:'POST',body:{idempotencyKey:randomUUID(),
+      expectedVersion:1,decision:'acknowledge'}});
+  assert.equal(ownerCannotAcknowledgeMember.status,403);
+  const memberCannotDismiss=await api(evidenceBase+'/'+memberClaimId+'/review',{
+    method:'POST',cookie:cookieB,body:{idempotencyKey:randomUUID(),
+      expectedVersion:1,decision:'dismiss'}});
+  assert.equal(memberCannotDismiss.status,403);
+  const ownerDismissed=await api(evidenceBase+'/'+memberClaimId+'/review',{
+    method:'POST',body:{idempotencyKey:randomUUID(),
+      expectedVersion:1,decision:'dismiss'}});
+  assert.equal(ownerDismissed.status,200,JSON.stringify(ownerDismissed.data));
+  assert.equal(ownerDismissed.data.claim.status,'dismissed');
+  const evidenceList=await api(evidenceBase,{cookie:cookieB});
+  assert.equal(evidenceList.status,200);
+  assert.ok(evidenceList.data.claims.some(x=>x.id===ownerClaimId));
+  assert.ok(evidenceList.data.claims.some(x=>x.id===memberClaimId));
+  const unknownProjectClaims=await api('/projects/'+randomUUID()+'/evidence/claims');
+  assert.equal(unknownProjectClaims.status,404);
+  const evidenceAudit=(await db.query(`SELECT count(*)::int AS n FROM audit_entries
+    WHERE project_id=$1 AND action IN ('evidence.claim.created.v1',
+      'evidence.claim.reviewed.v1')`,[pid])).rows[0].n;
+  assert.equal(evidenceAudit,4,'Two claims and two reviews require four audit entries');
+  const evidenceEvents=(await db.query(`SELECT count(*)::int AS n FROM domain_events
+    WHERE project_id=$1 AND kind IN ('evidence.claim.created.v1',
+      'evidence.claim.reviewed.v1')`,[pid])).rows[0].n;
+  assert.equal(evidenceEvents,4,'Formal evidence commands must persist domain events');
+  const evidenceRows=(await db.query(`SELECT count(*)::int AS n FROM project_evidence_spans
+    WHERE project_id=$1`,[pid])).rows[0].n;
+  assert.equal(evidenceRows,2,'Failed or replayed attempts must not create extra spans');
+
   const forbiddenGoal=await api(pm+'/goals',{method:'POST',cookie:cookieB,
     body:{idempotencyKey:randomUUID(),title:'No',successCriteria:'Not authorized'}});
   assert.equal(forbiddenGoal.status,403,'Project members cannot create goals');
