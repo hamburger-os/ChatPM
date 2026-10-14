@@ -152,7 +152,8 @@ try{
     assert.ok(!JSON.stringify(discovered.data).includes('smoke-catalog-secret'));
     const throttled=await api('/admin/ai/providers/'+connectionId+'/discover',{method:'POST'});
     assert.equal(throttled.status,429,'Directory should be throttled across API processes');
-    const selection={providerId:connectionId,models:discovered.data.models};
+    const selection={providerId:connectionId,models:discovered.data.models.map(
+      ({id,name})=>({id,name}))};
     const deniedImport=await api('/admin/ai/models/import',{
       method:'POST',cookie:cookieB,body:selection});
     assert.equal(deniedImport.status,403);
