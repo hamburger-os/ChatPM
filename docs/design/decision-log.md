@@ -177,3 +177,7 @@
 **决定：** Worker 入口不再直接写任何数据库表，心跳/成功与失败的存储逻辑归 `operations/worker-heartbeat.ts` 所有，主进程只负责 tick、停止与调用 Runner。CI 增加零依赖的静态架构守卫，保证 Worker 启动文件不引入领域 SQL、不会重新聚合事件/提醒/报告实现，且能正常调用三个 Runner。**范围：** 守卫目前只覆盖 Worker bootstrap；遗留 API/治理路由有直接业务 SQL，尚不能误报它们已实现全部无跨模块 SQL。后续逐模块迁移 API 时扩大规则。
 
 **取舍：** 使用精准且窄范围的源码断言，而不是为现有 560 行 API 建立大量豁免的复杂 ESLint 插件；不修改数据库 schema、Outbox 重试或 Win11 进程模型。守卫自身要纳入 GitHub CI 并能够通过主动违反约束的测试证明会失败。
+
+## ADR-035 · 可重复黄金评测，不伪造模型质量（2026-10-15）
+
+新增与当前项目分析 Prompt 和 JSON Schema 同源的合成样例/评分器；CLI 在明确 `PM_EVAL_LIVE=1` 且有部署方密钥时才能调用实际模型，不使用生产聊天。CI 验证样例覆盖/评分器正确性和提示版本，不假定 AI 质量已经通过；对当前不支持的 Commitment/Issue/Decision/Change/Acceptance/Intervention 另列 Coverage Gap，不混入误导性的成功率。不新增自治 Agent，不引入 Shell/文件模型工具。
