@@ -64,7 +64,7 @@ const clarification=z.object({
 });
 export type Candidate=z.infer<typeof proposal>;
 export type Clarification=z.infer<typeof clarification>;
-export type ModelResult<T>={value:T;modelName:string;promptVersion:string};
+export type ModelResult<T>={value:T;modelName:string;promptVersion:string;authorizationVersion?:number};
 export class DailyAIBudgetExceeded extends Error {
   constructor(){super('Daily AI budget exceeded');this.name='DailyAIBudgetExceeded';}
 }
@@ -135,7 +135,7 @@ export class ConfiguredLLMProvider implements LLMProvider{
       await pool.query(`UPDATE ai_model_invocations SET status='succeeded',
         latency_ms=$2,finished_at=NOW() WHERE id=$1`,
         [invocationId,Math.max(0,Date.now()-start)]);
-      return {value:parsed,modelName,promptVersion};
+      return {value:parsed,modelName,promptVersion,authorizationVersion:current.version};
     }catch(error){
       await pool.query(`UPDATE ai_model_invocations SET status='failed',
         error_code=$2,latency_ms=$3,finished_at=NOW() WHERE id=$1`,
