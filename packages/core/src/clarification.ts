@@ -1,6 +1,7 @@
 import { pool, transaction, audit } from './db.ts';
 import { ConfiguredLLMProvider, assertCurrentAiGrant } from './ai-provider.ts';
 import { insertMessage } from './messages.ts';
+import { assertEventClaim, type EventRow } from './outbox.ts';
 
 const REFERENCE=/【候选:([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})】/i;
 export function referencedCandidate(text:string):string|null{
@@ -8,7 +9,7 @@ export function referencedCandidate(text:string):string|null{
 }
 
 type Reply={id:string;projectId:string;content:string;projectName:string};
-export async function processClarification(reply:Reply):Promise<boolean>{
+export async function processClarification(reply:Reply,event:EventRow):Promise<boolean>{
   let proposalId=referencedCandidate(reply.content);
   if(!proposalId){
     if(!/(负责人|负责|截止|完成时间|交付日期|计划于|月底|本周|下周|\d+月|[一二三四五六七八九十]+月)/u.test(reply.content))return false;
@@ -35,6 +36,7 @@ export async function processClarification(reply:Reply):Promise<boolean>{
     [proposalId,reply.projectId]);
   if(!rows.length){
     await transaction(async db=>{
+      await assertEventClaim(db,event);
       const enabled=await db.query(
         'SELECT 1 FROM projects WHERE id=$1 AND ai_enabled=TRUE FOR SHARE',
         [reply.projectId]);
@@ -55,6 +57,7 @@ export async function processClarification(reply:Reply):Promise<boolean>{
   const suggestion=result.value;
   if(!suggestion.assignee_hint&&!suggestion.due_at){
     await transaction(async db=>{
+      await assertEventClaim(db,event);
       await assertCurrentAiGrant(db,reply.projectId,result.authorizationVersion);
       const saved=await db.query(`INSERT INTO clarification_responses(
         project_id,proposal_id,message_id,model_name,prompt_version,assignee_hint,due_at,confidence)
@@ -74,6 +77,7 @@ export async function processClarification(reply:Reply):Promise<boolean>{
     return true;
   }
   await transaction(async db=>{
+    await assertEventClaim(db,event);
     await assertCurrentAiGrant(db,reply.projectId,result.authorizationVersion);
     const {rows:written}=await db.query(`INSERT INTO clarification_responses(
       project_id,proposal_id,message_id,model_name,prompt_version,assignee_hint,due_at,confidence)

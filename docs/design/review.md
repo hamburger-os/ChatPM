@@ -239,3 +239,13 @@ Docker `deploy:docker` 与 Windows/Linux 原生 `setup:local` 在私有 `.env` �
 生产 HTTP(S) 模型传输只允许业务实际需要的 `Authorization`、`Content-Type` 和 `Accept` 请求头。禁止调用方覆盖 `Host`、`Proxy-Authorization`、`Content-Length`、`Transfer-Encoding`、`Connection` 和其他 hop-by-hop/代理/转发头；拒绝时不得建立 Socket。出站仍拒绝重定向、复用连接、环境 HTTP 代理和超出响应上限；模型 Key 不进入错误日志或客户端环境。单元测试在本地模拟 A/AAAA 混合结果、映射 IPv6、Docker gateway 公私地址和违法 HTTP 头，并确认非法请求不触发上游实际连接。
 
 **审查限制：** 即使通过 CI，此处只验证纯 Node 传输语义，不代表实机 QNAP/Windows/Linux 网络路由、IPv6 DNS64、自定义 NAT64、服务网格透明代理或企业 HTTPS 出站策略已验收。对无授权本地模型服务、实际私网出站绕行和供应商真实端点仍需在部署目标做隔离测试；Issue #39 保持开放。
+
+## ADR-065 · Outbox 失效租约的 AI 写入隔离 /review（2026-10-16）
+
+**问题：** 现有 Outbox `claim_token` 只用于 `finishEvent/failEvent` 的条件更新。Worker A 领取事件后发起长耗时模型调用；租约 5 分钟过期、Worker B 重新领取同一事件，此时 A 的 AI 回复、候选/进展、澄清、`ai_analysis_runs` 依旧可能成功写入，因为这些写操作此前只检查项目 AI 授权而不核验事件所有权。幂等 Message nonce 只防止重复文案，并不能替代失效 lease 的权限收回。
+
+**方案：** Core `assertEventClaim(db,event)` 在同一正式副作用事务中使用 `SELECT ... FOR UPDATE` 锁定当前 Outbox 行，要求 id、project_id、claim_token 全部相符、`claimed_at > NOW()-INTERVAL '5 minutes'` 且事件未处理/未死信。无效即 `OUTBOX_LEASE_LOST`，整个事务回滚，旧 Worker 不再覆盖 AI 分析状态、写重试/死信，也不提交迟到模型结果。覆盖 AI 回复、任务进展候选、新建议、澄清三种写入分支及分析运行状态写入。即使租约已过期但尚未重新领取，也不能发表迟到结果；新 Worker 在它重新领取后独立处理。
+
+**并发顺序：** Outbox 行 FOR UPDATE 在副作用事务内持有至 COMMIT；其他消费者的 `FOR UPDATE SKIP LOCKED` 无法在旧业务事务提交前抢占令牌。AI 授权版本检查仍在同一事务，不能靠模型调用前的检查代替。事件执行改为每次 `claimEvents(1)`、消费完成再领取下一条（最多单 tick 12 条），避免先批量领取 12 条后因第一条 LLM 延迟导致后续尚未开始的事件租约过期。
+
+**回归：** 真实 PostgreSQL 覆盖租约过期但无人认领、租约被重新分配、旧 token 禁止 AI 提交、当前 token 可提交、事件已完成禁止再写及事务行锁 `NOWAIT` 并发争抢；静态架构测试锁定每个写入路径的 `assertEventClaim` 调用和逐条领取方式。租约失效不代表已向第三方模型发送的数据可以撤回；模型耗时可超过租约时仍会浪费调用且需新 Worker 重试，后续多实例 heartbeat lease renewal / abort 并发控制与端到端故障注入还需要继续。此 PR 不能宣称多实例 Worker 的所有可靠性验收已经完成。
