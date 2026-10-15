@@ -656,13 +656,13 @@ try{
   const handoffAttempt=await api('/projects/'+pid+'/members/'+second.data.user.id,{
     method:'PATCH',body:{idempotencyKey:randomUUID(),role:'observer'}});
   assert.equal(handoffAttempt.status,409,'Unaccepted deliverables must block observer demotion');
-  const reassigned=await api(pm+'/deliverables/'+handoffId+'/reassign',{
+  const handoffReassigned=await api(pm+'/deliverables/'+handoffId+'/reassign',{
     method:'POST',body:{idempotencyKey:randomUUID(),expectedVersion:1,
       assigneeId:uid,note:'Team handover'}});
-  assert.equal(reassigned.status,200,JSON.stringify(reassigned.data));
-  assert.equal(reassigned.data.item.assignee_id,uid);
-  assert.equal(reassigned.data.item.version,2);
-  assert.equal(reassigned.data.item.status,'planned');
+  assert.equal(handoffReassigned.status,200,JSON.stringify(handoffReassigned.data));
+  assert.equal(handoffReassigned.data.item.assignee_id,uid);
+  assert.equal(handoffReassigned.data.item.version,2);
+  assert.equal(handoffReassigned.data.item.status,'planned');
   const illegalReassign=await api(pm+'/deliverables/'+handoffId+'/reassign',{
     method:'POST',body:{idempotencyKey:randomUUID(),expectedVersion:1,
       assigneeId:second.data.user.id,note:'Stale handoff'}});
