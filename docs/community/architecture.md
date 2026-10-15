@@ -103,3 +103,9 @@ English: Project membership edits, settings, dead-letter retries and report gene
 中文：系统总管理员配置的模型供应商可以是公网 HTTPS 服务，也可以是明确的本机或 Docker 宿主机地址。为了避免模型密钥或项目聊天被送往意外的内网服务，目录查询、连接测试和 AI 推理统一检查 DNS 的所有返回地址，并在连接时使用已经验证的 IP，不跟随重定向；私有与保留网络默认拒绝，只有指定的本地模型主机例外。此安全改进不代表生产网络防火墙、厂商兼容性或渗透测试已经通过。
 
 English: System-administrator model connections may target public HTTPS providers or explicitly selected local/Docker-host models. Catalog discovery, connectivity checks and model inference now validate all DNS answers and pin the validated IP for the actual connection, refusing redirects and private/reserved networks by default except the designated local hostnames. This is defense in depth, not a claim that production egress firewalls, provider compatibility or penetration tests have been accepted.
+
+### 周报月报的版本及审核 / Versioned reports and approval
+
+中文：项目负责人生成周报/月报时可以根据最新登记的任务和风险刷新**尚未发布**的草稿，草稿每次刷新增加版本。审核发布必须针对负责人所看到的当前版本，发布后保存审核人、时间并冻结正文；同一次点击因网络原因重试不会重复发布。已经发布的同周期报告再次请求只返回发布版本。报告展示的是生成当时的项目状态，不代表已计算整个周期内的历史进度变化。
+
+English: Project owners may regenerate an unpublished weekly or monthly draft using the latest registered tasks and risks; each refresh increments its revision. Publication requires the revision the owner reviewed, records its actor and time, and freezes the content. Retrying the same action is idempotent; requesting a published period returns its existing version. These reports reflect a point-in-time project snapshot, not a full historical account of all changes during the period.

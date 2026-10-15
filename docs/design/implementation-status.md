@@ -94,3 +94,7 @@
 ## ADR-042 · 固定 DNS 的模型出站安全切片
 
 系统配置模型端点的目录查询、连接探针、AI 聊天/候选抽取与 opt-in 黄金评测现在共用 `model-egress.ts` 的默认网络发送器；在建立 socket 之前解析 DNS A/AAAA 整体地址集合并拒绝任意公网域名指向的私网/保留地址、重定向、非本地 HTTP。Node HTTP(S) 的真实 socket 仅使用事先校验过的地址，且每次请求禁用代理/长连接池，维持原域名 TLS 认证。显式 localhost/127.0.0.1/::1/host.docker.internal 仍可调用本地模型。测试包含模拟 DNS 混合/空地址、恶意目标以及真实 loopback POST/重定向/响应过大。**边界：** 单元集成的本机 HTTP 和 GitHub CI 不等于生产网络环境的 egress、防火墙、代理、TLS 与 SSRF/DNS 真实故障注入演练；P4 Issue #51 继续开放。状态以本 PR 最终 CI 和 /review 为准。
+
+## ADR-043 · 人工报告的命令回执、版本与发布审计
+
+新迁移 `016_report_revisions.sql` 为原 Report 增加 `revision`、`published_at` 和 `published_by`，不改写既有 SQL/校验和、不伪造历史报告的原发布时间。报告读取和手工写路由迁出 `server.ts` 到 `report-routes.ts`；人工生成和发布均要求幂等键，只有当前项目及组织中的 owner 有权发出命令。草稿刷新使 revision 单次增加，发布要求 expectedRevision 并在同一事务写状态、审核人及时间、DomainEvent/Outbox/Audit/Receipt；相同 key 重试不产生重复历史，新 key 重复发布 409。已发布内容冻结，之后的生成请求返回原发布版本。Worker 定时周期报告仍保持首次单次生成。**范围限制：** 当前报告仍是项目实时数据快照，并不提供完整周/月内每次事件的历史统计和逐条来源引用；P1/P4 不能据此全部完成。以 PR 最新 Head CI 及 /review 判定实际交付。

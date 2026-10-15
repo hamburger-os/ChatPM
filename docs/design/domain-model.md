@@ -83,4 +83,4 @@ ProjectClaim 引用 EvidenceSpan（复合项目外键），记录 `kind`、解�
 
 ## ADR-043 · 报告草稿 revision 与不可变发布
 
-Reporting.Report（project + kind + periodKey）唯一：人工生成时得到当前数据库任务/风险快照；draft 能随真实数据变更重新生成，每次实际重写 revision+1；published 之后即使再次请求生成也仅返回发布版本，不写正文。发布是 owner/manager? **仅项目 owner** 的正式状态命令，必须在数据库内比较用户所见 expectedRevision，写入 published_at/published_by 且 revision+1；同 key 请求重放不再次发布。报告的内容与时间表达当前快照，不推断历史实际进度；未来 Evidence/Claim 与任务事件来源关联是独立迭代。本变更不改变 Worker 自动周期生成的原则。
+Reporting.Report（project + kind + periodKey）唯一：人工生成时得到当前数据库任务/风险快照；draft 能随真实数据变更重新生成，每次实际重写 revision+1；published 之后即使再次请求生成也仅返回发布版本，不写正文。发布是**仅限项目 owner**的正式状态命令，必须在数据库内比较用户所见 expectedRevision，写入 published_at/published_by 且 revision+1；同 key 请求重放不再次发布。报告的内容与时间表达当前快照，不推断历史实际进度；未来 Evidence/Claim 与任务事件来源关联是独立迭代。本变更不改变 Worker 自动周期生成的原则。
