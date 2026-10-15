@@ -144,3 +144,7 @@ Docker 部署 Smoke 原先仅验证 pg_dump custom-format 文件头和 pg_restor
 重复邀请租户成员、同角色设置、同身份部门人员指派，不再产生虚假更改审计或新 Receipt（不同 key 新命令返回 409）；相同 key 的成功变更重放仍返回原结果。另一管理员存在时 tenant admin 可自行降为 member，事务成功后可以凭原命令继续读取**自己的同一次成功回执**，但不能凭新 key 再修改组织角色。只有组织角色路由允许当前 tenant member 对已完成 Receipt 的重放，organizationCommand 的其它路径仍要求当前 admin；保持 last-admin 约束、租户互斥与当前权限锁。没有新 migration，不代表所有组织级 DomainEvent/Outbox 已完成或达到真实生产签署。
 
 **ADR-054 浏览器权限刷新：** 组织管理员主动把自己降为成员时，前端显示明确二次确认；真实命令成功后重新加载工作台并重新获取组织成员身份，不再使用已撤销的 admin 权限继续调用组织人员列表而误报失败。其他成员的正常角色变更仍按原流程重新读取组织结构。
+
+## ADR-055 · 项目设置真实变更与浏览器基线
+
+项目设置以数据库最新 settings_revision 与 AI/提醒字段锁定比较；同值新命令 409，不新建 DomainEvent/Outbox/Audit/Receipt，也不修改计划、提醒或独立 ai_authorization_version。原 UUID 成功命令的网络重试仍回放原回执。Web 只有表单不同于最近一次成功保存值才允许提交，保存成功更新本地版本与快照，避免无意增加乐观版本。这是 P1/P2 数据审计和并发一致性增量，不替代 AI 模型供应商授权、组织治理 DomainEvent、实体完整生命周期或生产备份恢复验收。
