@@ -102,6 +102,11 @@ export function registerProjectGovernanceRoutes(
           const risk=await db.query(`SELECT 1 FROM risks WHERE project_id=$1
             AND owner_id=$2 AND status<>'resolved' LIMIT 1`,[projectId,target]);
           if(risk.rowCount)fail(409,'该人员仍负责未关闭风险，请先移交风险');
+          const change=await db.query(`SELECT 1 FROM project_change_requests
+            WHERE project_id=$1 AND implementation_owner_id=$2
+              AND status='implementing' LIMIT 1`,[projectId,target]);
+          if(change.rowCount)
+            fail(409,'该人员仍负责实施中的变更，请先重新指派负责人');
         }
         await db.query(`UPDATE project_members SET role=$3
           WHERE project_id=$1 AND user_id=$2`,
@@ -137,6 +142,11 @@ export function registerProjectGovernanceRoutes(
           WHERE project_id=$1 AND owner_id=$2 AND status<>'resolved' LIMIT 1`,
           [projectId,target]);
         if(risk.rowCount)fail(409,'该成员仍负责未关闭风险，请先移交风险');
+        const change=await db.query(`SELECT 1 FROM project_change_requests
+          WHERE project_id=$1 AND implementation_owner_id=$2
+            AND status='implementing' LIMIT 1`,[projectId,target]);
+        if(change.rowCount)
+          fail(409,'该成员仍负责实施中的变更，请先重新指派负责人');
         await db.query(`DELETE FROM project_members
           WHERE project_id=$1 AND user_id=$2 AND role<>'owner'`,
           [projectId,target]);
