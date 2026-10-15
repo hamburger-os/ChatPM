@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
-import { pool } from '../src/db.ts';
-import { claimEvents, failEvent, finishEvent, deadEvents, MAX_EVENT_ATTEMPTS } from '../src/outbox.ts';
+import { pool, transaction } from '../src/db.ts';
+import { claimEvents, failEvent, finishEvent, deadEvents, assertEventClaim, MAX_EVENT_ATTEMPTS } from '../src/outbox.ts';
 import { DailyAIBudgetExceeded } from '../src/ai-provider.ts';
 import { referencedCandidate } from '../src/clarification.ts';
 
@@ -72,6 +72,16 @@ try {
   const newLease=(await claimEvents(1))[0];
   assert.equal(newLease.id,leaseEvent.id);
   assert.notEqual(newLease.claim_token,oldLease.claim_token);
+  await assert.rejects(transaction(db=>assertEventClaim(db,oldLease)),
+    /OUTBOX_LEASE_LOST/,'Reclaimed work must never publish a stale model result');
+  await transaction(async db=>{
+    await assertEventClaim(db,newLease);
+    await db.query(`INSERT INTO audit_entries(project_id,actor_id,action,target_id)
+      VALUES($1,NULL,'outbox.current_owner_fenced',$2)`,[project.id,newLease.id]);
+  });
+  assert.equal((await pool.query(`SELECT COUNT(*)::int AS n FROM audit_entries
+    WHERE project_id=$1 AND action='outbox.current_owner_fenced'`,
+    [project.id])).rows[0].n,1);
   await finishEvent(oldLease);
   const stillPending=(await pool.query(
     'SELECT processed_at FROM outbox_events WHERE id=$1',[leaseEvent.id])).rows[0];
@@ -79,6 +89,46 @@ try {
   await finishEvent(newLease);
   assert.ok((await pool.query(
     'SELECT processed_at FROM outbox_events WHERE id=$1',[leaseEvent.id])).rows[0].processed_at);
+  await assert.rejects(transaction(db=>assertEventClaim(db,newLease)),
+    /OUTBOX_LEASE_LOST/,'Already-processed leases cannot publish again');
+
+  const expiredEvent=(await pool.query(
+    "INSERT INTO outbox_events(project_id,kind) VALUES($1,'message.created') RETURNING id",
+    [project.id])).rows[0];
+  const expired=(await claimEvents(1))[0];
+  assert.equal(expired.id,expiredEvent.id);
+  await pool.query("UPDATE outbox_events SET claimed_at=NOW()-INTERVAL '6 minutes' WHERE id=$1",
+    [expiredEvent.id]);
+  await assert.rejects(transaction(db=>assertEventClaim(db,expired)),
+    /OUTBOX_LEASE_LOST/,'An expired lease cannot publish even before reassignment');
+
+  const renewed=(await claimEvents(1))[0];
+  assert.equal(renewed.id,expiredEvent.id);
+  let unlock!:()=>void;
+  let locked!:()=>void;
+  const held=new Promise<void>(resolve=>{unlock=resolve;});
+  const acquired=new Promise<void>(resolve=>{locked=resolve;});
+  const publication=transaction(async db=>{
+    await assertEventClaim(db,renewed);
+    locked();
+    await held;
+    await db.query(`INSERT INTO audit_entries(project_id,actor_id,action,target_id)
+      VALUES($1,NULL,'outbox.committed_owner_fenced',$2)`,[project.id,renewed.id]);
+  });
+  await acquired;
+  // With the live row locked by a publishing transaction, a competing
+  // consumer must skip the row rather than steal the token mid-commit.
+  await pool.query("UPDATE outbox_events SET claimed_at=NOW()-INTERVAL '6 minutes' WHERE id=$1 AND FALSE",
+    [expiredEvent.id]);
+  const competing=await claimEvents(1);
+  assert.ok(competing.every(x=>x.id!==expiredEvent.id));
+  unlock();
+  await publication;
+  await finishEvent(renewed);
+  assert.equal((await pool.query(`SELECT COUNT(*)::int AS n FROM audit_entries
+    WHERE project_id=$1 AND action='outbox.committed_owner_fenced'`,
+    [project.id])).rows[0].n,1);
+
 
   const crashed=(await pool.query(
     `INSERT INTO outbox_events(project_id,kind,attempts,claimed_at)
