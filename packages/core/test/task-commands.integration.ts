@@ -17,6 +17,7 @@ assert.equal(hasTaskChanges({
 }),true);
 
 const suffix=randomUUID();
+let fixtureProjectId:string|null=null;
 try{
   const uid=(await pool.query<{id:string}>(`
     INSERT INTO users(email,display_name,password_hash)
@@ -29,6 +30,7 @@ try{
   const pid=(await pool.query<{id:string}>(`
     INSERT INTO projects(tenant_id,name,owner_id)
     VALUES($1,'Task command integration',$2) RETURNING id`,[tenant,uid])).rows[0].id;
+  fixtureProjectId=pid;
   await pool.query("INSERT INTO project_members(project_id,user_id,role) VALUES($1,$2,'owner')",
     [pid,uid]);
 
@@ -101,4 +103,12 @@ try{
     WHERE project_id=$1 AND aggregate_type='tasks' AND aggregate_id=$2`,
     [pid,taskId])).rows[0].n,initialEvents+2);
   console.log('Task Core commands: no-op rollback, real task changes, status, receipt replay');
-}finally{await pool.end();}
+}finally{
+  // The next independent Outbox reliability test claims globally due events.
+  // Do not let this Task fixture leave unrelated due domain events in its pool.
+  if(fixtureProjectId)await pool.query(`
+    UPDATE outbox_events SET processed_at=NOW()
+    WHERE project_id=$1 AND processed_at IS NULL AND dead_at IS NULL
+  `,[fixtureProjectId]);
+  await pool.end();
+}
