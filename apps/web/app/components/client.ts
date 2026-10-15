@@ -16,7 +16,10 @@ export type Progress={id:string,task_id:string,task_title:string,status:string,
   kind:string,summary:string,created_at:string};
 export type Report={id:string,kind:'week'|'month',period_key:string,state:string,
   revision:number,content:string,published_at?:string|null,published_by?:string|null};
-export type Risk={id:string,title:string,status:string};
+export type Risk={id:string,title:string,detail:string,
+  status:'open'|'mitigating'|'resolved',version:number,
+  likelihood:number|null,impact:number|null,owner_id:string|null,
+  response_plan:string};
 
 export async function request<T>(path:string,options?:RequestInit):Promise<T>{
   const response=await fetch('/api'+path,{...options,credentials:'include',cache:'no-store',

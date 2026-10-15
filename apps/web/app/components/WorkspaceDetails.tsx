@@ -3,6 +3,7 @@ import { useEffect, useRef, useState, type FormEvent } from 'react';
 import type { Message,Person, Progress, Project, Proposal, Report, Risk, Task, User } from './client';
 import { json, request } from './client';
 import PmRegisterPanel from './PmRegisterPanel';
+import RiskRegisterItem from './RiskRegisterItem';
 
 type Tab='tasks'|'governance'|'proposals'|'reports'|'settings';
 export default function WorkspaceDetails({project,user,messages}:{
@@ -25,6 +26,7 @@ export default function WorkspaceDetails({project,user,messages}:{
   const updateTaskIntents=useRef(new Map<string,string>());
   const reviewIntents=useRef(new Map<string,string>());
   const reportIntents=useRef(new Map<string,string>());
+  const riskIntents=useRef(new Map<string,string>());
   const governanceIntents=useRef(new Map<string,string>());
   const [settingsRevision,setSettingsRevision]=useState(1);
   const [settings,setSettings]=useState({aiEnabled:false,workStart:null as number|null,
@@ -128,6 +130,16 @@ export default function WorkspaceDetails({project,user,messages}:{
       onSuccess?.(result);
     });
   }
+  function riskCommand(path:string,method:'PATCH'|'POST',
+    details:Record<string,unknown>){
+    const intent=JSON.stringify([id,path,method,details]);
+    const idempotencyKey=riskIntents.current.get(intent)??crypto.randomUUID();
+    riskIntents.current.set(intent,idempotencyKey);
+    void act(async()=>{
+      await request(base+path,{method,body:json({idempotencyKey,...details})});
+      riskIntents.current.delete(intent);
+    });
+  }
   function reportCommand(path:string,details:Record<string,unknown>){
     const intent=JSON.stringify([id,path,details]);
     const idempotencyKey=reportIntents.current.get(intent)??crypto.randomUUID();
@@ -187,8 +199,14 @@ export default function WorkspaceDetails({project,user,messages}:{
         </div>}
       </article>)}
       <h3>当前风险 ({risks.length})</h3>
-      {risks.map(x=><article className="item" key={x.id}><strong>{x.title}</strong>
-        <small>{x.status==='open'?'尚未解决':'已解决'}</small></article>)}
+      {risks.map(x=><RiskRegisterItem key={x.id+':'+x.version}
+        risk={x} people={people} projectId={id!} canManage={Boolean(manager)}
+        busy={busy}
+        onAssess={data=>riskCommand('/risks/'+x.id+'/assessment','PATCH',
+          {...data,expectedVersion:x.version})}
+        onTransition={(decision,note)=>riskCommand(
+          '/risks/'+x.id+'/transition','POST',
+          {decision,note,expectedVersion:x.version})}/>)}
     </>}
     {project&&tab==='governance'&&<PmRegisterPanel key={project.id}
       project={project} user={user} people={people} tasks={tasks} messages={messages}/>}
