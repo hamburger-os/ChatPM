@@ -12,6 +12,7 @@ import { registerReportRoutes } from './report-routes.ts';
 import { registerProjectGovernanceRoutes } from './project-governance-routes.ts';
 import { registerOperationsRoutes } from './operations-routes.ts';
 import { registerRiskRoutes } from './risk-routes.ts';
+import { registerProjectRoutes } from './project-routes.ts';
 import { randomUUID } from 'node:crypto';
 import { signedQuotaKey } from '../../../packages/core/src/quota-key.ts';
 import Fastify from 'fastify';
@@ -20,9 +21,8 @@ import cookie from '@fastify/cookie';
 import helmet from '@fastify/helmet';
 import rateLimit from '@fastify/rate-limit';
 import { z, ZodError } from 'zod';
-import { pool, transaction, audit } from '../../../packages/core/src/db.ts';
+import { pool, transaction } from '../../../packages/core/src/db.ts';
 import { createSession, hashPassword, readSession, revokeSession, verifyPassword } from '../../../packages/core/src/security.ts';
-import { isValidTimezone } from '../../../packages/core/src/policy.ts';
 import { syncFollowup } from '../../../packages/core/src/followup.ts';
 import { insertMessage } from '../../../packages/core/src/messages.ts';
 
@@ -143,35 +143,6 @@ app.get('/tenants',async req=>{
     ORDER BY t.name,t.id`,[userId]);
   return {tenants:rows};
 });
-app.get('/projects',async req=>{
-  const userId=await authenticated(req);
-  const {rows}=await pool.query(
-    `SELECT p.id,p.name,p.timezone,p.ai_enabled,p.work_start,p.work_end,p.cooldown_hours,p.settings_revision,p.owner_id,p.ownership_revision,pm.role
-     FROM projects p JOIN project_members pm ON pm.project_id=p.id
-     JOIN tenant_members tm ON tm.tenant_id=p.tenant_id AND tm.user_id=pm.user_id
-     WHERE pm.user_id=$1 ORDER BY p.created_at DESC`,[userId]);
-  return {projects:rows};
-});
-app.post('/projects',async(req,reply)=>{
-  const userId=await authenticated(req);
-  const input=z.object({name:z.string().trim().min(1).max(140),
-    tenantId:uuid,timezone:z.string().default('Asia/Shanghai')}).parse(req.body);
-  if (!isValidTimezone(input.timezone)) fail(400,'不支持的时区');
-  const project=await transaction(async db=>{
-    const ten=(await db.query(
-      `SELECT tenant_id FROM tenant_members WHERE tenant_id=$1 AND user_id=$2 AND role='admin'`,
-      [input.tenantId,userId])).rows[0];
-    if(!ten) fail(403,'没有创建项目权限');
-    const row=(await db.query(
-      'INSERT INTO projects(tenant_id,name,owner_id,timezone) VALUES($1,$2,$3,$4) RETURNING id,tenant_id,name,timezone,ai_enabled,work_start,work_end,cooldown_hours,settings_revision,owner_id,ownership_revision',
-      [ten.tenant_id,input.name,userId,input.timezone])).rows[0];
-    await db.query('INSERT INTO project_members(project_id,user_id,role) VALUES($1,$2,$3)',
-      [row.id,userId,'owner']);
-    await audit(db,row.id,userId,'project.created',row.id);
-    return row;
-  });
-  return reply.code(201).send({project});
-});
 app.get('/projects/:id',async req=>{
   const projectId=uuid.parse((req.params as {id:string}).id);
   const userId=await authenticated(req);
@@ -283,5 +254,6 @@ registerReportRoutes(app,authenticated);
 registerProjectGovernanceRoutes(app,authenticated);
 registerOperationsRoutes(app,authenticated);
 registerRiskRoutes(app,authenticated);
+registerProjectRoutes(app,authenticated);
 app.addHook('onClose',async()=>{await pool.end();});
 await app.listen({port,host:serverConfig.API_HOST});
