@@ -227,3 +227,9 @@
 **决定：** 所有运行态模型出站（模型目录、连接探针、结构化抽取、AI 助手与选择性真实模型黄金评测）统一经过模型网络出口。仅允许 HTTPS 公网服务，保留管理员显式选择的 localhost / 127.0.0.1 / ::1 / host.docker.internal 本地模型；HTTP 只允许这些明确本地端点。禁止 URL 用户信息、重定向、代理自动转发、私有/保留网段、无地址或公私混合 DNS。DNS 解析后筛选**整个地址集合**，在实际 socket 的 lookup 回调只返回已验证并锁定的 IP；不能只做易被绕过的先验 DNS 检查。每次请求新建连接，TLS hostname 校验与 SNI 继续使用原域名；严格限制响应字节、请求总超时，错误码不得包含 token、响应正文或地址的隐私路径。
 
 **取舍：** 使用 Node 内建 HTTP(S) 客户端而非不稳定的全局 fetch 自定义 DNS 参数或增加代理/依赖，封装为小型 ModelEgress 模块，不影响给测试注入 fake fetch 的能力。容器/主机级 egress firewall、DNS rebind 下的真实网关测试与厂商兼容性仍属于 P4 生产验收，不能由单元测试代替。管理员若需要其它 RFC1918 地址模型网关，应经受控网络反向代理或显式部署出口策略，不扩展无条件内网白名单。
+
+## ADR-043 · 周报/月报草稿与发布的可追溯版本命令（2026-10-15）
+
+**决定：** 把人工生成和审核发布报告迁入单独 `report-routes.ts`，基于 `executePmCommand` 的事务内项目/组织 owner 授权、UUID `idempotencyKey`、DomainEvent/Outbox/Audit/Receipt；新增报告 `revision`，草稿每次实际重生成递增，发布要求当前 `expectedRevision` 并原子递增 revision、持久化 published_at/published_by。已发布报告内容不可覆盖；同 key 同 payload 重试只重放原报告，同 key 不同 payload 409，不同 key 重复发布 409。人工重新请求已发布周期报告仅返回现有发布快照，不修改内容/时间，并且作为重新请求（而非新生成）留下 Audit 和 receipt。
+
+**范围：** 手工和 Worker `generateReport` 继续共用现有 Snapshot/周期算法；Worker 定时生成首份报告保持单次/并发安全，旧已发布记录无可验证发布时间不补造 `published_at`。新增一份不重写旧 migration 的 016 增量迁移。不会把当前统计快照误当成历史每日事实，本批也不实现逐条证据引用、AI 总结质量验收、报告附件或完整企业级留存。

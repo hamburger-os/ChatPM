@@ -218,3 +218,7 @@ apps/api/src/server.ts 中成员增删及权限调整、AI/提醒设置、Outbox
 ## ADR-042 · 所有模型调用经安全出口
 
 `model-egress.ts` 对系统配置的 Base URL 进行相同的公网 IP/私网拒绝策略，实际 HTTP(S) socket 使用解析后固定地址而非重新 DNS 查询；目录导入 `model-catalog.ts`、`llm-transport.ts` 的 probe/structured、`ConfiguredLLMProvider` 及 live eval 都必须复用默认安全网络发送函数。该路径不接受聊天、候选任务或模型生成文本提供的新 URL；保留显式本地模型例外。响应限制、禁止重定向与脱敏失败码适用于整个入口。依赖注入的 fake fetch 仅用于无真实网络的单元测试；不要用假模拟声称生产 DNS 重绑定已实战验证。
+
+## ADR-043 · 报告正式命令与 AI 事实边界
+
+用户人工周/月报生成 `POST /projects/:id/reports` 要求 `{idempotencyKey,kind}`，发布 `POST /projects/:id/reports/:reportId/publish` 要求 `{idempotencyKey,expectedRevision}`；当前 tenant/project owner 身份由 `executePmCommand` 的 `report.manage` 权限在事务中验证，重试返回已完成命令回执。Report revision 表示草稿实际更新和发布的状态版本，发布使用乐观版本校验。已发布 Report 永不因新生成或 AI 建议被覆盖；内容仍是当前项目数据库统计快照，不能宣称周内每次变化均有来源或 AI 编写的事实已经人工确认。
