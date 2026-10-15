@@ -89,3 +89,7 @@ Compose 默认不暴露 PostgreSQL 宿主机端口，使用 `docker compose --en
 - WEB_ORIGIN 使用对终端用户实际访问的 HTTPS 域名（含非默认端口）；Cookies、Origin 验证、反代路径按该单一外部 Origin 联调。同一站点使用不同 HTTP 内网地址和 HTTPS 公网地址时应统一入口或制定域名内部解析，避免跨源写请求拒绝。
 - IPv6 需要 DNS AAAA/DDNS、防火墙、证书和运营商实际连通性；不能从容器构建通过推断公网可达。QNAP、路由器、手机蜂窝网络及证书更新必须在实机验收，建议私有团队优先使用 VPN。
 - 容器中的 127.0.0.1 是容器本身，不能据此连接 Windows 主机的 127.0.0.1:8045 模型代理；网络路径和本地模型地址需针对运行环境显式验证。模型网络访问的生产级 DNS 重绑定与 SSRF 出站阻断仍是上线安全门槛。
+
+## ADR-050 · Docker 隔离库的备份恢复演练
+
+CI 先完成 Web Proxy/Origin/Cookie、Worker heartbeat 和 Outbox 检查，然后停止 Web/API/Worker，只保留测试 PostgreSQL。用原有 backup.mjs --docker 生成受限宿主机备份；在原数据库与随机创建的独立恢复数据库中，对所有 public 普通表计算行数和数据内容摘要并逐项相等比较。pg_restore 使用 exit-on-error，演练数据库只在成功创建后由 finally 清理，源库和 Docker PostgreSQL 数据卷保持不变。CI 此后仍将销毁测试卷、重新执行一键 Docker 部署验证。这证明测试数据可恢复，不证明真实业务 TB 级恢复速度、离机密钥管理、任何时间点恢复或者 Win11/Linux 实体机器维护流程；生产升级仍需单独的停写/备份/恢复验收。
