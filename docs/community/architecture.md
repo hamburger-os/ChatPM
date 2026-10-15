@@ -91,3 +91,9 @@ English: Registered task dependencies are finish-before-completion constraints. 
 中文：新增和修改正式任务现使用受服务端权限约束的幂等命令；每次操作生成一个客户端 UUID 命令键，同一操作网络重试不会重复新增任务或增加版本。任务修改保留乐观版本冲突判断，正式任务、审计、领域事件和提醒计划在同一数据库事务。AI 候选仍需人审核，部分旧候选审批的正式写入通道尚未迁移到统一命令运行时。
 
 English: Direct task creation and edits now use server-authorized idempotent commands. Each action has a client UUID key; retrying the same request will not duplicate work or increment the version. Optimistic version checks remain, while task changes, audit, domain events and follow-up scheduling share a database transaction. AI proposals still require human approval, and some older proposal-approval write paths have not yet migrated into the shared command runtime.
+
+### 项目负责人权限的并发保护 / Revocation-safe owner operations
+
+中文：成员增删和角色调整、项目设置、死信重试、报告生成与发布都在数据库写入事务内重新检查**当前**项目及组织成员资格。角色在操作开始后被撤销也不能导致未获授权的业务提交；其他项目的权限或系统管理员身份不能越权访问本项目。此项修复权限竞态，尚不等于这些操作已经全部具有命令级重试回执。
+
+English: Project membership edits, settings, dead-letter retries and report generation/publication recheck current project and organization membership inside the write transaction, with row locks against concurrent revocation. Being a system administrator does not bypass project authorization. This corrects the role-revocation race, but does not imply every legacy operation now has a command receipt.
