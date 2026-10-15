@@ -303,3 +303,11 @@
 **决定：** 在 Docker 完成应用健康、Web 认证与 Worker 检查后停止 web/api/worker 写入者；以原有备份入口生成私有 custom-format archive，计算源库所有 public 普通表的行数和稳定内容指纹。随机创建单独的 chatpm_restore_drill_* 数据库，使用 pg_restore --exit-on-error --no-owner --no-privileges 真正恢复，并要求源/目标所有表名、行数及数据摘要完全相等且包含应用数据与 schema_migrations。演练后删除**自己创建**的隔离库和私有备份目录，绝不 drop 源库、替换源数据卷或将备份正文打印到 CI log。
 
 **安全边界：** 仅当 CI=true 且显式设置 CHATPM_CI_RESTORE_DRILL=1 才允许运行；业务应用容器未停必须拒绝。新数据库名需随机且以前缀固定，目标创建成功才可删除。所有操作均是 Docker 集成测试，不等于生产数据全量 ETL、跨机器加密冷备、PITR、Windows/Linux 实机重建或任何 RTO/RPO 服务承诺。Issue #51 必须保持开放。
+
+## ADR-051 · 所有组织治理写入口复用租户级命令回执（2026-10-15）
+
+**问题：** 组织成员、角色、部门/项目集/项目组合、项目归属与资源投入的写入已有事务内 tenant admin 鉴权/租户锁/Audit，但 HTTP 重试没有 CommandReceipt。同一请求成功且响应丢失后可能创建第二个 Portfolio/Program/Allocation 或再次更改角色，误导项目资源统计；每次重试还会写多余审计。
+
+**决定：** 复用迁移 021 的 tenant_command_receipts，而不是给组织创建伪造 projectId。组织命令服务 organisationCommand 改为强制 {idempotencyKey,payload} 参数，在现有租户互斥 advisory transaction lock 和 tenant_members FOR UPDATE 的当前管理员验证后，按 (tenantId,actorId,action,key) 原子插入 receipt，SHA256(JSON.stringify(payload)) 判断 key 是否复用给其他输入；成功写入业务状态与 OrganizationAudit 后存储原 result；同 actor/tenant/action/key/payload 的重放只返回旧值，不再次写入或审计；同 key 不同 payload HTTP 409。未提供 UUID key HTTP 400，旧无 key 写路径不再允许。原始成员被撤权后不能用回执绕过组织管理员身份验证；项目 owner 无法代替 tenant admin。所有 8 条治理命令与客户端统一迁移：部门、组合、项目集创建，项目分类，组织成员加入/调角、部门人员、资源投入。
+
+**事实边界：** 部门、组合、项目集不依附单个项目，因此使用租户级持久回执及原有组织级审计，不能冒充项目级 DomainEvent/Outbox。下一阶段若加入独立 tenant domain event + outbox，必须有真正的消费/投递定义；本次不引入空 broker，不宣称 P2 整体完成。项目分类仍是 last-write-wins，此批只保证每个重试意图只执行一次，乐观版本与资源总容量约束属于后续治理。
