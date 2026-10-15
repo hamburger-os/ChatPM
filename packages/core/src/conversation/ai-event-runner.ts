@@ -5,18 +5,21 @@ import { processClarification } from '../clarification.ts';
 import { isDuplicateActiveTask } from '../task-progress.ts';
 import { projectAnalysisContext } from '../project-context.ts';
 import { resolveProjectModel } from '../project-model.ts';
-import { claimEvents, finishEvent, failEvent, type EventRow } from '../outbox.ts';
+import { claimEvents, finishEvent, failEvent, assertEventClaim, type EventRow } from '../outbox.ts';
 
 type AnalysisResult={kind:'extract'|'clarify'|'reply';status:'proposal'|'no_change'|'clarified'|'replied';modelName?:string};
 async function recordAnalysis(event:EventRow,kind:'extract'|'clarify'|'reply',
   status:'processing'|'proposal'|'no_change'|'clarified'|'replied'|'failed',modelName?:string,errorCode?:string){
-  await pool.query(`INSERT INTO ai_analysis_runs(
-    project_id,source_message_id,kind,status,model_name,error_code)
-    VALUES($1,$2,$3,$4,$5,$6)
-    ON CONFLICT(project_id,source_message_id) DO UPDATE SET
-      kind=EXCLUDED.kind,status=EXCLUDED.status,model_name=EXCLUDED.model_name,
-      error_code=EXCLUDED.error_code,updated_at=NOW()`,
-    [event.project_id,event.message_id,kind,status,modelName??null,errorCode??null]);
+  await transaction(async db=>{
+    await assertEventClaim(db,event);
+    await db.query(`INSERT INTO ai_analysis_runs(
+      project_id,source_message_id,kind,status,model_name,error_code)
+      VALUES($1,$2,$3,$4,$5,$6)
+      ON CONFLICT(project_id,source_message_id) DO UPDATE SET
+        kind=EXCLUDED.kind,status=EXCLUDED.status,model_name=EXCLUDED.model_name,
+        error_code=EXCLUDED.error_code,updated_at=NOW()`,
+      [event.project_id,event.message_id,kind,status,modelName??null,errorCode??null]);
+  });
 }
 async function runAnalysis(event:EventRow):Promise<AnalysisResult|null> {
   if(event.kind!=='message.created') throw new Error('UNSUPPORTED_EVENT_KIND');
@@ -36,6 +39,7 @@ async function runAnalysis(event:EventRow):Promise<AnalysisResult|null> {
       Math.max(1200,(Math.max(1200,(settings.contextChars??6500)-500))-500));
     const result=await new ConfiguredLLMProvider(event.project_id).respond(msg.name,context);
     await transaction(async db=>{
+      await assertEventClaim(db,event);
       await assertCurrentAiGrant(db,event.project_id,result.authorizationVersion);
       await insertMessage(db,{projectId:event.project_id,authorId:null,kind:'ai',
         content:result.value.reply,nonce:'reply:'+event.id});
@@ -45,7 +49,7 @@ async function runAnalysis(event:EventRow):Promise<AnalysisResult|null> {
     return {kind:'reply',status:'replied',modelName:result.modelName};
   }
   if(await processClarification({id:event.message_id,projectId:event.project_id,
-    content:msg.content,projectName:msg.name}))
+    content:msg.content,projectName:msg.name},event))
     return {kind:'clarify',status:'clarified'};
   const existing=await pool.query(
     `SELECT 1 FROM proposed_changes WHERE project_id=$1 AND source_message_id=$2
@@ -61,12 +65,10 @@ async function runAnalysis(event:EventRow):Promise<AnalysisResult|null> {
   const progress=output.value.progress;
   if(!suggestions.length&&!progress.length){
     // No output is published, but do not label a revoked run successful.
-    const grant=await pool.query<{ai_enabled:boolean;ai_authorization_version:string}>(
-      'SELECT ai_enabled,ai_authorization_version FROM projects WHERE id=$1',
-      [event.project_id]);
-    if(!grant.rows[0]?.ai_enabled||
-       Number(grant.rows[0]?.ai_authorization_version)!==output.authorizationVersion)
-      throw new Error('AI_AUTHORIZATION_CHANGED');
+    await transaction(async db=>{
+      await assertEventClaim(db,event);
+      await assertCurrentAiGrant(db,event.project_id,output.authorizationVersion);
+    });
     return {kind:'extract',status:'no_change',modelName:output.modelName};
   }
   const known=await pool.query(`SELECT id,title FROM tasks
@@ -74,6 +76,7 @@ async function runAnalysis(event:EventRow):Promise<AnalysisResult|null> {
   const matching=new Map(known.rows.map(r=>[r.id as string,r.title as string]));
 
   const total=await transaction(async db=>{
+    await assertEventClaim(db,event);
     await assertCurrentAiGrant(db,event.project_id,output.authorizationVersion);
     let added=0,progressAdded=0;
     const questions:string[]=[];
@@ -150,8 +153,11 @@ async function runAnalysis(event:EventRow):Promise<AnalysisResult|null> {
 }
 
 export async function processEvents() {
-  const events=await claimEvents();
-  for(const event of events) {
+  // Claim just before handling each event. A batch of 12 leased up front
+  // can expire while the first slow model call is still running.
+  for(let consumed=0;consumed<12;consumed++){
+    const [event]=await claimEvents(1);
+    if(!event)break;
     try {
       if(event.kind==='domain.changed'){
         // Record-only domain events have no automatic AI side effects.
@@ -170,6 +176,9 @@ export async function processEvents() {
         await recordAnalysis(event,result.kind,result.status,result.modelName);
       await finishEvent(event);
     }catch(err) {
+      // Reclaimed/expired workers are not allowed to overwrite run status,
+      // retry/dead-letter state or publish delayed model results.
+      if(err instanceof Error&&err.message==='OUTBOX_LEASE_LOST')continue;
       if(event.message_id){
         const code=err instanceof Error && /^(?:MODEL_|AI_AUTHORIZATION_)[A-Z0-9_]+$/.test(err.message)
           ?err.message:err instanceof Error&&err.name==='ZodError'?'MODEL_SCHEMA':err instanceof Error?err.name.slice(0,60):'UNKNOWN_FAILURE';
