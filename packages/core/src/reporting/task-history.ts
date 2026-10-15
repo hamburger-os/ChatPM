@@ -1,4 +1,5 @@
-import { pool } from '../db.ts';
+import { transaction, type DbClient } from '../db.ts';
+import { lockProjectAccess } from '../identity/project-access.ts';
 
 type Cursor={beforeAt?:string;beforeId?:string};
 export type TaskHistoryEntry={
@@ -13,13 +14,12 @@ export type TaskHistoryEntry={
 function missing():never{
   throw Object.assign(new Error('任务不存在或无权访问其历史'),{statusCode:404});
 }
-async function authorize(projectId:string,taskId:string,actorId:string){
-  const access=await pool.query(`SELECT 1 FROM tasks t
-    JOIN projects p ON p.id=t.project_id
-    JOIN project_members pm ON pm.project_id=p.id AND pm.user_id=$3
-    JOIN tenant_members tm ON tm.tenant_id=p.tenant_id AND tm.user_id=$3
-    WHERE t.project_id=$1 AND t.id=$2`,[projectId,taskId,actorId]);
-  if(!access.rowCount)missing();
+async function authorize(db:DbClient,projectId:string,taskId:string,actorId:string){
+  await lockProjectAccess(db,projectId,actorId);
+  const task=await db.query(
+    'SELECT 1 FROM tasks WHERE project_id=$1 AND id=$2 FOR KEY SHARE',
+    [projectId,taskId]);
+  if(!task.rowCount)missing();
 }
 const fields=`id,project_id,task_id,task_version,kind,before_status,after_status,
   before_title,after_title,before_due_date::text AS before_due_date,
@@ -28,21 +28,26 @@ const fields=`id,project_id,task_id,task_version,kind,before_status,after_status
 
 export async function listTaskHistory(projectId:string,taskId:string,
   actorId:string,cursor:Cursor){
-  await authorize(projectId,taskId,actorId);
-  const {rows}=await pool.query<TaskHistoryEntry>(`SELECT ${fields}
-    FROM project_task_history WHERE project_id=$1 AND task_id=$2
-      AND ($3::timestamptz IS NULL OR (changed_at,id)<($3::timestamptz,$4::uuid))
-    ORDER BY changed_at DESC,id DESC LIMIT 51`,
-  [projectId,taskId,cursor.beforeAt??null,cursor.beforeId??null]);
-  return {history:rows.slice(0,50),nextCursor:rows.length>50?
-    {beforeAt:rows[49].changed_at,beforeId:rows[49].id}:null};
+  return transaction(async db=>{
+    await authorize(db,projectId,taskId,actorId);
+    const {rows}=await db.query<TaskHistoryEntry>(`SELECT ${fields}
+      FROM project_task_history WHERE project_id=$1 AND task_id=$2
+        AND ($3::timestamptz IS NULL OR
+          (changed_at,id)<($3::timestamptz,$4::uuid))
+      ORDER BY changed_at DESC,id DESC LIMIT 51`,
+    [projectId,taskId,cursor.beforeAt??null,cursor.beforeId??null]);
+    return {history:rows.slice(0,50),nextCursor:rows.length>50?
+      {beforeAt:rows[49].changed_at,beforeId:rows[49].id}:null};
+  });
 }
 export async function getTaskHistoryEntry(projectId:string,taskId:string,
   eventId:string,actorId:string){
-  await authorize(projectId,taskId,actorId);
-  const row=(await pool.query<TaskHistoryEntry>(`SELECT ${fields}
-    FROM project_task_history WHERE project_id=$1 AND task_id=$2 AND id=$3`,
-    [projectId,taskId,eventId])).rows[0];
-  if(!row)missing();
-  return {event:row};
+  return transaction(async db=>{
+    await authorize(db,projectId,taskId,actorId);
+    const row=(await db.query<TaskHistoryEntry>(`SELECT ${fields}
+      FROM project_task_history WHERE project_id=$1 AND task_id=$2 AND id=$3`,
+      [projectId,taskId,eventId])).rows[0];
+    if(!row)missing();
+    return {event:row};
+  });
 }
