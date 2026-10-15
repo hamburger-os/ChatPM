@@ -1,5 +1,5 @@
 import { pool, transaction, audit } from './db.ts';
-import { ConfiguredLLMProvider } from './ai-provider.ts';
+import { ConfiguredLLMProvider, assertCurrentAiGrant } from './ai-provider.ts';
 import { insertMessage } from './messages.ts';
 
 const REFERENCE=/【候选:([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})】/i;
@@ -35,6 +35,10 @@ export async function processClarification(reply:Reply):Promise<boolean>{
     [proposalId,reply.projectId]);
   if(!rows.length){
     await transaction(async db=>{
+      const enabled=await db.query(
+        'SELECT 1 FROM projects WHERE id=$1 AND ai_enabled=TRUE FOR SHARE',
+        [reply.projectId]);
+      if(!enabled.rowCount)throw new Error('AI_AUTHORIZATION_REVOKED');
       await insertMessage(db,{
         projectId:reply.projectId,authorId:null,kind:'ai',
         content:'我没找到这条待确认候选，可能已处理或不属于当前项目。请从「AI 待确认」选择正确事项继续补充。',
@@ -51,6 +55,7 @@ export async function processClarification(reply:Reply):Promise<boolean>{
   const suggestion=result.value;
   if(!suggestion.assignee_hint&&!suggestion.due_at){
     await transaction(async db=>{
+      await assertCurrentAiGrant(db,reply.projectId,result.authorizationVersion);
       const saved=await db.query(`INSERT INTO clarification_responses(
         project_id,proposal_id,message_id,model_name,prompt_version,assignee_hint,due_at,confidence)
         SELECT $1,$2,$3,$4,$5,NULL,NULL,$6 WHERE EXISTS(
@@ -69,6 +74,7 @@ export async function processClarification(reply:Reply):Promise<boolean>{
     return true;
   }
   await transaction(async db=>{
+    await assertCurrentAiGrant(db,reply.projectId,result.authorizationVersion);
     const {rows:written}=await db.query(`INSERT INTO clarification_responses(
       project_id,proposal_id,message_id,model_name,prompt_version,assignee_hint,due_at,confidence)
       SELECT $1,$2,$3,$4,$5,$6,$7,$8 WHERE EXISTS(
