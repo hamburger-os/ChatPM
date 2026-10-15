@@ -17,7 +17,7 @@ export function prepareDockerEnv(source) {
   const newline = source.includes('\r\n') ? '\r\n' : '\n';
   const lines = source.split(/\r?\n/);
   const generated = [];
-  for (const key of ['SESSION_SECRET', 'MODEL_ENCRYPTION_KEY', 'POSTGRES_PASSWORD']) {
+  for (const key of ['SESSION_SECRET', 'MODEL_ENCRYPTION_KEY', 'POSTGRES_PASSWORD', 'BOOTSTRAP_TOKEN']) {
     const matches = lines.flatMap((line, index) =>
       line.match(new RegExp('^' + key + '=(.*)$')) ? [index] : []);
     if (matches.length > 1) throw new Error('Duplicate setting: ' + key);
@@ -25,6 +25,8 @@ export function prepareDockerEnv(source) {
     const raw = index === undefined ? '' : lines[index].slice(key.length + 1).trim();
     const placeholder = (key === 'SESSION_SECRET' && raw === exampleSecret) ||
       (key === 'MODEL_ENCRYPTION_KEY' && raw === 'replace-with-a-separate-long-random-model-key');
+    if (key === 'BOOTSTRAP_TOKEN' && raw && !/^[a-fA-F0-9]{64}$/.test(raw))
+      throw new Error('BOOTSTRAP_TOKEN must contain 64 hexadecimal characters. Existing value preserved.');
     if ((key === 'SESSION_SECRET' || key === 'MODEL_ENCRYPTION_KEY') && raw && !placeholder && raw.length < 32) {
       throw new Error(key + ' must contain at least 32 characters. Existing value was preserved.');
     }
@@ -39,7 +41,11 @@ export function prepareDockerEnv(source) {
 }
 
 export function assertSafeDockerBootstrap(generated, volumeExists) {
-  if (volumeExists && generated.length > 0)
+  // Adding a previously absent first-account token does not rotate credentials
+  // or invalidate an existing PostgreSQL volume. Existing installations still
+  // reject any change to session, model-encryption or database secrets.
+  const dangerous=generated.filter(key=>key!=='BOOTSTRAP_TOKEN');
+  if (volumeExists && dangerous.length > 0)
     throw new Error('An existing ChatPM PostgreSQL data volume was found. Recover the original .env secrets; refusing to rotate credentials.');
 }
 
@@ -80,6 +86,7 @@ export function main() {
   }
   if (process.platform !== 'win32') chmodSync(envPath, 0o600);
   if (generated.length) console.log('Generated strong random values for ' + generated.join(', ') + '.');
+  console.log('First-account initialization requires BOOTSTRAP_TOKEN from the private .env file; never post it in a chat.');
   const compose = ['compose', '-p', 'chatpm', '--env-file', envPath, '-f', 'infra/compose.prod.yml'];
   runDocker([...compose, 'up', '-d', '--build']);
   runDocker([...compose, 'ps']);
