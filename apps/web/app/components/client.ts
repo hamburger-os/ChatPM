@@ -13,7 +13,8 @@ export type Proposal={id:string,kind:'task'|'risk',status:string,title:string,de
   evidence_text?:string,model_name?:string};
 export type Progress={id:string,task_id:string,task_title:string,status:string,
   kind:string,summary:string,created_at:string};
-export type Report={id:string,kind:'week'|'month',period_key:string,state:string,content:string};
+export type Report={id:string,kind:'week'|'month',period_key:string,state:string,
+  revision:number,content:string,published_at?:string|null,published_by?:string|null};
 export type Risk={id:string,title:string,status:string};
 
 export async function request<T>(path:string,options?:RequestInit):Promise<T>{
