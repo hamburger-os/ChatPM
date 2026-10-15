@@ -178,3 +178,11 @@ Docker 部署 Smoke 原先仅验证 pg_dump custom-format 文件头和 pg_restor
 一个项目要么通过所属 Program 间接归入 Portfolio，要么直接归入 Portfolio；两者不得同时存在。服务端只计算一次项目的 `effective_portfolio_id=COALESCE(program.portfolio_id,project.portfolio_id)`，避免项目集项目与直接归属出现双重汇总。项目集和组合可以为空；未归属的项目单列，不强制用部门代替项目集/组合。任务完成数只统计正式状态 done，cancelled 单独计数，未解决风险只统计 status 非 resolved；任何相同状态的任务/风险不会因资源投入记录数量而被放大。独立资源汇总按人员对选定日期当天有效且未取消的计划百分比求和，80% 是注意阈值，100% 以上是超配告警，绝不称为实际工时利用率或收益实现。
 
 所选 `on` 日期**只用于到期任务判定和当日资源投入计划筛选**，任务及风险状态仍是生成时刻的当前快照，不能当作过去任意一天的历史进度。完成进度分母 = 任务总数 - cancelled。项目集收益目标、组合战略优先级、跨项目依赖/风险传导、历史周期对比与资源预测仍属于 Issue #43 未完成的治理能力。
+
+## ADR-063 · 组织结构查询服务及撤权一致性（2026-10-16）
+
+将原 `GET /tenants/:tenantId/structure` 路由中的多个业务 SQL、两阶段租户授权查询迁移到 `packages/core/src/governance/structure-query.ts`。API 仅校验请求中的租户 UUID、获取登录主体并调用查询服务，不再在该 GET 路由里直接查询部门、项目集、组合和项目成员业务表。查询服务开启一个 PostgreSQL REPEATABLE READ 事务，在读任何结构信息之前用 `SELECT tenant_members ... FOR SHARE` 检查并锁定当前组织成员；组织成员已撤权则整个接口拒绝。组织管理员可以读取本租户全部项目结构；非管理员只读取其有明确 `project_members` 关系的项目并在读取时 `FOR SHARE OF pm`，其他项目的归属信息不能从当前租户结构列表泄漏。部门、项目集和组合基础目录依然对合法组织成员可见。
+
+同一事务保证结构读取和项目分类关系版本来自统一快照，当前组织/项目授权行锁保证撤权与响应读取不会相互错位。这里针对的是**组织结构读模型**，没有扩大系统管理员或项目成员的跨项目数据权限。新增真实 PostgreSQL 集成覆盖组织管理员、普通成员、跨租户、项目撤权和组织撤权，以及静态边界测试阻止路由回退为直接领域 SQL。
+
+仍需继续 Issue #49：其他领域路由的读/写分离、全域 Command/DomainEvent/Outbox 一致性、多实例 Worker fencing、生产性能及崩溃恢复测试均未在本 PR 完成。
