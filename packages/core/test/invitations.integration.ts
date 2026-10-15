@@ -29,18 +29,18 @@ try{
   }),/邀请码无效/);
   await assert.rejects(acceptTenantInvitationNew({
     token:issued.code!,email:'other-'+suffix+'@example.test',displayName:'Wrong',
-    passwordHash:'unused',
+    password:'Strong-password-12345',
   }),/邀请码无效/,'Token must be bound to the intended email');
   const newMember=await acceptTenantInvitationNew({
     token:issued.code!,email:targetEmail,displayName:'Invited',
-    passwordHash:'unused',
+    password:'Strong-password-12345',
   });
   assert.equal((await pool.query(
     "SELECT role FROM tenant_members WHERE tenant_id=$1 AND user_id=$2",
     [tenant.id,newMember])).rows[0].role,'member');
   await assert.rejects(acceptTenantInvitationNew({
     token:issued.code!,email:targetEmail,displayName:'Replay',
-    passwordHash:'unused',
+    password:'Strong-password-12345',
   }),/邀请码无效/,'Consumed token must never create another identity');
 
   await assert.rejects(createTenantInvitation({
@@ -80,7 +80,7 @@ try{
     invitationId:revoke.invitation.id,idempotencyKey:revokeKey});
   await assert.rejects(acceptTenantInvitationNew({
     token:revoke.code!,email:'revoked-'+suffix+'@example.test',
-    displayName:'Revoked',passwordHash:'unused',
+    displayName:'Revoked',password:'Strong-password-12345',
   }),/邀请码无效/);
 
   const concurrent=await createTenantInvitation({tenantId:tenant.id,actorId:a.id,
@@ -88,7 +88,7 @@ try{
   const attempts=await Promise.allSettled(Array.from({length:3},()=>
     acceptTenantInvitationNew({
       token:concurrent.code!,email:'race-'+suffix+'@example.test',
-      displayName:'Race',passwordHash:'unused',
+      displayName:'Race',password:'Strong-password-12345',
     })));
   assert.equal(attempts.filter(x=>x.status==='fulfilled').length,1,
     'Concurrent claims must not duplicate user or tenant member');
