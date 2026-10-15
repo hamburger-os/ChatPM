@@ -89,7 +89,7 @@ export function main(){
   chmodSync(temp,0o700);
   let created=false,cleanupFailure;
   try{
-    backup(['--docker','--dir='+temp,'--keep=1]);
+    backup(['--docker','--dir='+temp,'--keep=1']);
     const filename=listBackups(readdirSync(temp))[0];
     if(!filename)throw new Error('No custom PostgreSQL backup was created');
     const archive=join(temp,filename);
