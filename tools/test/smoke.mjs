@@ -65,6 +65,34 @@ try{
   assert.equal(teams.status,200);
   const tenantId=teams.data.tenants.find(t=>t.role==='admin')?.id;
   assert.ok(tenantId,'Registrant must own a team');
+  const inviteEmail='smoke-invite-'+randomUUID().slice(0,8)+'@example.test';
+  const inviteInput={email:inviteEmail,idempotencyKey:randomUUID()};
+  const issuedInvite=await api('/tenants/'+tenantId+'/invitations',{
+    method:'POST',body:inviteInput});
+  assert.equal(issuedInvite.status,201,JSON.stringify(issuedInvite.data));
+  assert.match(issuedInvite.data.code,/^[a-f0-9]{64}$/);
+  const inviteReplay=await api('/tenants/'+tenantId+'/invitations',{
+    method:'POST',body:inviteInput});
+  assert.equal(inviteReplay.status,201);
+  assert.equal(inviteReplay.data.code,null,'Invitation secret must not be stored in idempotency receipts');
+  const invalidInvite=await api('/auth/invitations/claim',{
+    method:'POST',cookie:'',body:{code:'0'.repeat(64),email:inviteEmail,
+      displayName:'Invited Worker',password:'Passw0rd-Strong-123'}});
+  assert.equal(invalidInvite.status,403);
+  const acceptedInvite=await api('/auth/invitations/claim',{
+    method:'POST',cookie:'',body:{code:issuedInvite.data.code,email:inviteEmail,
+      displayName:'Invited Worker',password:'Passw0rd-Strong-123'}});
+  assert.equal(acceptedInvite.status,201,JSON.stringify(acceptedInvite.data));
+  assert.ok(acceptedInvite.cookie,'Claim must establish persistent session');
+  const invitedTenants=await api('/tenants',{cookie:acceptedInvite.cookie});
+  assert.equal(invitedTenants.data.tenants.find(t=>t.id===tenantId)?.role,'member');
+  assert.equal((await api('/tenants/'+tenantId+'/invitations',{
+    cookie:acceptedInvite.cookie})).status,403,'Normal members cannot inspect pending invitation emails');
+  const repeatClaim=await api('/auth/invitations/claim',{
+    method:'POST',cookie:'',body:{code:issuedInvite.data.code,email:inviteEmail,
+      displayName:'Replay',password:'Passw0rd-Strong-123'}});
+  assert.equal(repeatClaim.status,403);
+
   const createInput={idempotencyKey:randomUUID(),
     name:'集成测试项目',tenantId,timezone:'Asia/Shanghai'};
   // Simultaneous duplicate HTTP requests must wait on the tenant receipt
