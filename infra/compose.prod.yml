@@ -15,6 +15,7 @@ x-app: &app
     MODEL_ENCRYPTION_KEY: ${MODEL_ENCRYPTION_KEY:?Set MODEL_ENCRYPTION_KEY in .env}
     WEB_ORIGIN: ${WEB_ORIGIN:-http://localhost:3000}
     DB_POOL_MAX: ${DB_POOL_MAX:-10}
+    REGISTRATION_MODE: ${REGISTRATION_MODE:-bootstrap}
   depends_on:
     migrate:
       condition: service_completed_successfully
