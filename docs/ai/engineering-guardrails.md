@@ -112,3 +112,10 @@
 - 受控模型调用返回对应 `ai_authorization_version`，将 AI 回复、提案、进展和澄清消息正式发布前，都必须在同一事务中 `SELECT ... FOR SHARE` 检查项目 `ai_enabled` 与版本；版本已变化应抛出 `AI_AUTHORIZATION_CHANGED`，禁止旧授权产物写入业务记录。
 - 任何需要正式提交的 Deliverable 只允许有效的 owner/manager/member 负责人，不允许 observer。项目成员撤权或降为 observer 前必须检查未验收交付物与未取消且 end_date 未过去的资源分配。组织管理员取消分配时保留历史行、幂等回执和组织审计；容量汇总过滤已取消行。
 - 这些代码合同需要单元、数据库集成、完整 Smoke 和跨平台真实环境验证。不得将静态架构检查宣称为生产级高并发、隐私或安全验收。
+
+## ADR-062 · 模型网络出站安全细化
+
+- 模型终端必须由系统总管理员管理。公网端点只允许 HTTPS 且全量 A/AAAA 结果中任意私有、保留、映射私网目标均拒绝；实际 Socket lookup 固定已验证结果，不能再次解析和跟随重定向。
+- `localhost` 例外只接受回环地址，`host.docker.internal` 例外只接受 10/8、172.16/12、192.168/16 和 ULA fc00::/7，不能信任任意「private」结果，尤其不得允许链接本地地址、云元数据、CGNAT、IPv4-mapped metadata、公网 DNS 污染或 NAT64 reserved 地址。
+- `secureModelFetch` 只接受 `Authorization`、`Content-Type`、`Accept` 业务头；禁止 Host/Proxy-Authorization/Forwarded/Content-Length/Transfer-Encoding/Connection 等控制头以及任何调用方自定义头，避免代理绕过和 HTTP framing 混淆。
+- Docker Host 网关的受信任性需要部署端明确控制 DNS 与出站防火墙。纯 Node 单元测试与 CI 不能替代真实 IPv6/DNS64/QNAP 生产验证。
