@@ -4,6 +4,7 @@ import { pool } from '../../../packages/core/src/db.ts';
 import { organizationCommand } from '../../../packages/core/src/organization-commands.ts';
 import { recordResourceAllocation } from '../../../packages/core/src/resource-allocation.ts';
 import { getGovernancePulse } from '../../../packages/core/src/governance/pulse.ts';
+import { getTenantStructure } from '../../../packages/core/src/governance/structure-query.ts';
 import { requireTenant } from '../../../packages/core/src/permissions.ts';
 
 const uuid=z.string().uuid();
@@ -32,34 +33,11 @@ export function registerGovernanceRoutes(app:FastifyInstance,
       deny(400,'请选择有效的日期');
     return getGovernancePulse(tenantId,actorId,on);
   });
-  // Department, program and portfolio are separate organizational dimensions.
+  // Only request shape and identity belong in HTTP; permissions and
+  // consistent organization read models live in the core query service.
   app.get('/tenants/:tenantId/structure',async req=>{
-    const {tenantId}=await scope(req);
-    const [departments,portfolios,programs]=await Promise.all([
-      pool.query('SELECT id,name,parent_id FROM departments WHERE tenant_id=$1 ORDER BY name',[tenantId]),
-      pool.query('SELECT id,name,description FROM portfolios WHERE tenant_id=$1 ORDER BY name',[tenantId]),
-      pool.query('SELECT id,name,description,portfolio_id FROM programs WHERE tenant_id=$1 ORDER BY name',[tenantId]),
-    ]);
-    // Only return project classification for projects explicitly visible to this member.
-    const user=await authenticated(req);
-    const member=await pool.query('SELECT role FROM tenant_members WHERE tenant_id=$1 AND user_id=$2',
-      [tenantId,user]);
-    const visible=member.rows[0]?.role==='admin'
-      ?await pool.query(`SELECT p.id,p.name,p.department_id,p.program_id,
-        p.portfolio_id,p.classification_revision,
-        (SELECT COALESCE(array_agg(pd.department_id ORDER BY pd.department_id),ARRAY[]::uuid[])
-         FROM project_departments pd WHERE pd.project_id=p.id
-           AND pd.tenant_id=p.tenant_id) AS participating_department_ids
-        FROM projects p WHERE p.tenant_id=$1 ORDER BY p.name`,[tenantId])
-      :await pool.query(`SELECT p.id,p.name,p.department_id,p.program_id,
-          p.portfolio_id,p.classification_revision,
-          (SELECT COALESCE(array_agg(pd.department_id ORDER BY pd.department_id),ARRAY[]::uuid[])
-           FROM project_departments pd WHERE pd.project_id=p.id
-             AND pd.tenant_id=p.tenant_id) AS participating_department_ids
-          FROM projects p JOIN project_members pm ON pm.project_id=p.id AND pm.user_id=$2
-          WHERE p.tenant_id=$1 ORDER BY p.name`,[tenantId,user]);
-    return {departments:departments.rows,portfolios:portfolios.rows,
-      programs:programs.rows,projects:visible.rows};
+    const tenantId=uuid.parse((req.params as {tenantId:string}).tenantId);
+    return getTenantStructure(tenantId,await authenticated(req));
   });
   app.post('/tenants/:tenantId/departments',async(req,reply)=>{
     const {tenantId,user}=await scope(req,true);
