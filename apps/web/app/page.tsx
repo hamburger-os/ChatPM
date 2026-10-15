@@ -22,6 +22,8 @@ export default function Home(){
   const [retry,setRetry]=useState(0);
   const [register,setRegister]=useState(false);
   const [canRegister,setCanRegister]=useState(false);
+  const [requiresBootstrapToken,setRequiresBootstrapToken]=useState(false);
+  const [bootstrapToken,setBootstrapToken]=useState('');
   const [email,setEmail]=useState(''),[password,setPassword]=useState(''),[displayName,setDisplayName]=useState('');
   const [projects,setProjects]=useState<Project[]>([]);
   const [tenants,setTenants]=useState<Tenant[]>([]);
@@ -78,10 +80,11 @@ export default function Home(){
   useEffect(()=>{
     if(auth!=='anonymous')return;
     let active=true;
-    void request<{allowed:boolean}>('/auth/registration-policy')
+    void request<{allowed:boolean;requiresBootstrapToken:boolean}>('/auth/registration-policy')
       .then(result=>{
         if(!active)return;
         setCanRegister(result.allowed);
+        setRequiresBootstrapToken(result.requiresBootstrapToken);
         if(!result.allowed)setRegister(false);
       }).catch(()=>{if(active){setCanRegister(false);setRegister(false);}});
     return ()=>{active=false;};
@@ -135,9 +138,10 @@ export default function Home(){
   }
   function login(e:FormEvent){
     e.preventDefault();void action(async()=>{
-      await request('/auth/'+(register?'register':'login'),{method:'POST',body:json({email,password,displayName})});
+      await request('/auth/'+(register?'register':'login'),{method:'POST',body:json({email,password,displayName,
+        ...(register&&requiresBootstrapToken?{bootstrapToken}:{} )})});
       const x=await request<{user:User}>('/me');
-      setUser(x.user);setAuth('ready');setPassword('');
+      setUser(x.user);setAuth('ready');setPassword('');setBootstrapToken('');
       await Promise.all([loadProjects(),loadTenants()]);
     });
   }
@@ -184,6 +188,11 @@ export default function Home(){
       <h1>让项目主动向前</h1><p>用自然协作推动项目，让 AI 协助跟进任务与风险。</p>
       <form className="stack" onSubmit={login}>
         {register&&<label>昵称<input required value={displayName} onChange={e=>setDisplayName(e.target.value)}/></label>}
+        {register&&requiresBootstrapToken&&<label>部署初始化密钥
+          <input type="password" autoComplete="off" required minLength={64} maxLength={64}
+            value={bootstrapToken} onChange={e=>setBootstrapToken(e.target.value)}
+            placeholder="从服务器私有 .env 文件读取 BOOTSTRAP_TOKEN"/>
+        </label>}
         <label>邮箱<input type="email" autoComplete="username" required value={email} onChange={e=>setEmail(e.target.value)}/></label>
         <label>密码<input type="password" autoComplete={register?'new-password':'current-password'} required minLength={register?10:1}
           value={password} onChange={e=>setPassword(e.target.value)}/></label>
