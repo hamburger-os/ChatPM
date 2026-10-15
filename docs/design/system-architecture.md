@@ -54,3 +54,7 @@ Worker 是独立部署的调度进程，而非所有领域业务的所有者。�
 ## ADR-044 · ProjectGovernance 命令边界
 
 旧项目人员和设置写入从 `server.ts` 抽离到项目治理路由，遵守既有模块化单体：认证主体→当前组织与项目 owner 行锁→权限/目标人员与任务不变量→业务 SQL→Audit/DomainEvent/Outbox/CommandReceipt 的单 PostgreSQL 事务。人员移除管理者或观察者与普通成员一样受未完成任务和 owner 不可移除约束；设置单独增加 `settings_revision` 实现 UI 乐观锁（原 AI 授权开关版本 `ai_authorization_version` 仍由旧触发器维护，二者不混用）。所有客户端命令重试需保留相同 UUID，变更意图生成新 UUID。暂不为它引入独立权限服务器、微服务或兼容无 key 写法。
+
+## ADR-046 · Risk Register Command 的边界
+
+Risk 是未来不确定性（不同于已发生 Issue）。项目内 AI 提议风险由真实人员批准后建立仅 open 的记录；对风险 `PATCH /projects/:id/risks/:riskId/assessment` 更新概率、影响、责任人及应对计划，`POST /projects/:id/risks/:riskId/transition` 执行 open→mitigating→resolved 或 resolved→open，每次在项目权限锁和 Risk FOR UPDATE 锁下比较 expectedVersion。每次状态或评估更新同时插入不可更改的 risk_register_changes、CommandReceipt、Audit、DomainEvent 和 Outbox；历史查询按版本分页且需本项目有效成员身份。跨项目 Risk/历史组合 FK 拒绝，不用可变项目成员 FK 锁定历史责任人。报表未解决风险包含 open+mitigating。不存在旧无键兼容写路由，也不允许聊天模型代签批准。

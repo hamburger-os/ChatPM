@@ -253,3 +253,13 @@
 **取舍：** 继续由 PostgreSQL Outbox 的现有 `claimEvents`/fencing/retry/backoff 处理实际业务投递，不另加 Redis/Kafka；恢复行为只重设重试状态，不能借恢复接口修改消息、AI 候选或直接完成人工验收。保留服务器原有权限语义与死信详情脱敏要求。此增量不声称所有租户、项目创建、组织治理命令已经统一，也不代表真实多 Worker 故障注入和生产 Egress 已验收。
 
 **ADR-045 补充：** 为 Outbox 原事件增加 `manual_retry_revision`，默认 0；每次真实 dead→pending 的人工恢复在同一受锁 UPDATE 中 +1，DomainEvent aggregateVersion 使用新恢复版本，命令响应携带 recoveryRevision。相同幂等命令重放不再次增版本；下一次经过 Worker 失败重新 dead 后的新命令使用版本 2、3……。独立增加 migration 018，不改写既有发布迁移。
+
+## ADR-046 · 风险登记簿评估与正式应对闭环（2026-10-15）
+
+**问题：** 原风险登记是仅有 open/resolved 的旧数据结构，AI 候选经人工接受后没有概率、影响、责任人、应对计划与状态变化历史。不能将“发生的 Issue”与“未来可能发生的 Risk”混为一谈；也不能让 AI 无人审核直接关闭正式风险。
+
+**决定：** 在现有 `risks` 中增量增加 `version`、`likelihood`（1–5）、`impact`（1–5）、`owner_id`（允许为空以支持待评估 AI 候选）、`response_plan` 和 `updated_at`。状态为 open→mitigating→resolved，resolved→open 需有人给出原因；open→mitigating 必须已有当前租户及项目内非 observer 的负责人与完整的评估/应对计划；open→resolved 不能跳过正式应对。风险评估与状态命令均强制 `idempotencyKey` 和 `expectedVersion`，通过 `executePmCommand`、`pm.plan` 权限、同事务 `Audit/DomainEvent/Outbox/Receipt`；风险历史 `risk_register_changes` 按 `project_id,risk_id,risk_version` 不可修改记录操作人、旧/新状态与说明，关联采用项目复合 FK。新迁移 019 不能重写既有迁移 checksum。
+
+**统计：** 正在应对的 mitigating 仍是未解决的风险，周/月报的 `open_risks` 源统计应使用 `status<>'resolved'`，不得因为切换状态隐瞒风险。**权限与 AI 边界：** 只有项目 owner/manager 有权正式评估和流转；普通成员/观察者仅阅读，AI 仍只能提出带来源的候选，owner/manager 接受后进入 open 未评估状态，不能自动推进为 resolved。系统管理员权限不替代项目经理角色。已记录的旧风险保持其已有 open/resolved 状态与缺失评估，不凭空补造风险概率、负责人或历史事件。
+
+**范围限制：** 本切片不等于项目级资源平衡、完整成本风险量化、基于历史证据的自动评分或生产环境实际迁移验收；依然需要 P1/P3/P4 门禁。
