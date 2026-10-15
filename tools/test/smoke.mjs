@@ -613,14 +613,24 @@ try{
   assert.equal(progressMember.status,200);
   assert.ok(progressMember.data.updates.some(x=>x.id===progressInsert.id));
   const progressForbidden=await api('/projects/'+pid+'/progress/'+progressInsert.id+'/decision',{
-    method:'POST',cookie:cookieB,body:{decision:'accepted'}});
+    method:'POST',cookie:cookieB,body:{idempotencyKey:randomUUID(),decision:'accepted'}});
   assert.equal(progressForbidden.status,403);
+  const progressDecision={idempotencyKey:randomUUID(),decision:'accepted'};
   const progressAccepted=await api('/projects/'+pid+'/progress/'+progressInsert.id+'/decision',{
-    method:'POST',body:{decision:'accepted'}});
+    method:'POST',body:progressDecision});
   assert.equal(progressAccepted.status,200);
+  const progressReplay=await api('/projects/'+pid+'/progress/'+progressInsert.id+'/decision',{
+    method:'POST',body:progressDecision});
+  assert.equal(progressReplay.status,200,'Same progress command is idempotent');
+  const progressKeyConflict=await api('/projects/'+pid+'/progress/'+progressInsert.id+'/decision',{
+    method:'POST',body:{...progressDecision,decision:'rejected'}});
+  assert.equal(progressKeyConflict.status,409);
   const progressAgain=await api('/projects/'+pid+'/progress/'+progressInsert.id+'/decision',{
-    method:'POST',body:{decision:'accepted'}});
+    method:'POST',body:{idempotencyKey:randomUUID(),decision:'accepted'}});
   assert.equal(progressAgain.status,409);
+  assert.equal((await db.query(`SELECT count(*)::int AS n FROM domain_events
+    WHERE project_id=$1 AND aggregate_id=$2 AND kind='task.progress.reviewed.v1'`,
+    [pid,progressInsert.id])).rows[0].n,1);
 
   const taskUpdateInput={idempotencyKey:randomUUID(),status:'doing',version:1};
   const changed=await api('/projects/'+pid+'/tasks/'+tid,{method:'PATCH',body:taskUpdateInput});
@@ -684,16 +694,38 @@ try{
      VALUES($1,$2,'task',$3,'请核对') RETURNING id`,
     [pid,posted.data.message.id,'来自聊天的候选任务'])).rows[0];
   const memberDenied=await api('/projects/'+pid+'/proposals/'+candidate.id+'/decision',{
-    method:'POST',cookie:cookieB,body:{decision:'accepted',assigneeId:second.data.user.id}});
-  assert.equal(memberDenied.status,403,'Only the project owner may approve AI proposals');
+    method:'POST',cookie:cookieB,
+    body:{idempotencyKey:randomUUID(),decision:'accepted',assigneeId:second.data.user.id}});
+  assert.equal(memberDenied.status,403,'Only the owner/manager may approve AI proposals');
+  const proposalDecision={idempotencyKey:randomUUID(),decision:'accepted',
+    assigneeId:second.data.user.id};
   const accepted=await api('/projects/'+pid+'/proposals/'+candidate.id+'/decision',{
-    method:'POST',body:{decision:'accepted',assigneeId:second.data.user.id}});
+    method:'POST',body:proposalDecision});
   assert.equal(accepted.status,200);
+  const replayApproval=await api('/projects/'+pid+'/proposals/'+candidate.id+'/decision',{
+    method:'POST',body:proposalDecision});
+  assert.equal(replayApproval.status,200,'Same approval receipt should be replayable');
+  const conflictingApproval=await api('/projects/'+pid+'/proposals/'+candidate.id+'/decision',{
+    method:'POST',body:{...proposalDecision,decision:'rejected'}});
+  assert.equal(conflictingApproval.status,409);
   const duplicateApproval=await api('/projects/'+pid+'/proposals/'+candidate.id+'/decision',{
-    method:'POST',body:{decision:'accepted',assigneeId:second.data.user.id}});
-  assert.equal(duplicateApproval.status,409,'Proposal must not create duplicate tasks');
+    method:'POST',body:{...proposalDecision,idempotencyKey:randomUUID()}});
+  assert.equal(duplicateApproval.status,409,'New command may not create duplicate tasks');
+  assert.equal((await db.query(`SELECT count(*)::int AS n FROM domain_events
+    WHERE project_id=$1 AND aggregate_id=$2 AND kind='proposal.reviewed.v1'`,
+    [pid,candidate.id])).rows[0].n,1);
   const linked=await db.query('SELECT id FROM tasks WHERE source_proposal_id=$1',[candidate.id]);
   assert.equal(linked.rowCount,1);
+  const riskSuggestion=(await db.query(`INSERT INTO proposed_changes(
+    project_id,source_message_id,kind,title,detail)
+    VALUES($1,$2,'risk','联调环境不可用风险','审批后保留来源') RETURNING id`,
+    [pid,posted.data.message.id])).rows[0];
+  const riskApproved=await api('/projects/'+pid+'/proposals/'+riskSuggestion.id+'/decision',{
+    method:'POST',body:{idempotencyKey:randomUUID(),decision:'accepted'}});
+  assert.equal(riskApproved.status,200,'Risk candidates must be approved by humans');
+  const riskLinked=await db.query('SELECT id FROM risks WHERE source_proposal_id=$1',
+    [riskSuggestion.id]);
+  assert.equal(riskLinked.rowCount,1);
 
   // Stats must count the entire project, not only the first 200 listed tasks.
   await db.query(
@@ -713,7 +745,7 @@ try{
   assert.equal(suggested.status,200);
   assert.equal(suggested.data.proposals.find(x=>x.id===candidate2.id)?.clarification_status,'answered');
   const approved2=await api('/projects/'+pid+'/proposals/'+candidate2.id+'/decision',{
-    method:'POST',body:{decision:'accepted',assigneeId:uid}});
+    method:'POST',body:{idempotencyKey:randomUUID(),decision:'accepted',assigneeId:uid}});
   assert.equal(approved2.status,200);
   const saved2=await db.query(
     'SELECT due_date,assignee_id FROM tasks WHERE source_proposal_id=$1',[candidate2.id]);
