@@ -249,3 +249,11 @@ Docker `deploy:docker` 与 Windows/Linux 原生 `setup:local` 在私有 `.env` �
 **并发顺序：** Outbox 行 FOR UPDATE 在副作用事务内持有至 COMMIT；其他消费者的 `FOR UPDATE SKIP LOCKED` 无法在旧业务事务提交前抢占令牌。AI 授权版本检查仍在同一事务，不能靠模型调用前的检查代替。事件执行改为每次 `claimEvents(1)`、消费完成再领取下一条（最多单 tick 12 条），避免先批量领取 12 条后因第一条 LLM 延迟导致后续尚未开始的事件租约过期。
 
 **回归：** 真实 PostgreSQL 覆盖租约过期但无人认领、租约被重新分配、旧 token 禁止 AI 提交、当前 token 可提交、事件已完成禁止再写及事务行锁 `NOWAIT` 并发争抢；静态架构测试锁定每个写入路径的 `assertEventClaim` 调用和逐条领取方式。租约失效不代表已向第三方模型发送的数据可以撤回；模型耗时可超过租约时仍会浪费调用且需新 Worker 重试，后续多实例 heartbeat lease renewal / abort 并发控制与端到端故障注入还需要继续。此 PR 不能宣称多实例 Worker 的所有可靠性验收已经完成。
+
+## ADR-066 · Task 官方命令归属与无操作事务拒绝 /review（2026-10-16）
+
+此前 `apps/api/src/task-routes.ts` 在 HTTP 层直接持有完整 `INSERT/UPDATE tasks`、依赖检查、任务人选、FollowUp 和 `executePmCommand` 领域变更。现在将创建及修改统一迁移到 `packages/core/src/delivery/task-commands.ts`，HTTP 层只解析 ID、校验 Zod DTO、验证当前登录身份并委托 Core；不改变既有 DomainEvent/Outbox/CommandReceipt 的种类和响应形态，不另造平行事务运行时。核心继续使用 `executePmCommand` 在相同事务内重新核验当前 Tenant+Project 授权，任务依赖图锁、版本冲突、状态/计划权限、负责人有效性、FollowUp、审计、领域事件、Outbox 同步。
+
+**真实变化不变量：** 如果新请求使用正确 `version` 和新的幂等键，但 `status/title/assignee_id/due_date` 所有正式字段均与当前状态相同，返回 409 `任务没有实际变化`，事务回滚且不创建成功 Receipt、任务版本、历史事件、审计、DomainEvent、Outbox 或催办刷新。版本冲突先拒绝，再比较无操作；相同已成功 `idempotencyKey + payload` 可继续回放原结果，而原 key 不同 payload 必须 409。只有实际变化能递增版本并生成正式历史证据，AI 未审候选仍不直接更新正式 Task。
+
+回归补充：真实 PostgreSQL Core 集成覆盖创建、完整无操作拒绝/数量不变、有效任务更新、相同键回放/同键异参冲突、旧版本拒绝、事件计数；旧 API Smoke 中增加 no-op 后历史来源数量保持不变断言。静态架构测试防止 Fastify Task 路由恢复直接 `UPDATE/INSERT tasks`。范围仅 Task CRUD 的正式写入，不等于 PM 所有 WorkItem、验收、风险和 Portfolio 全域命令完全收敛；Issue #48/#49 继续开放。
