@@ -262,3 +262,18 @@ English: `npm run stop` only stops the foreground API/Worker/Web group registere
 4. Configure DNS A/AAAA/DDNS, IPv6 inbound firewalls, TLS certificate renewals and router paths to suit actual networking. Test LAN, Wi-Fi, mobile data, cookie persistence, mutations, AI key secrecy, service restarts and a recovery rehearsal. Prefer a trusted VPN for private deployments; do not enable public registration or sensitive production traffic without a security review.
 5. From an application container `http://127.0.0.1:8045` addresses **that container**, not a Windows laptop or the NAS host. Verify a trusted reachable LLM proxy route. Existing URL validation is not a full DNS-rebinding/SSRF egress control.
 
+## 2026-10-15 治理和可靠性增量使用说明（实验性）
+
+变更审批采取两人职责分离：项目负责人和项目经理可对**其他人**提交的变更申请执行批准或拒绝；提交人自己不能审批。没有第二位合资格成员时，请先增加项目经理或移交审批职责，而不是尝试自批。项目负责人仍独享项目人员管理、AI 启用开关、报告发布和系统管理员以外的项目设置职责。
+
+组织管理员可以在「组织管理 → 资源投入」对错误或已经失效的资源分配点击「取消投入」，历史记录保留，已取消的投入不计入后续容量。成员承担未验收的交付物或仍有效的资源分配时，项目负责人不能直接把该成员降为观察者或移出项目，应先完成交付物工作交接，并请组织管理员取消或重新安排资源。观察者不可被指派新的正式交付物。
+
+消息分析、规则催办和周期报告分别执行；关闭 AI 后，新产生的旧版本模型结果不再发布。但关闭开关不能撤回已经发送给第三方的文本。登录/注册按规范化账号而非同源代理 IP 限制尝试次数；公网仍需配置可信网关的来源级防滥用。完成安装后应实际验证多人并发登录、成员交接、审批与撤权，当前产品不保证生产验收。
+
+## 2026-10-15 Governance and reliability update (experimental)
+
+Change approval enforces separation of duties: project owners and managers may approve or reject changes submitted by **another** person; an author cannot approve their own request. A second eligible reviewer is required. Member management, AI enablement, report publication and project settings remain restricted to the project owner.
+
+Organization admins can cancel a resource allocation from the Organization → Resources view. The original allocation and audit remain available, and cancelled plans no longer consume capacity. Project members with unfinished deliverables or active resource allocations cannot be removed or downgraded to observer until work is handed over and the allocation is cancelled or otherwise reconciled. Observers cannot own new formal deliverables.
+
+AI analysis, reminders and reporting run in independent worker lanes. A revoked AI grant blocks publication of stale results, but cannot retract data already sent to an external model. Login and registration are account-scoped behind the shared Next.js proxy; public deployments still require trusted edge abuse controls. Real multi-user browser, Windows/Linux deployment and security acceptance tests remain necessary.
