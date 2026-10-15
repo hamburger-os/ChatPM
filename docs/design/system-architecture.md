@@ -66,3 +66,7 @@ Project.owner_id 是正式负责人身份；project_members 同项目只能一�
 ## ADR-048 · 创建项目的事务根节点
 
 项目创建前不存在 projectId，不可把 project-local executePmCommand 硬套到虚构项目 ID。租户级 tenant_command_receipts 以 tenant/actor/kind/key 去重，项目创建由单个 PostgreSQL transaction 顺序写入：活跃 tenant admin 身份锁 → 租户级 receipt 唯一插入/检查 → projects → project_members owner → project-scoped command_receipts → audit_entries / domain_events / outbox_events → 两份 receipt result。数据库唯一约束序列化同 key 并发请求，业务历史保留真实项目 ID。普通项目读写继续使用既有项目级命令，tenant receipt 不是额外的超管特权。
+
+## ADR-049 · ChangeRequest 后续履约状态
+
+正式变更审批是前置决策，不是任务状态。经 owner 独立批准的 ChangeRequest 才可由项目 manager/owner 指定有效实施责任人进入 implementing；实施完成需复核方（与实施责任人不同）引用本项目该执行人发布、发生在实施启动后的 user 消息，方能进入 implemented。实现由 PM 正式 command endpoint 经 PostgreSQL 事务写变化后的 ChangeRequest、独立项目复合 FK 的历史及 CommandReceipt/Audit/DomainEvent/Outbox；分离执行凭据/复核结论，保持模型候选无签署权限。变更作用于具体里程碑/成本/范围的后续命令不在这次隐式实现，避免越权修改计划基线。
