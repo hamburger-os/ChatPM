@@ -22,7 +22,7 @@ CREATE INDEX idx_task_history_project_time
   ON project_task_history(project_id,changed_at DESC,id DESC);
 
 CREATE FUNCTION capture_project_task_history() RETURNS TRIGGER
-LANGUAGE plpgsql AS $
+LANGUAGE plpgsql AS $$
 DECLARE
   prior_status TEXT;
   prior_title TEXT;
