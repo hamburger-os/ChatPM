@@ -1,3 +1,4 @@
+import { secureModelFetch } from './model-egress.ts';
 import { createHash } from 'node:crypto';
 
 // Deployment-controlled model endpoint adapters. No client-supplied URL or hidden fallback.
@@ -115,7 +116,7 @@ async function requestModel(config:LLMSettings,body:object,
  * Successful plain text does not prove ChatPM structured extraction will work.
  */
 export async function probeModelText(config:LLMSettings,
-  fetchImpl:typeof fetch=fetch):Promise<string>{
+  fetchImpl:typeof fetch=secureModelFetch):Promise<string>{
   const prompt='连接测试：请仅用一个简短的词回复 OK。';
   const maxTokens=config.maxOutputTokens??8192;
   const body=config.style==='responses'
@@ -137,7 +138,7 @@ export function modelAuditIdentity(config:LLMSettings):string {
 
 export async function callStructuredLLM(
   config:LLMSettings,input:string,schema:object,
-  fetchImpl:typeof fetch=fetch,
+  fetchImpl:typeof fetch=secureModelFetch,
   mode:'analysis'|'reply'='analysis',
 ):Promise<unknown> {
   const instruction=mode==='reply'

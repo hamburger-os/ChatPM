@@ -1,3 +1,4 @@
+import { secureModelFetch } from './model-egress.ts';
 import { createHmac } from 'node:crypto';
 import { pool } from './db.ts';
 import { z } from 'zod';
@@ -129,7 +130,7 @@ export class ConfiguredLLMProvider implements LLMProvider{
     const invocationId=started.rows[0].id;
     const start=Date.now();
     try{
-      const data=await callStructuredLLM(settings,input,schema,fetch,mode);
+      const data=await callStructuredLLM(settings,input,schema,secureModelFetch,mode);
       const parsed=output.parse(data);
       await pool.query(`UPDATE ai_model_invocations SET status='succeeded',
         latency_ms=$2,finished_at=NOW() WHERE id=$1`,
