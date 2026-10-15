@@ -143,3 +143,7 @@ CI 新增 `tools/test/task-linkage-smoke.mjs`：PostgreSQL 创建正式任务与
 ## ADR-043 · 版本化 Report Command /review
 
 查验报告人工 GET/POST/发布 POST 仅在 `report-routes.ts` 注册，项目/组织身份同时校验；写入使用 `executePmCommand` 的 `report.manage`（仅 owner），UUID idempotencyKey，发布还需 expectedRevision。重复同 key/同 payload 200 且相同报告版本；同 key 改 payload 409；两次新 key 生成草稿必须逐次刷新 revision，已发布报告不得被重写；发布旧 revision 或不同 key 重复发布 409。正式报告状态、发布操作者/时间、审计、领域事件、Outbox 与 Receipt 事务同成败；Worker 定时报告语义不能改变，旧报告迁移不应虚构 publishedAt。校验普通成员越权、跨项目访问、任务统计正确性、浏览器重试、PostgreSQL 迁移、Windows/Linux/Docker 五项最新 Head CI。没有历史统计与来源图时不能称报告为可审计的真实历史绩效。
+
+## ADR-044 · 项目人员管理/设置命令 /review
+
+审核旧 bootstrap 不重复注册成员增删、角色编辑、设置修改；无 key 写入 400，重复同 key/payload 返回原 Receipt，payload 不同 409，新 key 重复邀请或同角色不产生虚假领域事件。写前和事务内重验当前 tenant+project owner，目标受邀人需有组织资格且行锁稳定；成员从 manager/member/observer 移除允许，但 owner 不可移除，带未完成任务的人员必须先移交。设置必须传 expectedRevision，旧版本 409、当前版本写入 revision+1 与原 `ai_authorization_version` 触发器互不覆盖；只有实际可用默认模型才允许开启 AI。服务端 Audit、DomainEvent、Outbox、CommandReceipt 与实际状态在同一事务。审查 Web 重试键/设置版本和人员移除确认，原 Smoke 权限、报告、Worker、会话及管理员配置测试；仅在最新 Head 五项 GitHub CI 全部成功且无未解决 review threads 时合并。运维死信重试、项目创建和组织管理等旧写入仍是明确待办。

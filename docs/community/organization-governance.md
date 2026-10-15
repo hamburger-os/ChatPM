@@ -44,6 +44,10 @@ npm run admin:grant -- --email=admin@example.com --confirm
 
 项目负责人和管理者可以批准或驳回项目内的 AI 候选任务/风险及待核实进度；审批现在是幂等且可审计的正式命令。只有批准的任务/风险候选会进入正式项目登记簿；确认进度或“已完成”的发言，不代表任务自动完结或交付物自动验收。网络重试不会重复创建正式工作，重复审核只能返回原回执或被拒绝。模型不能自行批准。 
 
+### 项目人员变更与设置版本
+
+项目 owner 可以添加已由组织管理员加入的注册用户，修改 manager/member/observer 角色，并移除非 owner 的项目成员。仍有未完成任务时必须先移交或取消；不能移除项目 owner。成员操作可审计，同一次网络重试不会重复增加、修改或删除人员。项目 AI 开关和提醒时间独立使用设置版本，其他浏览器已修改设置时，过期的保存请求会被拒绝而不是覆盖。模型供应商、密钥与默认模型继续仅由系统总管理员统一设置。
+
 ## English
 
 ### Organization and project structure
@@ -80,4 +84,8 @@ The Project Governance workspace can cite exact spans of a project member's exis
 ### AI candidate and progress approvals
 
 Project owners and managers can approve or reject pending AI task/risk proposals and progress evidence. These decisions now use auditable, idempotent commands. Only human-approved proposals create official tasks or risks. Acknowledging a progress report or completion statement never automatically closes a task or accepts a deliverable. Retrying the same request cannot create duplicate work; AI cannot approve on behalf of a person.
+
+### Project membership commands and settings versions
+
+Project owners can add registered members already authorized in the tenant, change manager/member/observer roles, and remove non-owner members. Incomplete assigned tasks must be reassigned or cancelled before removal; the project owner cannot be removed. Membership commands are audited and idempotent across network retries. Project AI enablement and reminder settings have an optimistic revision so a stale browser cannot overwrite another owner's update. Provider credentials and the default model remain system-administrator-only.
 
