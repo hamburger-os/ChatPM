@@ -1,7 +1,8 @@
 'use client';
 import { useEffect,useRef,useState,type FormEvent } from 'react';
 type Item={id:string;name:string;description?:string;parent_id?:string|null;portfolio_id?:string|null};
-type Project=Item&{department_id:string|null;program_id:string|null;portfolio_id:string|null};
+type Project=Item&{department_id:string|null;program_id:string|null;
+  portfolio_id:string|null;classification_revision:number};
 type Member={id:string;display_name:string;email:string;role:'admin'|'member'};
 type Allocation={id:string;project_id:string;user_id:string;percentage:number;start_date:string;end_date:string};
 type Structure={departments:Item[];portfolios:Item[];programs:Item[];projects:Project[]};
@@ -67,11 +68,22 @@ export default function OrganizationPanel({tenantId}:{tenantId:string}){
   };
   const classification=(e:FormEvent)=>{
     e.preventDefault();void run(async()=>{
+      const project=data.projects.find(p=>p.id===projectId);
+      if(!project)throw new Error('请选择有效项目并刷新项目归属');
       await write(base+'/projects/'+projectId+'/classification','PATCH',{
+        expectedRevision:project.classification_revision,
         departmentId:departmentId||null,programId:programId||null,
         portfolioId:programId?null:directPortfolio||null});
     });
   };
+  async function refreshClassification(){
+    const result=await api<Structure>(base+'/structure');
+    setData(result);
+    const project=result.projects.find(p=>p.id===projectId);
+    setDepartmentId(project?.department_id||'');
+    setProgramId(project?.program_id||'');
+    setDirectPortfolio(project?.portfolio_id||'');
+  }
   return <section className="organization-workspace">
     <header className="management-heading"><div><h2>组织管理</h2>
       <p className="hint">部门管理人员与资源；项目集协调关联项目；项目组合管理战略与投入。成员加入部门不等于获得项目聊天权限。</p>
@@ -132,7 +144,13 @@ export default function OrganizationPanel({tenantId}:{tenantId:string}){
       {!programId&&<label>直接归属项目组合<select value={directPortfolio} onChange={e=>setDirectPortfolio(e.target.value)}>
         <option value="">未设置</option>{data.portfolios.map(x=><option value={x.id} key={x.id}>{x.name}</option>)}
       </select></label>}
-      <button disabled={busy||!projectId}>保存归属</button>
+      <small>项目归属版本：v{data.projects.find(p=>p.id===projectId)?.classification_revision??'—'}
+        · 其他管理员已修改时，旧版本保存会被拒绝</small>
+      <div className="row-form">
+        <button disabled={busy||!projectId}>保存归属</button>
+        <button type="button" className="secondary" disabled={busy||!projectId}
+          onClick={()=>void run(refreshClassification)}>刷新所选项目归属</button>
+      </div>
     </form>
     </div>}
     {tab==='resources'&&<div className="stack organization-section">
