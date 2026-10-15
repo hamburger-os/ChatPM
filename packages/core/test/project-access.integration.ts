@@ -48,6 +48,26 @@ try{
   assert.throws(()=>assertProject(current.role,'task.create'),/没有执行该操作的权限/);
   await a.query('COMMIT');
 
+  // Owner-only operations must never rely on a stale manager/observer role.
+  for(const action of ['members.manage','report.manage','settings.manage',
+    'operations.manage'] as const)
+    assert.throws(()=>assertProject(current.role,action),/没有执行该操作的权限/);
+  await b.query("UPDATE project_members SET role='owner' WHERE project_id=$1 AND user_id=$2",
+    [projectId,actorId]);
+  await a.query('BEGIN');
+  const ownerAccess=await lockProjectAccess(a,projectId,actorId);
+  assert.equal(ownerAccess.role,'owner');
+  for(const action of ['members.manage','report.manage','settings.manage',
+    'operations.manage'] as const)assertProject(ownerAccess.role,action);
+  await b.query('BEGIN');
+  await b.query("SET LOCAL lock_timeout='150ms'");
+  await assert.rejects(
+    b.query("DELETE FROM tenant_members WHERE tenant_id=$1 AND user_id=$2",
+      [tenantId,actorId]),
+    (error:unknown)=>(error as {code?:string}).code==='55P03',
+    'Removing organization membership must wait while an owner write is authorized');
+  await b.query('ROLLBACK');
+  await a.query('COMMIT');
 
   const {rows:tasks}=await pool.query(`
     INSERT INTO tasks(project_id,title,status)

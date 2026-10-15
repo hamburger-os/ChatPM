@@ -86,3 +86,7 @@
 ## ADR-040 · AI 候选与进度审批正式命令闭环
 
 原先两个直接审批写入路由已从 `server.ts` 迁往 `apps/api/src/approval-routes.ts`：`POST /projects/:id/proposals/:proposalId/decision` 和 `POST /projects/:id/progress/:progressId/decision` 均要求 UUID `idempotencyKey`。只有有效项目/租户身份及 owner/manager 的 `proposal.approve` 权限可操作。接受候选 Task/Risk 才创建一条正式事项，关闭澄清 thread；同一事务写入人类决策 Audit、DomainEvent、Outbox、CommandReceipt；进度审核不直接变更 Task.done，采纳 blocker 继续尊重已发送提醒的冷却。项目 UI 和 HTTP smoke 已调整为同意图键重试并检查越权、重复和事件数。此为 PR 实现范围，是否可发布仍以最终提交的 CI/Review 为准。报告发布、成员移除、项目设置及其他遗留正式写入尚未全部迁移；不得标称所有领域写入已统一。
+ 
+## ADR-041 · 负责人写入权限撤销保护
+
+本切片将旧 API 中的 7 类 owner-only 正式操作改为业务事务内调用 lockProjectAccess，覆盖项目成员加入/降级/移除、项目设置、Outbox 死信重试、周/月报生成和发布，当前 tenant/project 身份与精确 ProjectAction 同时检查并行锁授权记录。目标成员入项目时检查其当前组织成员身份并持共享锁。新增真实 PostgreSQL 集成回归检查 owner-only 权限矩阵、项目身份降级后拒绝操作，以及组织成员撤销不得绕过已在途授权事务。该补丁保留现有请求契约，**不代表**这些旧操作已全部使用 CommandReceipt/DomainEvent；完整 P1/P2/P4 仍有未达成条件。最终状态以 PR 五项最新 SHA CI 和 /review 为准。

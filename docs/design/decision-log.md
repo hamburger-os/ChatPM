@@ -213,3 +213,9 @@
 **原子性：** 命令、更新候选 status/reviewedBy、澄清 thread 关闭、正式事项写入、任务 followup 与领域事件审计在同一事务中提交；相同 key 同 payload 重试直接返回回执，不重复创建事项；同 key 不同 payload 409；不同 key 重复决策因 status 已非 pending 而 409。当前两张遗留审批表没有自然 version，故该一次性审核事件的 aggregateVersion 为 1，不能误认为整个 Task 版本。
 
 **取舍：** 为所有现有 UI 审核动作同步添加“同意图稳定 key”，以及测试正式命令事件数量/角色限制/重复行为；旧无 key 路径不再存在。此切片不包含报告发布、成员管理、后续 Playbook 或 AI 自动采纳。
+
+## ADR-041 · 项目负责人写入必须在业务事务内重新鉴权（2026-10-15）
+
+**决定：** 旧路由（成员邀请/角色更改/移除、项目设置、Outbox 死信重试、报告人工生成和发布）原先在事务外使用 owner(await member(...)) 读到角色快照，可能与角色撤销并发。所有这些正式写入改为事务内 lockProjectAccess(db,projectId,actorId)，并按 members.manage、settings.manage、operations.manage、report.manage 等精确权限校验。helper 同时锁住当前项目/组织成员行，权限被降级或撤销后不得提交先前未经正确授权的事务；目标受邀人也需验证有效租户成员。
+
+**安全不变量：** 没有项目及组织成员身份的账号不能执行项目写入；系统管理员身份不替代项目角色；被降级/移除人员的活动任务先转交。写入与审计在同一事务。本补丁修复旧接口并发授权窗口，不宣称所有旧接口都具 CommandReceipt/DomainEvent/Outbox。
