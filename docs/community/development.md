@@ -307,3 +307,11 @@ Email invitations and acceptance workflows are not available yet. Do not keep un
 部署脚本在服务器的私有 `.env` 文件生成 `BOOTSTRAP_TOKEN`（64 位十六进制随机值），它与 `SESSION_SECRET`、`MODEL_ENCRYPTION_KEY`、数据库密码互相独立。首次通过 Web 注册管理员时，**部署操作员本人**从服务器 `.env` 读取密钥，在初始化表单填写。绝不在聊天、问题报告、Git 仓库、公开页面或共享截图中发送该密钥。错误密钥、缺少密钥、或已有首账户时注册都会拒绝。部署时应先保持默认 loopback 监听，完成可信初始化再开放 HTTPS 公网；完成后推荐将 `REGISTRATION_MODE=closed` 并重启 API。普通新成员仍需正式的管理员邀请功能（待完成）；不要为了日常入职长期开放 `REGISTRATION_MODE=open`。
 
 The installer creates a private 64-hex-character `BOOTSTRAP_TOKEN` in the server's `.env`. Only the trusted operator may use it to create the initial account, while the application is still bound to localhost. Do not paste it into chats or commit it. Once the first account exists, that token cannot register another user; switch to `REGISTRATION_MODE=closed` after setup. The invitation-based enrollment workflow is still pending and must not be replaced by long-lived public `open` registration.
+
+## 2026-10-15 组织受控邀请（实验性）
+
+组织管理员可以在「组织管理 → 组织人员」填写邮箱签发有效期 7 天的邀请码。邀请码只在签发成功时显示一次，请通过独立、可信的通信渠道发给受邀本人；如遗失请撤销旧邀请并重新签发，不要打开全站匿名注册。新用户在登录页选择「收到组织邀请码？注册并加入」，填写同一受邀邮箱、邀请码和密码。已有用户登录后在「个人设置 → 使用邀请加入组织」粘贴邀请码即可。接受后是组织的普通成员，项目负责人仍需单独将该成员加入具体项目。管理员可以查看邀请码的待接受、已过期、已撤销和已接受状态。当前没有自动邮件或企业 SSO，邀请码不是项目权限凭据。
+
+## 2026-10-15 One-time organization invitations (experimental)
+
+Tenant admins can issue a seven-day, email-bound invitation under Organization → People. The secret is displayed once only and must be shared privately. New users select invitation enrollment on the sign-in screen; existing users sign in and accept it under Account Settings. The invited account joins **only that tenant** as a regular member. Project access requires a separate project grant. Revoked, expired, mismatched or consumed codes are rejected. There is no automated invitation email, SCIM, or enterprise SSO in this increment.

@@ -15,7 +15,8 @@ export async function signedQuotaKey(
   // validated JSON body is available: scope login/registration quotas by the
   // normalized account identifier instead of locking out unrelated users.
   // HMAC keeps email addresses out of rate-limit storage and metrics.
-  if(request.url==='/auth/login'||request.url==='/auth/register'){
+  if(request.url==='/auth/login'||request.url==='/auth/register'||
+     request.url==='/auth/invitations/claim'){
     const body=request.body;
     const email=body&&typeof body==='object'&&'email' in body
       ? (body as {email?:unknown}).email:null;

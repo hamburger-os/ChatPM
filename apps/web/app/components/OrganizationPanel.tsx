@@ -4,6 +4,8 @@ type Item={id:string;name:string;description?:string;parent_id?:string|null;port
 type Project=Item&{department_id:string|null;program_id:string|null;
   portfolio_id:string|null;classification_revision:number};
 type Member={id:string;display_name:string;email:string;role:'admin'|'member'};
+type Invitation={id:string;email:string;created_at:string;expires_at:string;
+  accepted_at:string|null;revoked_at:string|null};
 type Allocation={id:string;project_id:string;user_id:string;percentage:number;start_date:string;end_date:string;cancelled_at:string|null;cancelled_by:string|null};
 type Structure={departments:Item[];portfolios:Item[];programs:Item[];projects:Project[]};
 const empty:Structure={departments:[],portfolios:[],programs:[],projects:[]};
@@ -17,6 +19,9 @@ async function api<T>(path:string,options?:RequestInit):Promise<T>{
 export default function OrganizationPanel({tenantId,currentUserId}:{tenantId:string;currentUserId:string}){
   const [data,setData]=useState<Structure>(empty);
   const [members,setMembers]=useState<Member[]>([]);
+  const [invitations,setInvitations]=useState<Invitation[]>([]);
+  const [inviteEmail,setInviteEmail]=useState('');
+  const [inviteCode,setInviteCode]=useState('');
   const [allocations,setAllocations]=useState<Allocation[]>([]);
   const [kind,setKind]=useState<'departments'|'portfolios'|'programs'>('departments');
   const [tab,setTab]=useState<'people'|'structure'|'resources'>('people');
@@ -46,11 +51,13 @@ export default function OrganizationPanel({tenantId,currentUserId}:{tenantId:str
     return result;
   }
   async function reload(){
-    const [s,m,a]=await Promise.all([
+    const [s,m,a,i]=await Promise.all([
       api<Structure>(base+'/structure'),
       api<{members:Member[]}>(base+'/members'),
-      api<{allocations:Allocation[]}>(base+'/allocations')]);
+      api<{allocations:Allocation[]}>(base+'/allocations'),
+      api<{invitations:Invitation[]}>(base+'/invitations')]);
     setData(s);setMembers(m.members);setAllocations(a.allocations);
+    setInvitations(i.invitations);
   }
   useEffect(()=>{void reload().catch(e=>setNotice(e.message));},[tenantId]);
   async function run(fn:()=>Promise<void|boolean>){
@@ -125,6 +132,40 @@ export default function OrganizationPanel({tenantId,currentUserId}:{tenantId:str
       <input type="email" placeholder="将已注册人员加入组织" required value={email} onChange={e=>setEmail(e.target.value)}/>
       <button disabled={busy}>加入</button>
     </form>
+    <h3>邀请新成员</h3>
+    <p className="hint">管理员为指定邮箱签发一次性邀请码，有效期 7 天。
+      请通过受信任的渠道私下交给对应人员；邀请码仅首次签发时显示。</p>
+    <form className="row-form" onSubmit={e=>{e.preventDefault();void run(async()=>{
+      const issued=await write<{invitation:Invitation;code:string|null}>(
+        base+'/invitations','POST',{email:inviteEmail});
+      setInviteEmail('');
+      setInviteCode(issued.code??'');
+      if(!issued.code)throw new Error('原邀请已建立，但凭据只返回一次；如已丢失，请撤销并重新签发');
+    });}}>
+      <input type="email" required placeholder="受邀人员邮箱" value={inviteEmail}
+        onChange={e=>setInviteEmail(e.target.value)}/>
+      <button disabled={busy}>签发邀请</button>
+    </form>
+    {inviteCode&&<div className="item">
+      <strong>一次性邀请码（离开页面后无法再次查看）</strong>
+      <p className="hint">仅交给受邀邮箱本人，不要公开分享。</p>
+      <input aria-label="本次签发邀请码" readOnly value={inviteCode}/>
+      <button type="button" className="secondary" onClick={()=>void navigator.clipboard
+        .writeText(inviteCode).then(()=>setNotice('已复制邀请码，请私下发送'))
+        .catch(()=>setNotice('复制失败，请手动选择邀请码'))}>复制邀请码</button>
+      <button type="button" className="secondary" onClick={()=>setInviteCode('')}>清除显示</button>
+    </div>}
+    {invitations.map(i=><div className="member" key={i.id}>
+      <strong>{i.email}</strong>
+      <small>{i.accepted_at?'已接受':i.revoked_at?'已撤销':
+        new Date(i.expires_at).getTime()<Date.now()?'已过期':'待接受'}
+        {' · 截止 '+new Date(i.expires_at).toLocaleString()}</small>
+      {!i.accepted_at&&!i.revoked_at&&
+        <button className="secondary" type="button" disabled={busy}
+          onClick={()=>void run(async()=>{
+            await write(base+'/invitations/'+i.id+'/revoke','POST',{});
+          })}>撤销邀请码</button>}
+    </div>)}
     </div>}
     {tab==='structure'&&<div className="stack organization-section">
     <h3>部门 / 项目组合 / 项目集</h3>

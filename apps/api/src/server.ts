@@ -13,6 +13,7 @@ import { registerProjectGovernanceRoutes } from './project-governance-routes.ts'
 import { registerOperationsRoutes } from './operations-routes.ts';
 import { registerRiskRoutes } from './risk-routes.ts';
 import { registerProjectRoutes } from './project-routes.ts';
+import { registerInvitationRoutes } from './invitation-routes.ts';
 import { randomUUID } from 'node:crypto';
 import { signedQuotaKey } from '../../../packages/core/src/quota-key.ts';
 import Fastify from 'fastify';
@@ -256,6 +257,7 @@ app.get('/projects/:id/proposals',async req=>{
     [projectId]);
   return {proposals:rows};
 });
+registerInvitationRoutes(app,authenticated,issueSession);
 registerAdminModelRoutes(app,authenticated);
 registerGovernanceRoutes(app,authenticated);
 registerPmRoutes(app,authenticated);

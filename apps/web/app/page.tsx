@@ -21,6 +21,9 @@ export default function Home(){
   const [auth,setAuth]=useState<'checking'|'ready'|'anonymous'|'error'>('checking');
   const [retry,setRetry]=useState(0);
   const [register,setRegister]=useState(false);
+  const [inviteRegistration,setInviteRegistration]=useState(false);
+  const [inviteCode,setInviteCode]=useState('');
+  const [existingInviteCode,setExistingInviteCode]=useState('');
   const [canRegister,setCanRegister]=useState(false);
   const [requiresBootstrapToken,setRequiresBootstrapToken]=useState(false);
   const [bootstrapToken,setBootstrapToken]=useState('');
@@ -138,10 +141,15 @@ export default function Home(){
   }
   function login(e:FormEvent){
     e.preventDefault();void action(async()=>{
-      await request('/auth/'+(register?'register':'login'),{method:'POST',body:json({email,password,displayName,
-        ...(register&&requiresBootstrapToken?{bootstrapToken}:{} )})});
+      const authPath=inviteRegistration?'/auth/invitations/claim':
+        '/auth/'+(register?'register':'login');
+      await request(authPath,{method:'POST',
+        body:json({email,password,displayName,
+          ...(inviteRegistration?{code:inviteCode}:{ }),
+          ...(register&&requiresBootstrapToken?{bootstrapToken}:{})})});
       const x=await request<{user:User}>('/me');
-      setUser(x.user);setAuth('ready');setPassword('');setBootstrapToken('');
+      setUser(x.user);setAuth('ready');setPassword('');
+      setBootstrapToken('');setInviteCode('');setInviteRegistration(false);
       await Promise.all([loadProjects(),loadTenants()]);
     });
   }
@@ -187,20 +195,33 @@ export default function Home(){
       <div className="brand"><img className="brand-mark" src="/icon.svg" alt="" width={32} height={32}/>ChatPM</div>
       <h1>让项目主动向前</h1><p>用自然协作推动项目，让 AI 协助跟进任务与风险。</p>
       <form className="stack" onSubmit={login}>
-        {register&&<label>昵称<input required value={displayName} onChange={e=>setDisplayName(e.target.value)}/></label>}
+        {(register||inviteRegistration)&&<label>昵称<input required value={displayName} onChange={e=>setDisplayName(e.target.value)}/></label>}
+        {inviteRegistration&&<label>组织邀请码
+          <input required autoComplete="off" minLength={64} maxLength={64}
+            value={inviteCode} onChange={e=>setInviteCode(e.target.value)}
+            placeholder="向组织管理员获取一次性邀请码"/>
+        </label>}
         {register&&requiresBootstrapToken&&<label>部署初始化密钥
           <input type="password" autoComplete="off" required minLength={64} maxLength={64}
             value={bootstrapToken} onChange={e=>setBootstrapToken(e.target.value)}
             placeholder="从服务器私有 .env 文件读取 BOOTSTRAP_TOKEN"/>
         </label>}
         <label>邮箱<input type="email" autoComplete="username" required value={email} onChange={e=>setEmail(e.target.value)}/></label>
-        <label>密码<input type="password" autoComplete={register?'new-password':'current-password'} required minLength={register?10:1}
+        <label>密码<input type="password" autoComplete={register||inviteRegistration?'new-password':'current-password'}
+          required minLength={register||inviteRegistration?10:1}
           value={password} onChange={e=>setPassword(e.target.value)}/></label>
-        <button disabled={working}>{register?'注册并创建组织':'登录'}</button>
+        <button disabled={working}>{inviteRegistration?'使用邀请加入组织':register?'注册并创建组织':'登录'}</button>
       </form>
-      {canRegister?<button className="text-button" onClick={()=>setRegister(!register)}>
+      {canRegister&&!inviteRegistration&&<button className="text-button"
+        onClick={()=>setRegister(!register)}>
         {register?'已有账号？登录':'没有账号？创建组织'}
-      </button>:<p className="hint">当前服务器未开放新账号注册；如需加入项目，请联系部署管理员。</p>}
+      </button>}
+      <button type="button" className="text-button"
+        onClick={()=>{setInviteRegistration(old=>!old);setRegister(false);setBootstrapToken('');}}>
+        {inviteRegistration?'已有账号？返回登录':'收到组织邀请码？注册并加入'}
+      </button>
+      {!canRegister&&!inviteRegistration&&<p className="hint">
+        当前服务器已关闭自由注册；可以向组织管理员索取邀请码。</p>}
       <details className="login-help"><summary>系统管理员如何登录？</summary>
         <p>系统管理员使用同一邮箱和密码登录。首次部署时须由服务器操作员先为已注册账号授权；登录后在最左侧进入「系统管理」。组织管理员或项目负责人不自动具有系统管理权限。</p>
       </details>
@@ -304,6 +325,20 @@ export default function Home(){
         <h3>账户权限</h3>
         <p>{user.is_system_admin?'系统管理员':'普通用户'} · 组织角色与项目角色由各组织及项目负责人管理。</p>
         <p className="hint">系统管理员与普通用户使用同一登录入口；只有经过服务器受控授权的用户可以打开系统管理页面。</p>
+        <h3>使用邀请加入组织</h3>
+        <p className="hint">如已拥有 ChatPM 账号，无需再次注册。使用邀请邮件对应的账号登录后输入邀请码。</p>
+        <form className="stack" onSubmit={e=>{e.preventDefault();void action(async()=>{
+          await request('/auth/invitations/claim-existing',{method:'POST',
+            body:json({code:existingInviteCode})});
+          setExistingInviteCode('');
+          await loadTenants();
+          setNotice('已加入组织，管理员可进一步将你加入项目');
+        });}}>
+          <input required autoComplete="off" minLength={64} maxLength={64}
+            aria-label="已有账号的组织邀请码" placeholder="输入组织邀请码"
+            value={existingInviteCode} onChange={e=>setExistingInviteCode(e.target.value)}/>
+          <button type="submit" disabled={working}>接受邀请</button>
+        </form>
         <button type="button" className="secondary" onClick={logout} disabled={working}>退出登录</button>
       </section>}
     </section>}

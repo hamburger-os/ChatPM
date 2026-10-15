@@ -39,6 +39,9 @@ test('account auth quota is isolated across users behind one Next.js peer',async
   assert.equal(alice,await key('/auth/login','alice@example.com'));
   assert.notEqual(alice,await key('/auth/login','bob@example.com'));
   assert.notEqual(alice,await key('/auth/register','alice@example.com'));
+  assert.notEqual(alice,await key('/auth/invitations/claim','alice@example.com'));
+  assert.notEqual(await key('/auth/invitations/claim','alice@example.com'),
+    await key('/auth/invitations/claim','bob@example.com'));
   assert.ok(alice.startsWith('auth:/auth/login:'));
   assert.equal(alice.includes('alice@example.com'),false);
   assert.equal(await key('/auth/login',42),'ip:'+ip);
