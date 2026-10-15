@@ -772,6 +772,99 @@ try{
   const riskLinked=await db.query('SELECT id FROM risks WHERE source_proposal_id=$1',
     [riskSuggestion.id]);
   assert.equal(riskLinked.rowCount,1);
+  const riskId=riskLinked.rows[0].id;
+  const riskPath='/projects/'+pid+'/risks/'+riskId;
+  const beforeAssessment=await api('/projects/'+pid+'/risks');
+  assert.equal(beforeAssessment.status,200);
+  const aiRisk=beforeAssessment.data.risks.find(r=>r.id===riskId);
+  assert.equal(aiRisk.status,'open');
+  assert.equal(aiRisk.version,1);
+  assert.equal(aiRisk.owner_id,null,'Accepted AI proposals start unassessed');
+  assert.equal(aiRisk.likelihood,null,'AI cannot invent formal probability');
+  const unassessedStart=await api(riskPath+'/transition',{
+    method:'POST',body:{idempotencyKey:randomUUID(),expectedVersion:1,
+      decision:'start_mitigation',note:'Premature execution'}});
+  assert.equal(unassessedStart.status,409,'Risk mitigation requires human assessment');
+  const memberAssessment=await api(riskPath+'/assessment',{method:'PATCH',
+    cookie:cookieB,body:{idempotencyKey:randomUUID(),expectedVersion:1,
+      likelihood:4,impact:5,ownerId:uid,responsePlan:'Verify backup',
+      note:'High probability'}});
+  assert.equal(memberAssessment.status,403,
+    'Ordinary project members cannot formally score a risk');
+  const missingRiskNote=await api(riskPath+'/assessment',{method:'PATCH',body:{
+    idempotencyKey:randomUUID(),expectedVersion:1,
+    likelihood:4,impact:5,ownerId:uid,responsePlan:'Mitigate outage',note:' '}});
+  assert.equal(missingRiskNote.status,400);
+  const noRiskOwner=await api(riskPath+'/assessment',{method:'PATCH',body:{
+    idempotencyKey:randomUUID(),expectedVersion:1,
+    likelihood:4,impact:5,ownerId:randomUUID(),responsePlan:'Mitigate outage',
+    note:'Owner must be active'}});
+  assert.equal(noRiskOwner.status,400);
+  const assessRisk={idempotencyKey:randomUUID(),expectedVersion:1,
+    likelihood:4,impact:5,ownerId:uid,responsePlan:'Maintain backup integration',
+    note:'Assessed based on integration environment uncertainty'};
+  const assessed=await api(riskPath+'/assessment',{method:'PATCH',body:assessRisk});
+  assert.equal(assessed.status,200,JSON.stringify(assessed.data));
+  assert.equal(assessed.data.risk.version,2);
+  assert.equal(assessed.data.risk.owner_id,uid);
+  const replayRisk=await api(riskPath+'/assessment',{method:'PATCH',body:assessRisk});
+  assert.equal(replayRisk.status,200,'Same assessment command must be idempotent');
+  assert.equal(replayRisk.data.risk.version,2);
+  const riskKeyCollision=await api(riskPath+'/assessment',{method:'PATCH',body:{
+    ...assessRisk,impact:1}});
+  assert.equal(riskKeyCollision.status,409,'Same key cannot mean a new assessment');
+  const staleRisk=await api(riskPath+'/assessment',{method:'PATCH',body:{
+    ...assessRisk,idempotencyKey:randomUUID()}});
+  assert.equal(staleRisk.status,409,'Stale risk assessment must not overwrite current version');
+  const startRisk={idempotencyKey:randomUUID(),expectedVersion:2,
+    decision:'start_mitigation',note:'Backup plan assigned and underway'};
+  const started=await api(riskPath+'/transition',{method:'POST',body:startRisk});
+  assert.equal(started.status,200);
+  assert.equal(started.data.risk.status,'mitigating');
+  assert.equal(started.data.risk.version,3);
+  assert.equal((await api(riskPath+'/transition',{method:'POST',body:startRisk})).status,
+    200,'Original transition receipt must replay safely');
+  const duplicateStart=await api(riskPath+'/transition',{method:'POST',body:{
+    idempotencyKey:randomUUID(),expectedVersion:3,
+    decision:'start_mitigation',note:'Already mitigating'}});
+  assert.equal(duplicateStart.status,409);
+  const resolvedRisk=await api(riskPath+'/transition',{method:'POST',body:{
+    idempotencyKey:randomUUID(),expectedVersion:3,
+    decision:'resolve',note:'Integration backup validated with operator'}});
+  assert.equal(resolvedRisk.status,200);
+  assert.equal(resolvedRisk.data.risk.status,'resolved');
+  assert.equal(resolvedRisk.data.risk.version,4);
+  const reopenRisk=await api(riskPath+'/transition',{method:'POST',body:{
+    idempotencyKey:randomUUID(),expectedVersion:4,
+    decision:'reopen',note:'Backup is no longer available'}});
+  assert.equal(reopenRisk.status,200);
+  assert.equal(reopenRisk.data.risk.status,'open');
+  assert.equal(reopenRisk.data.risk.version,5);
+  const resumeRisk=await api(riskPath+'/transition',{method:'POST',body:{
+    idempotencyKey:randomUUID(),expectedVersion:5,
+    decision:'start_mitigation',note:'New backup action in progress'}});
+  assert.equal(resumeRisk.status,200);
+  assert.equal(resumeRisk.data.risk.status,'mitigating');
+  assert.equal(resumeRisk.data.risk.version,6);
+  const riskHistory=await api(riskPath+'/history',{cookie:cookieB});
+  assert.equal(riskHistory.status,200,'Project members may inspect human decisions');
+  assert.deepEqual(riskHistory.data.history.map(h=>h.risk_version),[6,5,4,3,2]);
+  assert.deepEqual(riskHistory.data.history.map(h=>h.action),
+    ['transition','transition','transition','transition','assessment']);
+  const scopedRisk=await api('/projects/'+randomUUID()+'/risks/'+riskId+'/history');
+  assert.equal(scopedRisk.status,404,'Risk history cannot be read across projects');
+  const riskEvents=(await db.query(`
+    SELECT kind,aggregate_version AS version FROM domain_events
+    WHERE project_id=$1 AND aggregate_id=$2
+      AND kind IN ('risk.assessed.v1','risk.transitioned.v1')
+    ORDER BY aggregate_version`,[pid,riskId])).rows;
+  assert.deepEqual(riskEvents.map(x=>x.version),[2,3,4,5,6]);
+  assert.equal(riskEvents.filter(x=>x.kind==='risk.assessed.v1').length,1,
+    'Receipt replay does not create a second assessment event');
+  const riskAudit=(await db.query(`SELECT count(*)::int AS n FROM audit_entries
+    WHERE project_id=$1 AND target_id=$2 AND action LIKE 'risk.%'`,
+    [pid,riskId])).rows[0].n;
+  assert.equal(riskAudit,5,'Each real risk change has one audit entry');
 
   // Stats must count the entire project, not only the first 200 listed tasks.
   await db.query(
@@ -872,6 +965,8 @@ try{
   assert.ok(report.data.report.revision>=1);
   assert.ok(report.data.report.content.includes('总数：'+beforeCount+'；'),
     'Report counts must not be truncated to 200');
+  assert.ok(report.data.report.content.includes('联调环境不可用风险'),
+    'Mitigating risk must still be reported as unresolved');
   const reportReplay=await api('/projects/'+pid+'/reports',{method:'POST',body:reportInput});
   assert.equal(reportReplay.status,200,'Same report command must replay receipt');
   assert.equal(reportReplay.data.report.id,report.data.report.id);
