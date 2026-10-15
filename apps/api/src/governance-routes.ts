@@ -127,16 +127,24 @@ export function registerGovernanceRoutes(app:FastifyInstance,
       const memberId=found.rows[0].id as string;
       const inserted=await db.query(`INSERT INTO tenant_members(tenant_id,user_id,role)
         VALUES($1,$2,'member') ON CONFLICT DO NOTHING RETURNING user_id`,[tenantId,memberId]);
-      return {value:{ok:true},targetId:memberId,metadata:{created:Boolean(inserted.rowCount)}};
+      if(!inserted.rowCount)deny(409,'该人员已加入当前组织');
+      return {value:{ok:true},targetId:memberId,metadata:{created:true}};
     });
   });
   app.patch('/tenants/:tenantId/members/:memberId',async req=>{
-    const {tenantId,user}=await scope(req,true);
+    // Current tenant membership suffices to replay the actor's *completed*
+    // demotion receipt. New commands still require admin inside the transaction.
+    const {tenantId,user}=await scope(req);
     const memberId=uuid.parse((req.params as {memberId:string}).memberId);
     const v=z.object({idempotencyKey:uuid,role:z.enum(['admin','member'])}).parse(req.body);
     const {role}=v;
     return organizationCommand(tenantId,user,'tenant.member_role_changed',
-      {idempotencyKey:v.idempotencyKey,payload:v},async db=>{
+      {idempotencyKey:v.idempotencyKey,payload:{memberId,...v}},async db=>{
+      const target=(await db.query<{role:string}>(`
+        SELECT role FROM tenant_members WHERE tenant_id=$1 AND user_id=$2
+        FOR UPDATE`,[tenantId,memberId])).rows[0];
+      if(!target)deny(404,'人员不属于该组织');
+      if(target.role===role)deny(409,'该人员已经是目标组织角色');
       if(role==='member'){
         const admins=await db.query(`SELECT user_id FROM tenant_members
           WHERE tenant_id=$1 AND role='admin' FOR UPDATE`,[tenantId]);
@@ -146,8 +154,9 @@ export function registerGovernanceRoutes(app:FastifyInstance,
       const {rows}=await db.query(`UPDATE tenant_members SET role=$3
         WHERE tenant_id=$1 AND user_id=$2 RETURNING user_id,role`,[tenantId,memberId,role]);
       if(!rows.length)deny(404,'人员不属于该组织');
-      return {value:{member:rows[0]},targetId:memberId,metadata:{role}};
-    });
+      return {value:{member:rows[0]},targetId:memberId,
+        metadata:{previousRole:target.role,newRole:role}};
+    },{replayAccess:'member'});
   });
   app.post('/tenants/:tenantId/departments/:departmentId/members',async req=>{
     const {tenantId,user}=await scope(req,true);
@@ -158,7 +167,9 @@ export function registerGovernanceRoutes(app:FastifyInstance,
       const {rows}=await db.query(`INSERT INTO department_members
         (tenant_id,department_id,user_id,role) VALUES($1,$2,$3,$4)
         ON CONFLICT(department_id,user_id) DO UPDATE SET role=EXCLUDED.role
+          WHERE department_members.role IS DISTINCT FROM EXCLUDED.role
         RETURNING department_id,user_id,role`,[tenantId,departmentId,v.userId,v.role]);
+      if(!rows.length)deny(409,'该人员已经拥有目标部门角色');
       return {value:{member:rows[0]},targetId:v.userId,
         metadata:{departmentId,role:v.role}};
     });
