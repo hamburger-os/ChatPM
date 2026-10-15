@@ -65,3 +65,19 @@ test('project classification commands cannot bypass core tenant governance handl
   assert.match(command,/classification_revision=classification_revision\+1/);
   assert.match(command,/DELETE FROM project_departments/);
 });
+
+test('AI publication transactions fence all outbox claims and never prelease slow batches',()=>{
+  const runner=readFileSync(new URL('../../packages/core/src/conversation/ai-event-runner.ts',import.meta.url),'utf8');
+  const clarification=readFileSync(new URL('../../packages/core/src/clarification.ts',import.meta.url),'utf8');
+  const outbox=readFileSync(new URL('../../packages/core/src/outbox.ts',import.meta.url),'utf8');
+  assert.match(outbox,/export async function assertEventClaim/);
+  assert.match(outbox,/claim_token=\$3/);
+  assert.match(outbox,/FOR UPDATE/);
+  assert.match(runner,/claimEvents\(1\)/,'Claim only the next event to be consumed');
+  assert.doesNotMatch(runner,/const events=await claimEvents\(\)/,
+    'Never prelease a batch whose later AI calls could expire');
+  assert.ok((runner.match(/await assertEventClaim\(db,event\)/g)||[]).length>=3,
+    'AI run state, reply and proposals must all be publication-fenced');
+  assert.ok((clarification.match(/await assertEventClaim\(db,event\)/g)||[]).length>=3,
+    'Each clarification persistence branch must be publication-fenced');
+});
