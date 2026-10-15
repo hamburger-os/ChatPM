@@ -270,3 +270,10 @@ AI 可讨论资源风险，但不能因聊天建议绕过真实组织管理员�
 ## ADR-055 · 项目设置状态变化、模型授权版本与幂等事件
 
 项目设置 PATCH 通过 executePmCommand 在当前 tenant/project owner 写事务内比较 expectedRevision 与 ai_enabled、work_start、work_end、cooldown_hours 当前数据库值；如果所有字段相同，新 UUID 命令返回 409，不产生 project.settings_changed.v1 领域事件、Outbox 通知、Audit 或 CommandReceipt，也不执行 syncFollowup。已完成真正修改的相同 actor/project/kind/key/hash 命令重试应在 mutate 之前返回原回执，不改变后续版本。系统独立的 ai_authorization_version 仅在 ai_enabled 真实变化时由数据库触发器推进，重存同样设置或只更改提醒时间不能冒充一次新的 AI 授权。网页保存按钮只在本地表单不同于最后成功保存快照时启用，但最终写权限、版本与变更判断只能由服务器提供，模型不能改写这些规则或自行启用 AI。
+
+## ADR-056 · Task 历史与报告可信来源
+
+- Task 写入由数据库触发器记录 `project_task_history`，涵盖正规任务创建/更新及已审核 AI 候选生成的正式 Task；AI 生成不经人工确认的提案不计入 Task 交付事实。只记录变化的实际操作，没有更改观察字段的 UPDATE 不增加事件。
+- 周报/月报按项目本地 IANA 周/月界限统计，不把当前已完成任务总数当作本期完成数。计数以数据库历史事实为准，事件最多展示最新 100 条；任务与事件 ID 是来源索引，不等同于 AI 语义解释或独立验收通过。
+- 对任务历史列表和单条证据的访问需同时通过当前项目与组织成员资格校验。跨项目 eventId/taskId/tenant 组合不得泄漏。历史迁移前的操作不允许补造；旧已发布报告不覆盖。
+- Web 把生成报告中严格匹配的 UUID 引用显示为项目内只读 evidence 链接，不渲染不可信 HTML。Worker 保持同周期首次生成一次、可人工刷新草稿、发布之后冻结。生产环境性能、SSO/复杂项目组合与全域过程事实仍需额外验收。
