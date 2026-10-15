@@ -12,12 +12,16 @@ const template = [
 
 test('new install generates both independent high-entropy secrets without touching unrelated settings', () => {
   const { text, generated } = prepareDockerEnv(template);
-  assert.deepEqual(generated, ['SESSION_SECRET', 'MODEL_ENCRYPTION_KEY', 'POSTGRES_PASSWORD']);
+  assert.deepEqual(generated, ['SESSION_SECRET', 'MODEL_ENCRYPTION_KEY', 'POSTGRES_PASSWORD', 'BOOTSTRAP_TOKEN']);
   const session = text.match(/^SESSION_SECRET=([a-f0-9]{64})$/m)?.[1];
   const postgres = text.match(/^POSTGRES_PASSWORD=([a-f0-9]{64})$/m)?.[1];
   assert.ok(session);
   assert.ok(postgres);
+  const bootstrap=text.match(/^BOOTSTRAP_TOKEN=([a-f0-9]{64})$/m)?.[1];
+  assert.ok(bootstrap);
   assert.notEqual(session, postgres);
+  assert.notEqual(bootstrap, session);
+  assert.notEqual(bootstrap, postgres);
   assert.match(text, /^LLM_API_KEY=$/m);
   assert.match(text, /^WEB_ORIGIN=http:\/\/localhost:3000$/m);
 });
@@ -29,7 +33,7 @@ test('rerun is idempotent and keeps user-provided secrets', () => {
   assert.deepEqual(twice.generated, []);
   const custom = prepareDockerEnv('SESSION_SECRET=' + 'a'.repeat(40) +
     '\nPOSTGRES_PASSWORD=my-password\nWEB_ORIGIN=https://chatpm.example\n');
-  assert.deepEqual(custom.generated, ['MODEL_ENCRYPTION_KEY']);
+  assert.deepEqual(custom.generated, ['MODEL_ENCRYPTION_KEY','BOOTSTRAP_TOKEN']);
   assert.match(custom.text, /^POSTGRES_PASSWORD=my-password$/m);
   assert.match(custom.text, /^WEB_ORIGIN=https:\/\/chatpm.example$/m);
 });
@@ -83,6 +87,7 @@ test('native installer generates secret but never accepts template database pass
   const prepared = prepareNativeEnv(template);
   assert.match(prepared, /^SESSION_SECRET=[a-f0-9]{64}$/m);
   assert.match(prepared, /^MODEL_ENCRYPTION_KEY=[a-f0-9]{64}$/m);
+  assert.match(prepared, /^BOOTSTRAP_TOKEN=[a-f0-9]{64}$/m);
   assert.ok(validateNativeEnv(prepared).some(x => x.includes('DATABASE_URL')));
   const valid = prepared.replace('chatpm:chatpm@', 'chatpm:uniqueStrongPassword@');
   assert.deepEqual(validateNativeEnv(valid), []);
@@ -102,6 +107,7 @@ test('existing PostgreSQL volume blocks missing or placeholder credentials', () 
   assert.throws(() => assertSafeDockerBootstrap(['POSTGRES_PASSWORD'], true), /existing ChatPM PostgreSQL/);
   assert.throws(() => assertSafeDockerBootstrap(['SESSION_SECRET'], true), /Recover the original/);
   assert.doesNotThrow(() => assertSafeDockerBootstrap([], true));
+  assert.doesNotThrow(() => assertSafeDockerBootstrap(['BOOTSTRAP_TOKEN'], true));
   assert.doesNotThrow(() => assertSafeDockerBootstrap(['SESSION_SECRET', 'POSTGRES_PASSWORD'], false));
 });
 
