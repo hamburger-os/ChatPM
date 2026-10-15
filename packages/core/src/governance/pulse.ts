@@ -4,7 +4,7 @@ type ProjectPulse={
   id:string;name:string;department_id:string|null;
   program_id:string|null;portfolio_id:string|null;
   effective_portfolio_id:string|null;
-  tasks_total:number;tasks_done:number;tasks_blocked:number;
+  tasks_total:number;tasks_done:number;tasks_cancelled:number;tasks_blocked:number;
   tasks_overdue:number;risks_open:number;planned_percentage_points:number;
 };
 type Program={id:string;name:string;portfolio_id:string|null};
@@ -14,18 +14,18 @@ type ResourceLoad={
   planned_percentage:number;project_count:number;
 };
 type Metrics={
-  project_count:number;tasks_total:number;tasks_done:number;
+  project_count:number;tasks_total:number;tasks_done:number;tasks_cancelled:number;
   tasks_blocked:number;tasks_overdue:number;risks_open:number;
   planned_percentage_points:number;
 };
 const empty=():Metrics=>({
-  project_count:0,tasks_total:0,tasks_done:0,
+  project_count:0,tasks_total:0,tasks_done:0,tasks_cancelled:0,
   tasks_blocked:0,tasks_overdue:0,risks_open:0,
   planned_percentage_points:0,
 });
 function add(into:Metrics,p:ProjectPulse){
   into.project_count++;
-  for(const key of ['tasks_total','tasks_done','tasks_blocked',
+  for(const key of ['tasks_total','tasks_done','tasks_cancelled','tasks_blocked',
     'tasks_overdue','risks_open','planned_percentage_points'] as const)
     into[key]+=p[key];
 }
@@ -89,13 +89,14 @@ export async function getGovernancePulse(tenantId:string,actorId:string,onDate:s
       db.query<ProjectPulse>(`
         SELECT p.id,p.name,p.department_id,p.program_id,p.portfolio_id,
           COALESCE(g.portfolio_id,p.portfolio_id) AS effective_portfolio_id,
-          ts.tasks_total,ts.tasks_done,ts.tasks_blocked,ts.tasks_overdue,
+          ts.tasks_total,ts.tasks_done,ts.tasks_cancelled,ts.tasks_blocked,ts.tasks_overdue,
           rs.risks_open,als.planned_percentage_points
         FROM projects p
         LEFT JOIN programs g ON g.tenant_id=p.tenant_id AND g.id=p.program_id
         CROSS JOIN LATERAL (
           SELECT COUNT(*)::int AS tasks_total,
             COUNT(*) FILTER(WHERE t.status='done')::int AS tasks_done,
+            COUNT(*) FILTER(WHERE t.status='cancelled')::int AS tasks_cancelled,
             COUNT(*) FILTER(WHERE t.status='blocked')::int AS tasks_blocked,
             COUNT(*) FILTER(WHERE t.due_date<$2::date
               AND t.status NOT IN ('done','cancelled'))::int AS tasks_overdue
