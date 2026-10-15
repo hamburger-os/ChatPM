@@ -235,10 +235,12 @@ app.delete('/projects/:id/members/:memberId',async req=>{
   const {id,memberId}=req.params as {id:string;memberId:string};
   const projectId=uuid.parse(id),target=uuid.parse(memberId);
   const actor=await authenticated(req);
-  if(actor===target) fail(400,'不能通过此接口移除项目负责人');
   return transaction(async db=>{
     const access=await lockProjectAccess(db,projectId,actor);
     assertProject(access.role,'members.manage');
+    // Authorize before self-removal validation; members must get 403, not a
+    // misleading owner-only rule or an authorization oracle.
+    if(actor===target) fail(400,'不能通过此接口移除项目负责人');
     // Serialize revocation with task creation/assignment using the member row lock.
     const found=await db.query(`SELECT 1 FROM project_members
       WHERE project_id=$1 AND user_id=$2 AND role='member' FOR UPDATE`,
