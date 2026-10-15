@@ -95,6 +95,9 @@ export function registerProjectGovernanceRoutes(
               AND status NOT IN ('done','cancelled') LIMIT 1`,
             [projectId,target]);
           if(active.rowCount)fail(409,'该人员仍有未完成任务，请先移交任务');
+          const risk=await db.query(`SELECT 1 FROM risks WHERE project_id=$1
+            AND owner_id=$2 AND status<>'resolved' LIMIT 1`,[projectId,target]);
+          if(risk.rowCount)fail(409,'该人员仍负责未关闭风险，请先移交风险');
         }
         await db.query(`UPDATE project_members SET role=$3
           WHERE project_id=$1 AND user_id=$2`,
@@ -126,6 +129,10 @@ export function registerProjectGovernanceRoutes(
           WHERE project_id=$1 AND assignee_id=$2
             AND status NOT IN ('done','cancelled') LIMIT 1`,[projectId,target]);
         if(active.rowCount)fail(409,'该成员仍有未完成任务，请先重新指派或取消任务');
+        const risk=await db.query(`SELECT 1 FROM risks
+          WHERE project_id=$1 AND owner_id=$2 AND status<>'resolved' LIMIT 1`,
+          [projectId,target]);
+        if(risk.rowCount)fail(409,'该成员仍负责未关闭风险，请先移交风险');
         await db.query(`DELETE FROM project_members
           WHERE project_id=$1 AND user_id=$2 AND role<>'owner'`,
           [projectId,target]);

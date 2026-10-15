@@ -47,7 +47,7 @@ export async function generateReport(
        ) AS attention_tasks,
        (SELECT COALESCE(json_agg(item), '[]'::json)
         FROM (SELECT id,title FROM risks
-              WHERE project_id=p.id AND status='open'
+              WHERE project_id=p.id AND status<>'resolved'
               ORDER BY created_at DESC LIMIT 100) AS item
        ) AS open_risks
      FROM projects p WHERE p.id=$1`,

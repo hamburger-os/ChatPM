@@ -153,3 +153,7 @@ CI 新增 `tools/test/task-linkage-smoke.mjs`：PostgreSQL 创建正式任务与
 检查旧 `server.ts` 不再重复注册 Outbox 三条运维路由；读取仍只允许当前组织和项目的 owner，POST 必须经过事务内的 `operations.manage` 权限锁并要求 UUID `idempotencyKey`。仅允许 dead_at 非空、processed_at 为空且属于当前项目的事件重置尝试/lease/error/backoff；其它事件均 409，不能跨项目恢复。相同键和 payload 200 回放持久 Receipt，不再执行 UPDATE 或产生第二领域事件；新键再次恢复 409；恢复操作自身生成一条 Audit、DomainEvent 和 `domain.changed` Outbox 事件，全部同事务提交。回归验证普通成员 403、无键 400、重试幂等、原 Outbox 退避/领取/认领 token、Worker、报告、Win/Linux/Docker 与 docs-sync。只在最新 PR Head 五项 CI 通过且 Review 无未解决线程后合并。真实环境 Worker 抢占/网络分区与生产恢复签署仍是未完成 P4 范围。
 
 **ADR-045 增量回归：** `018_outbox_manual_retry_revision.sql` 不重写存量版本和消费者租约；首次恢复版本 1，同键重放仍是 1，将事件模拟重新隔离后新的有权命令返回版本 2；领域事件 aggregateVersion 必须按 1、2 顺序递增。没有真实状态变更的命令不能增加 revision 或事件。
+
+## ADR-046 · 风险命令与历史的 /review
+
+检查风险不等同 Issue：accepted AI Risk 初始 open/v1，无人类概率/计划/责任人且模型不能直接改变状态。风险评估需要 active tenant/project 非 observer owner、likelihood/impact 1–5、非空 responsePlan 与人类说明；动作仅 owner/manager 的 pm.plan 且需 UUID idempotencyKey 与 expectedVersion。open→mitigating 必须已有有效人类评估，mitigating→resolved 和 resolved→open 必须带说明，不能 open→resolved 跳状态；已关闭风险不得直接覆写评估。每次真实操作增加 version 和不可修改、跨项目复合 FK 的 risk_register_changes 历史，Audit/DomainEvent/Outbox/Receipt 同事务；原 key 请求回放不产生第二个历史，新 key 旧版本 409。普通成员操作 403、历史查询项目隔离，manager/member/observer 降权/移除遇未解决风险负责人必须先交接。报表 open+mitigating 都是未解决风险。验证新 019 迁移、API Smoke、TS/前端、Windows/Linux/Docker 以及静态扫描，最新 PR Head 五项 CI 与零未解决审查线程后方可合并。完整定量风险建模、迁移演练和生产安全仍未验收。

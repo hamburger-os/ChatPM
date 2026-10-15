@@ -106,3 +106,7 @@
 ## ADR-045 · Outbox 人工死信恢复命令
 
 项目 owner 查询 Outbox 摘要/死信和人工重试现由 `apps/api/src/operations-routes.ts` 管理；`POST /projects/:id/outbox/:eventId/retry` 强制 UUID `idempotencyKey` 并调用 `executePmCommand`，只可恢复本项目尚未完成且 `dead_at` 非空的死信。目标行锁、当前 tenant/project owner 授权、恢复尝试次数/claim 状态、审计、DomainEvent、Outbox 和 CommandReceipt 同事务；成功的同键重试返回原回执，不会再次修改 Worker 状态，新键二次恢复返回 409。API Smoke 覆盖权限拒绝、无键拒绝、重放、重复恢复和事件数。恢复只意味着重新入队，不保证 Worker 随后处理成功；项目创建、Tenant 治理与真实多副本故障注入仍需后续验收。
+
+## ADR-046 · 风险登记簿与人工应对状态
+
+新增 `019_risk_register_lifecycle.sql`（不改历史迁移）为 Risk 增加 1–5 发生可能性/影响评估、当前负责人的历史性用户引用、应对计划、version 和不可变 `risk_register_changes` 记录；正式风险从 open 经 mitigating 才能到 resolved，resolved 重新打开需说明。AI 生成的 risk 候选只有经人工接受才进入未评估 open，模型不能自行关闭风险。项目 owner/manager 对评估与流转提交 UUID idempotencyKey + expectedVersion，当前 tenant/project 权限锁、风险行锁、成员责任验证、Audit/DomainEvent/Outbox/Receipt 与历史行同事务。Web 项目任务页增加风险评估、状态操作与历史查看，非管理员仅浏览。人员被降为 observer 或移出项目前要先移交未解决风险。周/月报把 mitigating 与 open 都列入未解决风险。真实 Postgres/API smoke 验证越权、未评估不能应对、重试/冲突、状态闭环、事件/历史版本与报告统计。仍不等于完整 RAID、量化预算/资源容量或真实模型质量、迁移恢复和生产验收。

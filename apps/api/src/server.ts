@@ -11,6 +11,7 @@ import { registerApprovalRoutes } from './approval-routes.ts';
 import { registerReportRoutes } from './report-routes.ts';
 import { registerProjectGovernanceRoutes } from './project-governance-routes.ts';
 import { registerOperationsRoutes } from './operations-routes.ts';
+import { registerRiskRoutes } from './risk-routes.ts';
 import { randomUUID } from 'node:crypto';
 import { signedQuotaKey } from '../../../packages/core/src/quota-key.ts';
 import Fastify from 'fastify';
@@ -272,11 +273,6 @@ app.get('/projects/:id/proposals',async req=>{
     [projectId]);
   return {proposals:rows};
 });
-app.get('/projects/:id/risks',async req=>{
-  const projectId=uuid.parse((req.params as {id:string}).id);
-  await member(await authenticated(req),projectId);
-  return {risks:(await pool.query('SELECT * FROM risks WHERE project_id=$1 ORDER BY created_at DESC',[projectId])).rows};
-});
 registerAdminModelRoutes(app,authenticated);
 registerGovernanceRoutes(app,authenticated);
 registerPmRoutes(app,authenticated);
@@ -286,5 +282,6 @@ registerApprovalRoutes(app,authenticated);
 registerReportRoutes(app,authenticated);
 registerProjectGovernanceRoutes(app,authenticated);
 registerOperationsRoutes(app,authenticated);
+registerRiskRoutes(app,authenticated);
 app.addHook('onClose',async()=>{await pool.end();});
 await app.listen({port,host:serverConfig.API_HOST});
