@@ -119,3 +119,9 @@
 - `localhost` 例外只接受回环地址，`host.docker.internal` 例外只接受 10/8、172.16/12、192.168/16 和 ULA fc00::/7，不能信任任意「private」结果，尤其不得允许链接本地地址、云元数据、CGNAT、IPv4-mapped metadata、公网 DNS 污染或 NAT64 reserved 地址。
 - `secureModelFetch` 只接受 `Authorization`、`Content-Type`、`Accept` 业务头；禁止 Host/Proxy-Authorization/Forwarded/Content-Length/Transfer-Encoding/Connection 等控制头以及任何调用方自定义头，避免代理绕过和 HTTP framing 混淆。
 - Docker Host 网关的受信任性需要部署端明确控制 DNS 与出站防火墙。纯 Node 单元测试与 CI 不能替代真实 IPv6/DNS64/QNAP 生产验证。
+
+## ADR-063 · 组织结构读模型授权边界
+
+- 组织结构路由只做 UUID 输入与身份解析，查询表的所有权在 `core/governance/structure-query.ts`；禁止在 HTTP route 中恢复重复的 `pool.query` 和事后 tenant role 判断。
+- 读事务必须先验证当前 TenantMember 并锁定行，再以同一事务快照读取部门、项目集、组合和项目归属；普通成员只可看明确授予 ProjectMember 的项目分类，读期间持有对应 membership SHARE 锁。
+- 组织人员关系不等价于项目成员权限；管理员可作组织治理查看并不因此可以访问所有项目消息。真实 PostgreSQL 测试覆盖跨租户拒绝、项目撤权、组织撤权。此改动不能当作其他 API/Worker 领域读写收敛已经完成。
