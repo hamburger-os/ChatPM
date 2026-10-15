@@ -241,6 +241,79 @@ try{
   assert.equal(repeatAllocation.status,201);
   assert.equal(repeatAllocation.data.allocation.id,allocation.data.allocation.id);
   assert.equal(allocation.status,201,JSON.stringify(allocation.data));
+
+  const allocationPath='/tenants/'+tenantId+'/allocations';
+  const capacityProject=await api('/projects',{method:'POST',body:{
+    idempotencyKey:randomUUID(),name:'跨项目容量 '+suffix,tenantId,
+    timezone:'Asia/Shanghai'}});
+  assert.equal(capacityProject.status,201,JSON.stringify(capacityProject.data));
+  const secondPid=capacityProject.data.project.id;
+  const incompleteMembership=await api(allocationPath,{method:'POST',body:{
+    idempotencyKey:randomUUID(),projectId:secondPid,userId:second.data.user.id,
+    percentage:50,startDate:'2026-10-10',endDate:'2026-10-20'}});
+  assert.equal(incompleteMembership.status,400,
+    'Tenant member cannot be allocated into a project before joining it');
+
+  const fullCapacity={idempotencyKey:randomUUID(),
+    projectId:secondPid,userId:uid,percentage:70,
+    startDate:'2026-10-10',endDate:'2026-10-20'};
+  const filled=await api(allocationPath,{method:'POST',body:fullCapacity});
+  assert.equal(filled.status,201,JSON.stringify(filled.data));
+  const replayFilled=await api(allocationPath,{method:'POST',body:fullCapacity});
+  assert.equal(replayFilled.status,201);
+  assert.equal(replayFilled.data.allocation.id,filled.data.allocation.id);
+  const collidingKey=await api(allocationPath,{method:'POST',body:{
+    ...fullCapacity,percentage:60}});
+  assert.equal(collidingKey.status,409,
+    'Same committed tenant command key cannot be reused for new capacity');
+  const exceededKey=randomUUID();
+  const overbooked=await api(allocationPath,{method:'POST',body:{
+    idempotencyKey:exceededKey,projectId:secondPid,userId:uid,percentage:1,
+    startDate:'2026-10-11',endDate:'2026-10-11'}});
+  assert.equal(overbooked.status,409,'30% plus 70% leaves no spare daily capacity');
+  assert.equal((await db.query(`SELECT count(*)::int AS n
+    FROM tenant_command_receipts WHERE tenant_id=$1 AND actor_id=$2
+      AND kind='allocation.recorded' AND idempotency_key=$3`,
+    [tenantId,uid,exceededKey])).rows[0].n,0,
+    'Rejected allocation must roll back its command receipt');
+  const overBoundary=await api(allocationPath,{method:'POST',body:{
+    idempotencyKey:randomUUID(),projectId:secondPid,userId:uid,
+    percentage:71,startDate:'2026-10-31',endDate:'2026-10-31'}});
+  assert.equal(overBoundary.status,409,
+    'Old allocation is still active on its inclusive end date');
+  const exactBoundary=await api(allocationPath,{method:'POST',body:{
+    idempotencyKey:randomUUID(),projectId:secondPid,userId:uid,
+    percentage:70,startDate:'2026-10-31',endDate:'2026-10-31'}});
+  assert.equal(exactBoundary.status,201,'Exact 100% is allowed on a shared boundary');
+  const nonOverlap=await api(allocationPath,{method:'POST',body:{
+    idempotencyKey:randomUUID(),projectId:secondPid,userId:uid,
+    percentage:100,startDate:'2026-11-01',endDate:'2026-11-02'}});
+  assert.equal(nonOverlap.status,201,
+    'End date followed by next day must not be falsely treated as overlap');
+
+  const simultaneousCapacity=await Promise.all([1,2].map(()=>api(allocationPath,{
+    method:'POST',body:{idempotencyKey:randomUUID(),projectId:secondPid,
+      userId:uid,percentage:60,startDate:'2026-11-15',endDate:'2026-11-20'}})));
+  assert.deepEqual(simultaneousCapacity.map(r=>r.status).sort(),[201,409],
+    'Concurrent independent 60% plans for one person must serialize');
+  const secondMember=await api('/projects/'+secondPid+'/members',{
+    method:'POST',body:{idempotencyKey:randomUUID(),
+      email:'second+'+suffix2+'@example.com'}});
+  assert.equal(secondMember.status,200);
+  const independentPerson=await api(allocationPath,{method:'POST',body:{
+    idempotencyKey:randomUUID(),projectId:secondPid,userId:second.data.user.id,
+    percentage:100,startDate:'2026-11-15',endDate:'2026-11-20'}});
+  assert.equal(independentPerson.status,201,
+    'One person at 100% does not reduce another employee capacity');
+  const recordedPlans=(await db.query(`SELECT count(*)::int AS n
+    FROM resource_allocations WHERE tenant_id=$1 AND user_id=$2`,
+    [tenantId,uid])).rows[0].n;
+  assert.equal(recordedPlans,5,'Rejected and replayed allocations cannot add rows');
+  const allocationAuditCount=(await db.query(`SELECT count(*)::int AS n
+    FROM organization_audit_entries WHERE tenant_id=$1
+      AND action='allocation.recorded'`,[tenantId])).rows[0].n;
+  assert.equal(allocationAuditCount,6,
+    'Five plans for the owner and one for second member give six real audit records');
   const auditRows=await db.query(
     'SELECT action FROM organization_audit_entries WHERE tenant_id=$1',[tenantId]);
   const audited=new Set(auditRows.rows.map(x=>x.action));
