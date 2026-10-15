@@ -289,3 +289,15 @@ AI analysis, reminders and reporting run in independent worker lanes. A revoked 
 Reports now distinguish the **current task snapshot** from **actual task changes within the project's local week or month**. The change section counts created, completed, reopened and blocked tasks, as well as due-date adjustments. Up to 100 recent history events are shown with read-only evidence links, while full event counts are retained. Members can also browse a task's paginated history from its task card.
 
 Events are recorded only after the new database migration takes effect; earlier events are never fabricated. AI suggestions are not treated as accepted work, and published reports remain immutable. Project baseline reconstruction, cross-project portfolio summaries, historical risk/issue changes and production deployment certification are not included.
+
+## 2026-10-15 生产注册开关（安全默认）
+
+生产默认 `REGISTRATION_MODE=bootstrap`：一个全新数据库只能通过网页注册**首位**用户并创建组织；后续自注册自动关闭。配置 `REGISTRATION_MODE=closed` 完全关闭新用户注册，明确设置为 `open` 才允许更多匿名用户注册并独立创建组织。Docker Compose 与 Windows/Linux 原生生产模式遵循这一策略；变更环境变量后需重启对应服务，不能在聊天室要求 AI 更改此设置。
+
+当前版本还没有邮件邀请/接受流程。生产环境下不要将 `open` 长期开启，必须配合可信的入站安全措施和组织运营策略。浏览器会自动隐藏被禁用的注册按钮，服务端事务中的安全检查才是最终依据。
+
+## 2026-10-15 Production enrollment policy (secure default)
+
+Production defaults to `REGISTRATION_MODE=bootstrap`: only the first account may be registered into a new database, after which public self-signup is disabled. Set `closed` to disable all public registration or explicitly set `open` to allow anonymous accounts and new organizations. Docker and native production deployments use the same policy; restart the application after changing its environment.
+
+Email invitations and acceptance workflows are not available yet. Do not keep unrestricted `open` registration enabled on a public deployment without trusted edge controls and an operational approval process. The browser hides the signup option when unavailable, while the transaction-scoped server check remains authoritative.

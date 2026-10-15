@@ -16,6 +16,10 @@ async function ready() {
   throw new Error('Frontend proxy or API not ready');
 }
 await ready();
+const registrationPolicy=await request('/api/auth/registration-policy');
+assert.equal(registrationPolicy.status,200);
+assert.equal((await registrationPolicy.json()).allowed,true,
+  'Public registration is explicitly enabled for Docker integration smoke');
 const email='proxy-smoke-'+randomUUID()+'@example.test';
 const headers={'content-type':'application/json','origin':base};
 const registered=await request('/api/auth/register',{

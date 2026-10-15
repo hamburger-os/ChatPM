@@ -24,6 +24,7 @@ import { z, ZodError } from 'zod';
 import { pool, transaction } from '../../../packages/core/src/db.ts';
 import { createSession, hashPassword, readSession, revokeSession, verifyPassword } from '../../../packages/core/src/security.ts';
 import { syncFollowup } from '../../../packages/core/src/followup.ts';
+import { enforceRegistration,mayRegister } from '../../../packages/core/src/identity/registration-policy.ts';
 import { insertMessage } from '../../../packages/core/src/messages.ts';
 
 
@@ -99,10 +100,17 @@ app.get('/health', async () => {
   await pool.query('SELECT 1');
   return {ok:true};
 });
+app.get('/auth/registration-policy',async()=>{
+  const mode=serverConfig.REGISTRATION_MODE;
+  const hasUsers=mode==='bootstrap'
+    ?Boolean((await pool.query('SELECT 1 FROM users LIMIT 1')).rowCount):false;
+  return {allowed:mayRegister(mode,hasUsers)};
+});
 app.post('/auth/register', {config:{rateLimit:{max:5,timeWindow:'1 minute'}}}, async (req,reply) => {
   const input=z.object({email:z.string().email().max(200).transform(x=>x.toLowerCase()),
     displayName:z.string().trim().min(1).max(80),password:z.string().min(10).max(128)}).parse(req.body);
   const user=await transaction(async db=>{
+    await enforceRegistration(db,serverConfig.REGISTRATION_MODE);
     const u=(await db.query(
       'INSERT INTO users(email,display_name,password_hash) VALUES($1,$2,$3) RETURNING id,email,display_name',
       [input.email,input.displayName,hashPassword(input.password)])).rows[0];
