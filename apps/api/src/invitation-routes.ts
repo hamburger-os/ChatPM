@@ -2,7 +2,6 @@ import type {FastifyInstance,FastifyRequest} from 'fastify';
 import {z} from 'zod';
 import {pool} from '../../../packages/core/src/db.ts';
 import {requireTenant} from '../../../packages/core/src/permissions.ts';
-import {hashPassword} from '../../../packages/core/src/security.ts';
 import {
   createTenantInvitation,revokeTenantInvitation,
   acceptTenantInvitationExisting,acceptTenantInvitationNew,
@@ -53,7 +52,7 @@ export function registerInvitationRoutes(
     }).strict().parse(req.body);
     const userId=await acceptTenantInvitationNew({
       token:input.code,email:input.email,displayName:input.displayName,
-      passwordHash:hashPassword(input.password),
+      password:input.password,
     });
     await issueSession(reply,userId);
     return reply.code(201).send({ok:true});
