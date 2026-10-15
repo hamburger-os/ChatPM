@@ -40,8 +40,9 @@ export function registerGovernanceRoutes(app:FastifyInstance,
   });
   app.post('/tenants/:tenantId/departments',async(req,reply)=>{
     const {tenantId,user}=await scope(req,true);
-    const v=z.object({name,parentId:uuid.nullable().default(null)}).parse(req.body);
-    const department=await organizationCommand(tenantId,user,'department.created',async db=>{
+    const v=z.object({idempotencyKey:uuid,name,parentId:uuid.nullable().default(null)}).parse(req.body);
+    const department=await organizationCommand(tenantId,user,'department.created',
+      {idempotencyKey:v.idempotencyKey,payload:v},async db=>{
       const {rows}=await db.query(`INSERT INTO departments(tenant_id,name,parent_id)
         VALUES($1,$2,$3) RETURNING id,name,parent_id`,[tenantId,v.name,v.parentId]);
       return {value:rows[0],targetId:rows[0].id,metadata:{parentId:v.parentId}};
@@ -50,8 +51,9 @@ export function registerGovernanceRoutes(app:FastifyInstance,
   });
   app.post('/tenants/:tenantId/portfolios',async(req,reply)=>{
     const {tenantId,user}=await scope(req,true);
-    const v=z.object({name,description:z.string().max(2000).default('')}).parse(req.body);
-    const portfolio=await organizationCommand(tenantId,user,'portfolio.created',async db=>{
+    const v=z.object({idempotencyKey:uuid,name,description:z.string().max(2000).default('')}).parse(req.body);
+    const portfolio=await organizationCommand(tenantId,user,'portfolio.created',
+      {idempotencyKey:v.idempotencyKey,payload:v},async db=>{
       const {rows}=await db.query(`INSERT INTO portfolios(tenant_id,name,description)
         VALUES($1,$2,$3) RETURNING id,name,description`,[tenantId,v.name,v.description]);
       return {value:rows[0],targetId:rows[0].id};
@@ -60,9 +62,10 @@ export function registerGovernanceRoutes(app:FastifyInstance,
   });
   app.post('/tenants/:tenantId/programs',async(req,reply)=>{
     const {tenantId,user}=await scope(req,true);
-    const v=z.object({name,description:z.string().max(2000).default(''),
+    const v=z.object({idempotencyKey:uuid,name,description:z.string().max(2000).default(''),
       portfolioId:uuid.nullable().default(null)}).parse(req.body);
-    const program=await organizationCommand(tenantId,user,'program.created',async db=>{
+    const program=await organizationCommand(tenantId,user,'program.created',
+      {idempotencyKey:v.idempotencyKey,payload:v},async db=>{
       const {rows}=await db.query(`INSERT INTO programs(tenant_id,name,description,portfolio_id)
         VALUES($1,$2,$3,$4) RETURNING id,name,description,portfolio_id`,
         [tenantId,v.name,v.description,v.portfolioId]);
@@ -73,10 +76,11 @@ export function registerGovernanceRoutes(app:FastifyInstance,
   app.patch('/tenants/:tenantId/projects/:projectId/classification',async req=>{
     const {tenantId,user}=await scope(req,true);
     const projectId=uuid.parse((req.params as {projectId:string}).projectId);
-    const v=z.object({departmentId:uuid.nullable(),programId:uuid.nullable(),
+    const v=z.object({idempotencyKey:uuid,departmentId:uuid.nullable(),programId:uuid.nullable(),
       portfolioId:uuid.nullable()}).refine(x=>!x.programId||!x.portfolioId,
       '项目属于项目集时，通过项目集汇总到组合').parse(req.body);
-    const project=await organizationCommand(tenantId,user,'project.classification_changed',async db=>{
+    const project=await organizationCommand(tenantId,user,'project.classification_changed',
+      {idempotencyKey:v.idempotencyKey,payload:v},async db=>{
       const {rows}=await db.query(`UPDATE projects SET department_id=$3,program_id=$4,
         portfolio_id=$5 WHERE tenant_id=$1 AND id=$2
         RETURNING id,department_id,program_id,portfolio_id`,
@@ -96,8 +100,9 @@ export function registerGovernanceRoutes(app:FastifyInstance,
   });
   app.post('/tenants/:tenantId/members',async req=>{
     const {tenantId,user}=await scope(req,true);
-    const v=z.object({email:z.string().email().transform(x=>x.toLowerCase())}).parse(req.body);
-    return organizationCommand(tenantId,user,'tenant.member_added',async db=>{
+    const v=z.object({idempotencyKey:uuid,email:z.string().email().transform(x=>x.toLowerCase())}).parse(req.body);
+    return organizationCommand(tenantId,user,'tenant.member_added',
+      {idempotencyKey:v.idempotencyKey,payload:v},async db=>{
       const found=await db.query('SELECT id FROM users WHERE email=$1',[v.email]);
       if(!found.rowCount)deny(404,'请先让该人员注册账号（邀请机制仍在规划中）');
       const memberId=found.rows[0].id as string;
@@ -109,8 +114,10 @@ export function registerGovernanceRoutes(app:FastifyInstance,
   app.patch('/tenants/:tenantId/members/:memberId',async req=>{
     const {tenantId,user}=await scope(req,true);
     const memberId=uuid.parse((req.params as {memberId:string}).memberId);
-    const {role}=z.object({role:z.enum(['admin','member'])}).parse(req.body);
-    return organizationCommand(tenantId,user,'tenant.member_role_changed',async db=>{
+    const v=z.object({idempotencyKey:uuid,role:z.enum(['admin','member'])}).parse(req.body);
+    const {role}=v;
+    return organizationCommand(tenantId,user,'tenant.member_role_changed',
+      {idempotencyKey:v.idempotencyKey,payload:v},async db=>{
       if(role==='member'){
         const admins=await db.query(`SELECT user_id FROM tenant_members
           WHERE tenant_id=$1 AND role='admin' FOR UPDATE`,[tenantId]);
@@ -126,8 +133,9 @@ export function registerGovernanceRoutes(app:FastifyInstance,
   app.post('/tenants/:tenantId/departments/:departmentId/members',async req=>{
     const {tenantId,user}=await scope(req,true);
     const departmentId=uuid.parse((req.params as {departmentId:string}).departmentId);
-    const v=z.object({userId:uuid,role:z.enum(['lead','member']).default('member')}).parse(req.body);
-    return organizationCommand(tenantId,user,'department.member_assigned',async db=>{
+    const v=z.object({idempotencyKey:uuid,userId:uuid,role:z.enum(['lead','member']).default('member')}).parse(req.body);
+    return organizationCommand(tenantId,user,'department.member_assigned',
+      {idempotencyKey:v.idempotencyKey,payload:v},async db=>{
       const {rows}=await db.query(`INSERT INTO department_members
         (tenant_id,department_id,user_id,role) VALUES($1,$2,$3,$4)
         ON CONFLICT(department_id,user_id) DO UPDATE SET role=EXCLUDED.role
@@ -145,10 +153,11 @@ export function registerGovernanceRoutes(app:FastifyInstance,
   });
   app.post('/tenants/:tenantId/allocations',async(req,reply)=>{
     const {tenantId,user}=await scope(req,true);
-    const v=z.object({projectId:uuid,userId:uuid,percentage:z.number().int().min(1).max(100),
+    const v=z.object({idempotencyKey:uuid,projectId:uuid,userId:uuid,percentage:z.number().int().min(1).max(100),
       startDate:z.string().date(),endDate:z.string().date()})
       .refine(x=>x.startDate<=x.endDate,'结束日期不得早于开始日期').parse(req.body);
-    const allocation=await organizationCommand(tenantId,user,'allocation.recorded',async db=>{
+    const allocation=await organizationCommand(tenantId,user,'allocation.recorded',
+      {idempotencyKey:v.idempotencyKey,payload:v},async db=>{
       const {rows}=await db.query(`INSERT INTO resource_allocations
         (tenant_id,project_id,user_id,percentage,start_date,end_date)
         SELECT p.tenant_id,p.id,pm.user_id,$4,$5,$6

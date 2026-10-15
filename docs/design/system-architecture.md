@@ -70,3 +70,7 @@ Project.owner_id 是正式负责人身份；project_members 同项目只能一�
 ## ADR-049 · ChangeRequest 后续履约状态
 
 正式变更审批是前置决策，不是任务状态。经 owner 独立批准的 ChangeRequest 才可由项目 manager/owner 指定有效实施责任人进入 implementing；实施完成需复核方（与实施责任人不同）引用本项目该执行人发布、发生在实施启动后的 user 消息，方能进入 implemented。实现由 PM 正式 command endpoint 经 PostgreSQL 事务写变化后的 ChangeRequest、独立项目复合 FK 的历史及 CommandReceipt/Audit/DomainEvent/Outbox；分离执行凭据/复核结论，保持模型候选无签署权限。变更作用于具体里程碑/成本/范围的后续命令不在这次隐式实现，避免越权修改计划基线。
+
+## ADR-051 · Tenant Governance Command 的唯一写入语义
+
+应用中与部门、项目集、组合、组织成员、项目分类和资源分配有关的 8 个写 API 统一强制 UUID idempotencyKey。组织命令服务锁住 tenant-governance advisory transaction lock 并重验 tenant_members admin FOR UPDATE，随后占有 tenant_command_receipts(tenant,actor,kind,key) 的唯一行。新命令运行业务 SQL -> organization_audit_entries -> 持久回执结果；同命令回放不触发后续 SQL/审计，同键不同 payload 409，权限撤销者即便掌握旧 key 也不能获取回执。组织 Command 与项目领域独立，不写带虚假 project_id 的 DomainEvent；迁移 021 表结构足够，无须增加新 migration。

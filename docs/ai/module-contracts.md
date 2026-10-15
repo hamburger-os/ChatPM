@@ -250,3 +250,7 @@ POST /projects 请求体必须有 UUID idempotencyKey、tenantId、name、timezo
 ChangeRequest 的 approved 只表示人工批准，不能等同实施完成。POST /projects/:projectId/pm/changes/:itemId/implementation 的 start 阶段需 PM 经理、当前有效执行人及文本说明；complete 阶段需不同于执行人的 PM 经理/owner 按 pm.accept 复核，引用同项目真实 human user 消息的 evidenceMessageId，消息作者必须为实施责任人且创建于该实施启动之后。命令带 expectedVersion 和 UUID idempotencyKey，原消息 UUID、人工说明、批准/执行/复核人均有事务审计；AI-generated 消息不成为正式实施证据，完成声明不会自动影响任务与计划基线。
 
 **ADR-049 责任变更补充：** 实施中的 reassign 命令要求有效新 ownerId 与人工说明，仍经 pm.plan 项目权限、UUID 幂等与预期版本保护；原有消息证据在交接后不再满足实施时间条件。成员撤权/降为观察者前须先移交未完成的变更实施职责。complete 仍需实施者当前具组织和项目有效资格，不可用 AI、已撤权人员或旧 owner 的消息自动完成验收。
+
+## ADR-051 · 组织创建与人事操作不可被模型自治
+
+部门、组合、项目集创建、人员变更、项目归属、资源投入的 8 个组织管理写 API 只能由活跃 tenant admin 触发，均要求 UUID idempotencyKey；同次操作网络重试返回已提交回执，不能重复注册人员、改变投入比或创造新的资源行。系统总管理员身份及 AI 项目聊天室不替代组织成员角色，模型不可自行操作。租户级回执不应包含供应商 API Key 或正文。组织治理的独立 DomainEvent/Outbox 和容量计算仍属于后续设计，不可将本次原 OrganizationAudit 当成项目正式验收。

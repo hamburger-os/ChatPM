@@ -158,9 +158,14 @@ try{
     idempotencyKey:randomUUID(),name:'不能创建的项目',tenantId,
     timezone:'Asia/Shanghai'}});
   assert.equal(unauthorizedTenant.status,403,'Cannot create projects in another tenant');
+  const memberEnroll={idempotencyKey:randomUUID(),
+    email:'second+'+suffix2+'@example.com'};
   const addOrgMember=await api('/tenants/'+tenantId+'/members',{
-    method:'POST',body:{email:'second+'+suffix2+'@example.com'}});
+    method:'POST',body:memberEnroll});
   assert.equal(addOrgMember.status,200,'Tenant administrator must enroll person first');
+  const memberEnrollReplay=await api('/tenants/'+tenantId+'/members',{
+    method:'POST',body:memberEnroll});
+  assert.equal(memberEnrollReplay.status,200,'Tenant membership enroll command must replay');
   const memberCannotCreate=await api('/projects',{method:'POST',cookie:cookieB,body:{
     idempotencyKey:randomUUID(),name:'Tenant member no-admin project',tenantId,
     timezone:'Asia/Shanghai'}});
@@ -168,20 +173,53 @@ try{
     'Tenant membership alone does not grant project creation');
   // Organization governance: route-level authorization, classification and audit.
   const forbiddenPortfolio=await api('/tenants/'+tenantId+'/portfolios',{
-    method:'POST',cookie:cookieB,body:{name:'Forbidden Portfolio'}});
+    method:'POST',cookie:cookieB,body:{
+      idempotencyKey:randomUUID(),name:'Forbidden Portfolio'}});
   assert.equal(forbiddenPortfolio.status,403,'Tenant members cannot manage portfolios');
   const dep=await api('/tenants/'+tenantId+'/departments',{
-    method:'POST',body:{name:'Engineering '+suffix,parentId:null}});
+    method:'POST',body:{idempotencyKey:randomUUID(),
+      name:'Engineering '+suffix,parentId:null}});
   assert.equal(dep.status,201,JSON.stringify(dep.data));
-  const portfolio=await api('/tenants/'+tenantId+'/portfolios',{
-    method:'POST',body:{name:'Delivery '+suffix,description:'Portfolio for smoke'}});
-  assert.equal(portfolio.status,201,JSON.stringify(portfolio.data));
+  const portfolioInput={idempotencyKey:randomUUID(),
+    name:'Delivery '+suffix,description:'Portfolio for smoke'};
+  const portfolios=await Promise.all(Array.from({length:4},
+    ()=>api('/tenants/'+tenantId+'/portfolios',{method:'POST',body:portfolioInput})));
+  for(const result of portfolios)assert.equal(result.status,201,JSON.stringify(result.data));
+  const portfolio=portfolios[0];
+  assert.ok(portfolios.every(x=>x.data.portfolio.id===portfolio.data.portfolio.id),
+    'Concurrent identical organization commands must share one durable portfolio');
+  const portfolioReplay=await api('/tenants/'+tenantId+'/portfolios',{
+    method:'POST',body:portfolioInput});
+  assert.equal(portfolioReplay.status,201);
+  assert.equal(portfolioReplay.data.portfolio.id,portfolio.data.portfolio.id);
+  const portfolioConflict=await api('/tenants/'+tenantId+'/portfolios',{
+    method:'POST',body:{...portfolioInput,name:'Different portfolio'}});
+  assert.equal(portfolioConflict.status,409,'Reused key with different organization payload');
+  const portfolioNoKey=await api('/tenants/'+tenantId+'/portfolios',{
+    method:'POST',body:{name:'Portfolio missing UUID'}});
+  assert.equal(portfolioNoKey.status,400);
+  const portfolioRows=(await db.query(`SELECT count(*)::int AS n FROM portfolios
+    WHERE tenant_id=$1 AND name=$2`,[tenantId,portfolioInput.name])).rows[0].n;
+  assert.equal(portfolioRows,1,'Multiple identical requests may only create one portfolio');
+  const organizationReceipts=(await db.query(`SELECT result,payload_hash
+    FROM tenant_command_receipts WHERE tenant_id=$1 AND actor_id=$2
+      AND kind='portfolio.created' AND idempotency_key=$3`,
+    [tenantId,uid,portfolioInput.idempotencyKey])).rows;
+  assert.equal(organizationReceipts.length,1);
+  assert.equal(organizationReceipts[0].result.id,portfolio.data.portfolio.id);
+  const portfolioAudits=(await db.query(`SELECT count(*)::int AS n
+    FROM organization_audit_entries WHERE tenant_id=$1
+      AND action='portfolio.created' AND target_id=$2`,
+    [tenantId,portfolio.data.portfolio.id])).rows[0].n;
+  assert.equal(portfolioAudits,1,'Network retries must not duplicate organization audit');
   const program=await api('/tenants/'+tenantId+'/programs',{
-    method:'POST',body:{name:'Integration '+suffix,description:'Program for smoke',
+    method:'POST',body:{idempotencyKey:randomUUID(),
+      name:'Integration '+suffix,description:'Program for smoke',
       portfolioId:portfolio.data.portfolio.id}});
   assert.equal(program.status,201,JSON.stringify(program.data));
   const classification=await api('/tenants/'+tenantId+'/projects/'+pid+'/classification',{
-    method:'PATCH',body:{departmentId:dep.data.department.id,
+    method:'PATCH',body:{idempotencyKey:randomUUID(),
+      departmentId:dep.data.department.id,
       programId:program.data.program.id,portfolioId:null}});
   assert.equal(classification.status,200,JSON.stringify(classification.data));
   assert.equal(classification.data.project.program_id,program.data.program.id);
@@ -190,10 +228,18 @@ try{
   assert.ok(structure.data.projects.some(p=>p.id===pid&&p.program_id===program.data.program.id));
   const assignDepartment=await api('/tenants/'+tenantId+'/departments/'+
     dep.data.department.id+'/members',{
-    method:'POST',body:{userId:second.data.user.id,role:'member'}});
+    method:'POST',body:{idempotencyKey:randomUUID(),
+      userId:second.data.user.id,role:'member'}});
   assert.equal(assignDepartment.status,200,JSON.stringify(assignDepartment.data));
-  const allocation=await api('/tenants/'+tenantId+'/allocations',{method:'POST',body:{
-    projectId:pid,userId:uid,percentage:30,startDate:'2026-10-01',endDate:'2026-10-31'}});
+  const allocationInput={idempotencyKey:randomUUID(),
+    projectId:pid,userId:uid,percentage:30,startDate:'2026-10-01',endDate:'2026-10-31'};
+  const allocation=await api('/tenants/'+tenantId+'/allocations',{
+    method:'POST',body:allocationInput});
+  assert.equal(allocation.status,201);
+  const repeatAllocation=await api('/tenants/'+tenantId+'/allocations',{
+    method:'POST',body:allocationInput});
+  assert.equal(repeatAllocation.status,201);
+  assert.equal(repeatAllocation.data.allocation.id,allocation.data.allocation.id);
   assert.equal(allocation.status,201,JSON.stringify(allocation.data));
   const auditRows=await db.query(
     'SELECT action FROM organization_audit_entries WHERE tenant_id=$1',[tenantId]);

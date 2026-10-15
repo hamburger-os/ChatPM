@@ -60,6 +60,11 @@ npm run admin:grant -- --email=admin@example.com --confirm
 
 项目 owner 批准变更申请，不代表其范围、时间或责任变更已经落地。项目 owner/manager 需指定有效实施人启动实施；中途可重新指派责任人，旧负责人的聊天记录不会成为新负责人的完成证据。最终需由非实施人的项目 owner/manager 引用本项目实施人在本次实施开始之后发布的原始消息，并填写核验说明，才能把状态记为“已复核实施”。所有操作都有不可变版本历史与幂等回执；人员退出项目前必须先交接尚在实施的变更。工作台不会自动修改项目计划基线。
 
+
+### 组织管理操作的安全重试
+
+部门、项目集、项目组合创建，以及组织成员管理、项目归属和人员资源投入的所有保存操作现在具备持久幂等回执。相同操作在网络超时后可以原样重试，不会额外生成一条项目组合、资源分配或审计记录。普通组织成员不能因此获得管理员操作权限；已经撤销管理员权限的人员也不能通过旧命令恢复管理权。更改表单内容会产生新的操作键。组织项目集与项目组合不同于项目，组织命令记录在租户级，不冒用某个项目的领域事件。
+
 ## English
 
 ### Organization and project structure
@@ -109,4 +114,8 @@ A current project owner can explicitly transfer ownership to an active member of
 ### Approved changes still need implementation and verification
 
 Approval of a ChangeRequest does not mean a scope, schedule or responsibility change has been applied. Project owners/managers designate an active implementer, may reassign the work (resetting the eligible evidence window), and must independently verify completion using a human message posted by the current implementer in the same project after implementation began. A person cannot verify their own implementation. Each action has a durable command receipt and versioned immutable history; active implementation duties must be reassigned before removing or demoting a member. This workflow does not automatically rewrite project baselines.
+
+### Safe retries for organization management
+
+Creation of departments, programs and portfolios, membership/role edits, project classification and resource allocation now require durable tenant-scoped idempotency keys. Retrying the same submission after a lost HTTP response returns the original result without creating another portfolio, allocation or audit entry. Only active tenant administrators can issue these operations; a revoked administrator cannot regain access by replaying an old command. Editing an intent creates a new key. Organization actions do not masquerade as project-scoped DomainEvents.
 

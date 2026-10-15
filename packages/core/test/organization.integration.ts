@@ -16,13 +16,27 @@ try{
   await pool.query(`INSERT INTO tenant_members(tenant_id,user_id,role)
     VALUES($1,$2,'admin'),($1,$3,'member')`,[tenantId,actor,member]);
 
-  const department=await organizationCommand(tenantId,actor,'department.created',async db=>{
+  const firstKey=randomUUID();
+  const firstIntent={idempotencyKey:firstKey,payload:{name:'Verified Department'}};
+  const department=await organizationCommand(tenantId,actor,'department.created',
+    firstIntent,async db=>{
     const {rows}=await db.query(`INSERT INTO departments(tenant_id,name)
       VALUES($1,'Verified Department') RETURNING id,name`,[tenantId]);
     return {value:rows[0] as {id:string;name:string},
       targetId:rows[0].id as string,metadata:{source:'integration'}};
   });
   assert.equal(department.name,'Verified Department');
+  const replay=await organizationCommand(tenantId,actor,'department.created',
+    firstIntent,async()=>{throw new Error('Completed command replay must not invoke mutation');});
+  assert.deepEqual(replay,department);
+  await assert.rejects(organizationCommand(tenantId,actor,'department.created',
+    {idempotencyKey:firstKey,payload:{name:'Other Department'}},
+    async()=>{throw new Error('hash conflict must not mutate');}),/幂等键/);
+  const rootReceipt=await pool.query(`SELECT result,payload_hash FROM tenant_command_receipts
+    WHERE tenant_id=$1 AND actor_id=$2 AND kind='department.created'
+      AND idempotency_key=$3`,[tenantId,actor,firstKey]);
+  assert.equal(rootReceipt.rowCount,1,'Tenant-scoped receipt must be durable');
+  assert.deepEqual(rootReceipt.rows[0].result,department);
   const audits=await pool.query(`SELECT actor_id,action,target_id,metadata
     FROM organization_audit_entries WHERE tenant_id=$1`,[tenantId]);
   assert.equal(audits.rows.length,1);
@@ -33,7 +47,7 @@ try{
 
   // A business error after a write must leave neither domain state nor audit.
   await assert.rejects(
-    organizationCommand(tenantId,actor,'department.created',async db=>{
+    organizationCommand(tenantId,actor,'department.created',{idempotencyKey:randomUUID(),payload:{name:'Rolled Back'}},async db=>{
       await db.query(`INSERT INTO departments(tenant_id,name)
         VALUES($1,'Rolled Back')`,[tenantId]);
       throw new Error('business failure');
@@ -41,7 +55,7 @@ try{
 
   // An audit constraint failure must also roll back the preceding domain write.
   await assert.rejects(
-    organizationCommand(tenantId,actor,'department.created',async db=>{
+    organizationCommand(tenantId,actor,'department.created',{idempotencyKey:randomUUID(),payload:{name:'Audit Failed'}},async db=>{
       await db.query(`INSERT INTO departments(tenant_id,name)
         VALUES($1,'Audit Failed')`,[tenantId]);
       return {value:true,targetId:'invalid-uuid'};
@@ -53,7 +67,7 @@ try{
 
   // A member has no write permission even when the callback is otherwise valid.
   await assert.rejects(
-    organizationCommand(tenantId,member,'department.created',async db=>{
+    organizationCommand(tenantId,member,'department.created',{idempotencyKey:randomUUID(),payload:{name:'Unauthorized'}},async db=>{
       await db.query(`INSERT INTO departments(tenant_id,name)
         VALUES($1,'Unauthorized')`,[tenantId]);
       return {value:true,targetId:null};
@@ -68,7 +82,7 @@ try{
   await pool.query("UPDATE tenant_members SET role='member' WHERE tenant_id=$1 AND user_id=$2",
     [tenantId,actor]);
   await assert.rejects(
-    organizationCommand(tenantId,actor,'portfolio.created',async db=>{
+    organizationCommand(tenantId,actor,'portfolio.created',{idempotencyKey:randomUUID(),payload:{name:'Stale Admin'}},async db=>{
       await db.query("INSERT INTO portfolios(tenant_id,name) VALUES($1,'Stale Admin')",
         [tenantId]);
       return {value:true,targetId:null};

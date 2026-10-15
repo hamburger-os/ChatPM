@@ -175,3 +175,7 @@ CI 新增 `tools/test/task-linkage-smoke.mjs`：PostgreSQL 创建正式任务与
 ## ADR-050 · 独立恢复库 /review
 
 核对 Docker smoke 先完成授权、Cookie、Worker 心跳与 Outbox，再停止 web/api/worker 写入者；source chatpm DB 必须只备份不 drop、不覆盖；仅 CI=true、显式开关开启、postgres running 且其它业务服务均已停才允许演练。使用原生 backup.mjs --docker 输出 0700 临时目录和 0600 custom-format archive，pg_restore --list 实查 TABLE DATA；恢复数据库名称为随机 chatpm_restore_drill_*，必须 createdb -T template0 成功才进入删除逻辑，pg_restore --exit-on-error --no-owner --no-privileges 导入真实 schema+数据。SQL 在 source/target 两端按相同规则输出所有 public 表计数和每行 canonical JSON 的排序 MD5；要求表集合、行数、hash 完整一致，且 schema_migrations、users 非空。内容不写 CI 日志；无论通过/失败都删除自己创建的隔离库与临时备份，恢复工具原本的生产停止服务保护继续存在。纯单元测试覆盖缺表、内容改变不改变行数、无业务样本和重复表。最新 Head 所有五项 workflow success + 无 unresolved review threads 后方可合并；不能用有限 CI 证明 TB 级性能、PITR、Win11 原生与生产恢复时限。
+
+## ADR-051 · Tenant Governance Command /review
+
+核验原组织级 tenant-governance 事务 advisory lock 与 tenant_members FOR UPDATE 当前 admin 身份验证未被简化；所有 8 个组织治理 POST/PATCH 写请求均必须解析 UUID idempotencyKey，调用 OrganizationCommand，在同事务 INSERT tenant_command_receipts (tenant/actor/kind/key 唯一、payload SHA256) → 真正业务变更 → organization_audit_entries → Receipt.result。重复 key+payload 即使并发只能返回原结果，不新增业务或审计；同 key 不同 payload 必须 409、缺 key 400、普通租户成员 403、角色撤销后不能回放原管理员回执。正确复用项目创建时已增加的 021 表，不改迁移 checksum；组织级写入不能伪造 project domain event/outbox。Web 同一业务意图失败重试键稳定、操作成功后清键。真实 Postgres Organization Integration 包含权限撤销、事务失败回滚和 payload hash；完整 API Smoke 包含 4 个同键并发 Portfolio 创建、身份拒绝、已有角色/部门/分类/投入业务回归与复用原键重试，检查唯一 receipt 和组织审计。合并必须在 PR 最新 Head 五项 CI 全 success、无未解决审查线程后执行；完整项目组合价值管理与 Tenant Outbox/乐观并发仍需另行验收。
