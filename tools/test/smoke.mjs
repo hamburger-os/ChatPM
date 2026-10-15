@@ -1512,8 +1512,13 @@ try{
   const report=await api('/projects/'+pid+'/reports',{method:'POST',body:reportInput});
   assert.match(report.data.report.content,/本期任务实际变化/,
     'Report must contain actual period deltas');
-  assert.ok(report.data.report.content.includes(eventId),
-    'Historical report must reference the correct task change event');
+  const historyEvidence=report.data.report.content.match(
+    /（任务 ID ([0-9a-f-]{36})，历史事件 ID ([0-9a-f-]{36})）/);
+  assert.ok(historyEvidence,'Report must contain an actual task change source');
+  const reportSource=await api('/projects/'+pid+'/tasks/'+historyEvidence[1]+
+    '/history/'+historyEvidence[2]);
+  assert.equal(reportSource.status,200,
+    'Source shown in a bounded report must be resolvable within the project');
   assert.equal(report.status,200,JSON.stringify(report.data));
   assert.equal(report.data.report.state,'draft');
   assert.ok(report.data.report.revision>=1);
