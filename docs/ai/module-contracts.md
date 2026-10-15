@@ -226,3 +226,9 @@ apps/api/src/server.ts 中成员增删及权限调整、AI/提醒设置、Outbox
 ## ADR-044 · Project Governance 与 AI 项目开关
 
 项目人员 `POST /projects/:id/members`、`PATCH/DELETE /projects/:id/members/:memberId` 与设置 `PATCH /projects/:id/settings` 都要求 UUID `idempotencyKey`，通过 `executePmCommand` 以当前 tenant/project 的 owner 权限执行；其他角色即使是全局模型管理员也不能越权管理项目。设置 PATCH 同时要求 `expectedRevision`，基于 `projects.settings_revision` 严格乐观检查；与 `projects.ai_authorization_version` 的外发授权变更触发器独立运行。AI 不能从聊天自启模型、修改默认供应商或绕过人工审批。人员写入必须检查目标有效 tenant 身份、行锁、角色与未完成任务；命令的 receipt/event/audit 必须与业务更改同事务。
+
+## ADR-045 · 出站异步事件死信人工恢复命令
+
+`apps/api/src/operations-routes.ts` 暴露项目 owner 读取 Outbox 汇总/死信以及 `POST /projects/:id/outbox/:eventId/retry`，后者请求体必含 UUID `idempotencyKey`。API 通过 `executePmCommand` 对当前组织和项目 `operations.manage` 服务端鉴权，在单事务内恢复原事件、写 Audit/DomainEvent/Outbox/CommandReceipt。命令重放只返回原成功结果，不会重置正在运行的 Worker claim；不同幂等键二次恢复 409。被重新入队是 pending，不等于处理成功或 AI 可以批准候选；历史错误正文不可泄漏给其他角色。
+
+**ADR-045 版本化补充：** 响应 `{ok:true,recoveryRevision}` 是同一原 Outbox 事件历次人工恢复的单调序号，不是 Worker 尝试次数；`domain_events.aggregate_version` 必须等于 `outbox_events.manual_retry_revision`。原命令同 key 重放不改变该值；后续真实重新变 dead 后可产生下一版本的独立恢复事件。

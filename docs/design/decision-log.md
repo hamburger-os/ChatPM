@@ -243,3 +243,13 @@
 **人员不变量：** 受邀人必须是当前 tenant 成员（`FOR SHARE`），目标项目角色修改/移除在 `FOR UPDATE` 锁下检查；不能改变或移除项目 owner；从项目移除 manager/member/observer 均允许，但任何未完成任务先移交或取消，observer 不能保留未完成任务。已存在成员的第二个邀请命令及未发生实际角色变化的第二个命令应返回 409，而不是生成虚假的“添加/变更”事件。
 
 **AI 安全：** 只更改项目 `ai_enabled` 开关与工作提醒时段；模型、提供商与 API Key 继续只能由系统总管理员配置，执行启用前必须有可用配置。模型权限版本触发器保持有效，关闭 AI 不会自动批准任何候选。**取舍：** 这批不迁移系统管理员配置与 Tenant Governance 的所有写入、不宣称运营端 Outbox 死信重试已经统一命令或全部 P2 完成。
+
+## ADR-045 · Outbox 死信人工重试的幂等恢复命令（2026-10-15）
+
+**现状：** `POST /projects/:id/outbox/:eventId/retry` 已在事务内校验当前项目 owner 权限，但仍直接更新 Outbox 和 Audit，没有统一 CommandReceipt/DomainEvent；一次操作成功、HTTP 响应丢失后，同一操作再次提交返回 409 而不是原成功回执，运维人员无法辨别是否成功。
+
+**决定：** 把 owner-only Outbox 汇总/死信查询与手动重试抽离 `operations-routes.ts`；重试 POST 必须由当前 tenant/project owner 以 UUID `idempotencyKey` 执行 `executePmCommand`（`operations.manage`），对指定项目中仍处于 dead 且未 processed 的 Outbox 行加锁后恢复 attempts=0、dead_at=NULL、claim/token 清空、next_attempt_at=NOW。原业务 Outbox 恢复、Audit、DomainEvent 与新事件 Outbox、持久 Receipt 同事务；同 key 原样重试返回原回执，即使 Worker 已重新处理目标事件；新 key 的重复恢复仍返回 409；不同 payload 同 key 返回 409。重试只能针对某项目自身的 dead-letter，不能重新投递其他项目或已处理事件。
+
+**取舍：** 继续由 PostgreSQL Outbox 的现有 `claimEvents`/fencing/retry/backoff 处理实际业务投递，不另加 Redis/Kafka；恢复行为只重设重试状态，不能借恢复接口修改消息、AI 候选或直接完成人工验收。保留服务器原有权限语义与死信详情脱敏要求。此增量不声称所有租户、项目创建、组织治理命令已经统一，也不代表真实多 Worker 故障注入和生产 Egress 已验收。
+
+**ADR-045 补充：** 为 Outbox 原事件增加 `manual_retry_revision`，默认 0；每次真实 dead→pending 的人工恢复在同一受锁 UPDATE 中 +1，DomainEvent aggregateVersion 使用新恢复版本，命令响应携带 recoveryRevision。相同幂等命令重放不再次增版本；下一次经过 Worker 失败重新 dead 后的新命令使用版本 2、3……。独立增加 migration 018，不改写既有发布迁移。

@@ -109,3 +109,9 @@ English: System-administrator model connections may target public HTTPS provider
 中文：项目负责人生成周报/月报时可以根据最新登记的任务和风险刷新**尚未发布**的草稿，草稿每次刷新增加版本。审核发布必须针对负责人所看到的当前版本，发布后保存审核人、时间并冻结正文；同一次点击因网络原因重试不会重复发布。已经发布的同周期报告再次请求只返回发布版本。报告展示的是生成当时的项目状态，不代表已计算整个周期内的历史进度变化。
 
 English: Project owners may regenerate an unpublished weekly or monthly draft using the latest registered tasks and risks; each refresh increments its revision. Publication requires the revision the owner reviewed, records its actor and time, and freezes the content. Retrying the same action is idempotent; requesting a published period returns its existing version. These reports reflect a point-in-time project snapshot, not a full historical account of all changes during the period.
+
+### 死信事件人工恢复 / Manual dead-letter recovery
+
+中文：项目负责人可以查看本项目 Outbox 待处理与死信数量，并对尚未处理的死信事件执行人工重新入队。操作使用单次请求 UUID 回执，网络超时后重试原请求不会第二次恢复，且普通成员无法操作其他项目的死信。重新入队不代表已经处理成功，后续执行仍遵守 Worker 的重试/冷却与 AI 人工批准约束。
+
+English: Project owners can inspect their project's Outbox backlog and dead letters, and manually requeue an unprocessed dead-letter event. A durable UUID command receipt makes a network retry replay the same outcome without resetting the event again; ordinary members cannot perform this action or inspect other projects' dead-letter details. Requeueing is not proof of successful downstream processing and does not bypass Worker retry policies or human AI-approval requirements.

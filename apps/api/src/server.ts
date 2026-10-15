@@ -10,6 +10,7 @@ import { registerTaskRoutes } from './task-routes.ts';
 import { registerApprovalRoutes } from './approval-routes.ts';
 import { registerReportRoutes } from './report-routes.ts';
 import { registerProjectGovernanceRoutes } from './project-governance-routes.ts';
+import { registerOperationsRoutes } from './operations-routes.ts';
 import { randomUUID } from 'node:crypto';
 import { signedQuotaKey } from '../../../packages/core/src/quota-key.ts';
 import Fastify from 'fastify';
@@ -19,13 +20,11 @@ import helmet from '@fastify/helmet';
 import rateLimit from '@fastify/rate-limit';
 import { z, ZodError } from 'zod';
 import { pool, transaction, audit } from '../../../packages/core/src/db.ts';
-import { lockProjectAccess } from '../../../packages/core/src/identity/project-access.ts';
 import { createSession, hashPassword, readSession, revokeSession, verifyPassword } from '../../../packages/core/src/security.ts';
 import { isValidTimezone } from '../../../packages/core/src/policy.ts';
 import { syncFollowup } from '../../../packages/core/src/followup.ts';
 import { insertMessage } from '../../../packages/core/src/messages.ts';
 
-import { deadEvents, outboxSummary } from '../../../packages/core/src/outbox.ts';
 
 const port = serverConfig.API_PORT;
 const origin = serverConfig.WEB_ORIGIN;
@@ -273,34 +272,6 @@ app.get('/projects/:id/proposals',async req=>{
     [projectId]);
   return {proposals:rows};
 });
-app.get('/projects/:id/outbox/summary',async req=>{
-  const projectId=uuid.parse((req.params as {id:string}).id);
-  owner(await member(await authenticated(req),projectId));
-  return {summary:await outboxSummary(projectId)};
-});
-app.get('/projects/:id/outbox/dead',async req=>{
-  const projectId=uuid.parse((req.params as {id:string}).id);
-  const userId=await authenticated(req);
-  owner(await member(userId,projectId));
-  return {events:await deadEvents(projectId)};
-});
-app.post('/projects/:id/outbox/:eventId/retry',async req=>{
-  const {id,eventId}=req.params as {id:string,eventId:string};
-  const projectId=uuid.parse(id),event=uuid.parse(eventId);
-  const userId=await authenticated(req);
-  return transaction(async db=>{
-    const access=await lockProjectAccess(db,projectId,userId);
-    assertProject(access.role,'operations.manage');
-    const {rows}=await db.query(
-      `UPDATE outbox_events SET attempts=0,dead_at=NULL,last_error_code=NULL,
-       claimed_at=NULL,claim_token=NULL,next_attempt_at=NOW()
-       WHERE id=$1 AND project_id=$2 AND dead_at IS NOT NULL AND processed_at IS NULL
-       RETURNING id`,[event,projectId]);
-    if(!rows.length)fail(409,'事件未隔离或不属于当前项目');
-    await audit(db,projectId,userId,'outbox.retried',event);
-    return {ok:true};
-  });
-});
 app.get('/projects/:id/risks',async req=>{
   const projectId=uuid.parse((req.params as {id:string}).id);
   await member(await authenticated(req),projectId);
@@ -314,5 +285,6 @@ registerTaskRoutes(app,authenticated);
 registerApprovalRoutes(app,authenticated);
 registerReportRoutes(app,authenticated);
 registerProjectGovernanceRoutes(app,authenticated);
+registerOperationsRoutes(app,authenticated);
 app.addHook('onClose',async()=>{await pool.end();});
 await app.listen({port,host:serverConfig.API_HOST});

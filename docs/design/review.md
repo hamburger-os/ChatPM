@@ -147,3 +147,9 @@ CI 新增 `tools/test/task-linkage-smoke.mjs`：PostgreSQL 创建正式任务与
 ## ADR-044 · 项目人员管理/设置命令 /review
 
 审核旧 bootstrap 不重复注册成员增删、角色编辑、设置修改；无 key 写入 400，重复同 key/payload 返回原 Receipt，payload 不同 409，新 key 重复邀请或同角色不产生虚假领域事件。写前和事务内重验当前 tenant+project owner，目标受邀人需有组织资格且行锁稳定；成员从 manager/member/observer 移除允许，但 owner 不可移除，带未完成任务的人员必须先移交。设置必须传 expectedRevision，旧版本 409、当前版本写入 revision+1 与原 `ai_authorization_version` 触发器互不覆盖；只有实际可用默认模型才允许开启 AI。服务端 Audit、DomainEvent、Outbox、CommandReceipt 与实际状态在同一事务。审查 Web 重试键/设置版本和人员移除确认，原 Smoke 权限、报告、Worker、会话及管理员配置测试；仅在最新 Head 五项 GitHub CI 全部成功且无未解决 review threads 时合并。运维死信重试、项目创建和组织管理等旧写入仍是明确待办。
+
+## ADR-045 · 死信恢复 /review
+
+检查旧 `server.ts` 不再重复注册 Outbox 三条运维路由；读取仍只允许当前组织和项目的 owner，POST 必须经过事务内的 `operations.manage` 权限锁并要求 UUID `idempotencyKey`。仅允许 dead_at 非空、processed_at 为空且属于当前项目的事件重置尝试/lease/error/backoff；其它事件均 409，不能跨项目恢复。相同键和 payload 200 回放持久 Receipt，不再执行 UPDATE 或产生第二领域事件；新键再次恢复 409；恢复操作自身生成一条 Audit、DomainEvent 和 `domain.changed` Outbox 事件，全部同事务提交。回归验证普通成员 403、无键 400、重试幂等、原 Outbox 退避/领取/认领 token、Worker、报告、Win/Linux/Docker 与 docs-sync。只在最新 PR Head 五项 CI 通过且 Review 无未解决线程后合并。真实环境 Worker 抢占/网络分区与生产恢复签署仍是未完成 P4 范围。
+
+**ADR-045 增量回归：** `018_outbox_manual_retry_revision.sql` 不重写存量版本和消费者租约；首次恢复版本 1，同键重放仍是 1，将事件模拟重新隔离后新的有权命令返回版本 2；领域事件 aggregateVersion 必须按 1、2 顺序递增。没有真实状态变更的命令不能增加 revision 或事件。
