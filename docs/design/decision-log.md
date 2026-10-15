@@ -273,3 +273,13 @@
 **幂等与权限：** executePmCommand 对 owner 转移专用的 replayAction:'read' 使重试者仍是同一项目有效成员时可取回自己已提交的 Receipt，但第一次执行仍必须在事务内验证 members.manage。这确保降为 manager 的原 owner 能安全获取同一操作结果，而不能发起新的转让；失去项目成员身份则不得再读取回执。
 
 **审计与界面：** Owner 移交与角色变更、project.owner_id/revision、Audit/DomainEvent/Outbox/Receipt 同事务，双向移交版本单调递增；Web 由 owner 选择项目成员并确认转让，交接成功刷新工作台权限视图。不得由 AI 代签，也不改全局模型管理员权限。完整组织治理、生产迁移演练仍另行验收。
+
+## ADR-048 · 项目创建使用租户级幂等回执（2026-10-15）
+
+**问题：** 当前 POST /projects 仅在现有事务内写入 projects、owner membership 和 audit。HTTP 响应丢失后重复创建会生成另一项目，没有幂等键、DomainEvent、Outbox 或正式 CommandReceipt。项目不存在时也无法使用现有 project-scoped executePmCommand 键空间，不能通过虚构 projectId 绕过现有约束。
+
+**决定：** 增量迁移 021 新建 tenant_command_receipts，以 (tenant_id,actor_id,kind,idempotency_key) 唯一键和 canonical payload_sha256 为租户管理员项目创建命令提供可持久重放的入口，项目 ID 在同一事务内生成并回填关联。服务端先校验当前 tenant 管理员及其成员行锁，再 INSERT ... ON CONFLICT DO NOTHING；相同 key+payload 读原 Receipt，不重新生成项目；不同 payload 返回 409；原管理员失去 tenant/admin 权限不得重放或创建。同一事务写入项目、唯一 owner、项目级 command_receipts、DomainEvent、Outbox、audit 和租户级结果；任何一步失败全部回滚。项目级 Receipt 与租户级创建回执共享命令 hash、kind 和 key，前者满足既有领域事件 FK，后者解决项目创建前缺少 projectId 的并发窗口。
+
+**访问安全：** 只有原 actor 当前仍是租户 admin 且仍有项目成员权限才能读取旧创建结果；已删除项目不返回幽灵项目。项目创建沿用既有名称、时区校验与默认关闭 AI，不能通过新流程修改全局模型配置或绕过租户治理。Web 为同一次创建意图保留 UUID，在发生网络失败时用相同请求重试；修改表单意图则使用新 key。不提供无幂等键的兼容路径。
+
+**边界：** 这是组织级命令可靠性基础，为未来组织治理命令提供回执表，但本次只迁移项目创建，不宣称所有 Tenant/Program/Portfolio 创建已经命令化。真实存量库迁移、冷备恢复、旧部署升级及多副本长压测仍属于 #51 发布验收。

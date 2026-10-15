@@ -240,3 +240,7 @@ AI 可以在项目对话中提供有来源的 `risk` 候选；它不能直接创
 ## ADR-047 · 项目负责人移交不属于模型自治权限
 
 owner 转移仅能由当前 owner 主动触发 POST /projects/:id/ownership-transfer，须提交 UUID idempotencyKey、当前 ownership_revision 的 expectedRevision，并指定有效租户/项目成员为目标，旧 owner 原子地降为 manager。原 owner 可在仍有项目成员权限时重放原始命令，但不能以新 key 再转移。AI、普通项目成员和纯系统总管理员身份不能代签负责人转让，也不会修改全局供应商、模型密钥或自动批准任务。
+
+## ADR-048 · 租户项目创建与 AI 管理边界
+
+POST /projects 请求体必须有 UUID idempotencyKey、tenantId、name、timezone。只允许当前租户管理员创建，创建后本人为唯一 project owner、ai_enabled=false。若同一租户同一 actor 对同一 key 重发相同请求，必须得到同一个 project.id，不能生成额外 Project、DomainEvent、Outbox 或 AI 初始化操作；同 key 不同规范化 payload 报 409。项目尚不存在前使用 tenant_command_receipts 持久化并发幂等，创建后同事务留下正式 project command_receipts 与 domain_events。普通组织成员、单纯系统模型管理员、AI 对话不能调用后台命令自建项目或配置模型 API Key。

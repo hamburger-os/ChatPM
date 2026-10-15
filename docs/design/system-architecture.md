@@ -62,3 +62,7 @@ Risk 是未来不确定性（不同于已发生 Issue）。项目内 AI 提议�
 ## ADR-047 · Owner Transfer 的角色变更与命令重放
 
 Project.owner_id 是正式负责人身份；project_members 同项目只能一个 owner（partial unique index）。owner 交接事务内先降低旧角色后提升新角色，并在同事务更新 Project.owner_id 与 ownership_revision，外部事务看不到角色更新过程的中间阶段。executePmCommand 仅为 owner 转移允许 replayAction:'read'：对于已有 Receipt，只有仍有项目/组织有效成员访问权的原 actor 能取回原结果；新 key 仍必须严格核验 members.manage。系统管理员身份不绕过项目角色；转让事件 aggregateVersion 使用 ownership_revision。真实 PostgreSQL API 集成测试核验权限、幂等、旧版本与唯一 owner 数据库约束。
+
+## ADR-048 · 创建项目的事务根节点
+
+项目创建前不存在 projectId，不可把 project-local executePmCommand 硬套到虚构项目 ID。租户级 tenant_command_receipts 以 tenant/actor/kind/key 去重，项目创建由单个 PostgreSQL transaction 顺序写入：活跃 tenant admin 身份锁 → 租户级 receipt 唯一插入/检查 → projects → project_members owner → project-scoped command_receipts → audit_entries / domain_events / outbox_events → 两份 receipt result。数据库唯一约束序列化同 key 并发请求，业务历史保留真实项目 ID。普通项目读写继续使用既有项目级命令，tenant receipt 不是额外的超管特权。
