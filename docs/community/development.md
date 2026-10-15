@@ -331,3 +331,11 @@ A project may have one owning department and several participating departments. 
 ## 2026-10-16 Program and portfolio factual pulse (experimental)
 
 Tenant administrators have a cross-project overview of current task/risk states and planned allocation for a chosen calendar date. Each project belongs to at most one effective portfolio, either through a program or directly; program descendants are not double-counted. The selected date applies only to overdue checks and active resource commitments, **not historical task-state replay**. Portfolio strategic scoring, program benefits realization, actual timesheets and cross-project critical-path forecasting remain future work.
+
+## 2026-10-16 模型出站私网例外安全收紧（实验性）
+
+默认模型外部 HTTPS 地址必须解析为安全公网 IP；内网模型仅允许显式 `localhost`、`127.0.0.1`、`::1`、`host.docker.internal` 端点。Docker 宿主别名现在只允许解析到 RFC1918 或 IPv6 ULA 网关地址，不再信任链路本地/云元数据、CGNAT 或公网 IP。模型连接不允许自定义 Host、代理认证或传输编码请求头，并继续禁止上游重定向。网络网关、Docker DNS、IPv6、透明代理和 QNAP 路由仍需要在部署机器进行检查，不能以 CI 全绿代替真实出站策略验收。
+
+## 2026-10-16 Model egress local alias tightening (experimental)
+
+A remote model endpoint requires HTTPS and safe resolved public IPs. `localhost` must resolve to loopback; `host.docker.internal` now accepts only RFC1918 or IPv6 ULA gateway addresses, rejecting link-local metadata, CGNAT, public addresses and mixed unsafe DNS answers. The transport rejects caller-supplied Host, proxy and HTTP-framing headers before creating a socket. Real Docker/QNAP/IPv6 routing and egress policy still require deployment-specific tests; CI alone is not a production network security certification.

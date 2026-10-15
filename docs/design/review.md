@@ -231,3 +231,11 @@ Docker `deploy:docker` 与 Windows/Linux 原生 `setup:local` 在私有 `.env` �
 匿名 `POST /auth/invitations/claim` 使用一次性 token、严格匹配受邀邮箱、强密码/昵称，为此前未注册的人创建用户并且只加入目标组织为 `member`（绝不授予组织 admin 或项目聊天权限）。已有 ChatPM 用户先登录，通过 `POST /auth/invitations/claim-existing` 领取匹配其账户邮箱的邀请。接收动作在相同 PostgreSQL 事务中锁定 Tenant 管理 advisory lock 和邀请码行，创建 tenant_members、记录 accepted_by/time 及审计；过期、撤销、已使用、重复领取与错误邮箱均拒绝。还未加入项目的受邀成员需项目负责人独立授权。
 
 限制：目前无邮件发送服务、企业 SSO、邀请码重发自动通知或时间窗清理作业；发码只能由管理员私下安全传达。没有完整生产入职/离职 SCIM 工作流和滥用管理。本改进须通过真实 PostgreSQL 并发、跨邮箱/租户访问、Docker 闭合注册入职回归和五组 CI，不能直接宣称达到生产全面身份治理。
+
+## ADR-062 · 模型出站本机例外与 DNS/HTTP 头边界复核（2026-10-16）
+
+继续收紧 Issue #39 既有的 DNS 全解析结果校验与单次 Socket 已验证地址 pinning。显式 `localhost` 仅接受 loopback；`host.docker.internal` 不能简单视为「只要是任何私有 IP 就信任」，因为遭 DNS 污染时可能解析到 `169.254.169.254` 云元数据、IPv4-mapped 元数据、CGNAT、基准/保留地址或公网目标。现在 Docker 主机网关例外只接受 RFC1918 10/8、172.16/12、192.168/16 或 IPv6 ULA fc00::/7 的完整 DNS 结果集；mixed A/AAAA 只要任意结果不合规则整次拒绝，不回退挑选安全地址。明确拒绝 IPv6 site-local fec0::/10、NAT64 本地转换前缀 64:ff9b:1::/48 和已废弃公网 relay 192.88.99/24。该例外仍需运维网络层保证内网解析、路由与防火墙安全。
+
+生产 HTTP(S) 模型传输只允许业务实际需要的 `Authorization`、`Content-Type` 和 `Accept` 请求头。禁止调用方覆盖 `Host`、`Proxy-Authorization`、`Content-Length`、`Transfer-Encoding`、`Connection` 和其他 hop-by-hop/代理/转发头；拒绝时不得建立 Socket。出站仍拒绝重定向、复用连接、环境 HTTP 代理和超出响应上限；模型 Key 不进入错误日志或客户端环境。单元测试在本地模拟 A/AAAA 混合结果、映射 IPv6、Docker gateway 公私地址和违法 HTTP 头，并确认非法请求不触发上游实际连接。
+
+**审查限制：** 即使通过 CI，此处只验证纯 Node 传输语义，不代表实机 QNAP/Windows/Linux 网络路由、IPv6 DNS64、自定义 NAT64、服务网格透明代理或企业 HTTPS 出站策略已验收。对无授权本地模型服务、实际私网出站绕行和供应商真实端点仍需在部署目标做隔离测试；Issue #39 保持开放。
