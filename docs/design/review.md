@@ -213,3 +213,11 @@ Worker 的 AI、提醒和周期报告改为三个独立 single-flight lane；并
 bootstrap 只允许创建全库首位用户；创建检查在同一个数据库事务内获取固定 advisory lock 并重新查询 users，避免两个同时匿名请求都创建租户管理员。closed 禁用注册，open 是部署操作员显式授权的自由注册；全部三种模式下其余登录、会话与项目权限不变化。只读 `GET /auth/registration-policy` 只暴露 allowed 布尔值，前端关闭无效注册入口，真正权限校验仍在 POST 的事务中进行。Docker CI 为验证多用户显式 opt-in open，不是生产安全默认值。
 
 **未完成：** 尚缺安全邀请/接受和管理员审核、全局速率防护、可信代理/源地址追踪、公众域名安全评测。生产临时开放自由注册应仅在有严格入口控制时进行，切换之后必须重新重启 API/容器才生效。不能把 bootstrap-only 当作完整企业身份治理或 SaaS 注册策略。
+
+## ADR-058 · 防止公网首账号抢注（2026-10-15）
+
+此前 ADR-057 的 bootstrap 模式仅检查全库用户为空，不能证明抢先申请者是服务器操作员。本次要求额外提供由服务器安装工具生成的 256-bit `BOOTSTRAP_TOKEN`（严格 64 位十六进制），有效的首账号注册要在同一事务中先锁定固定 PostgreSQL advisory key、验证全库用户仍为空，再使用固定长度的 SHA-256 摘要和 `timingSafeEqual` 校验操作员令牌，之后才创建首位 User 和 Tenant Admin。缺失、格式错误或错误的令牌均返回统一 403，不泄露已存在用户细节。 `REGISTRATION_MODE=open` 仍需显式开启，且不能代替管理员邀请流程。
+
+Docker `deploy:docker` 与 Windows/Linux 原生 `setup:local` 在私有 `.env` 中生成独立随机令牌，Docker Compose 仅将令牌交给 API/非 Web 服务器容器；Next.js 客户端只有是否需要输入密钥的布尔信号。不能把令牌提交版本库、粘贴到聊天或者通过公开 URL 传递。全新部署在仅绑定 127.0.0.1 时设置首位可信操作员并检查登入后，方可配置 TLS 与公网反向代理。成功注册后建议设置 `REGISTRATION_MODE=closed` 并重启 API 服务；保留的私有令牌无权再次创建用户。
+
+回归：单元测试验证无令牌、错误令牌、格式和摘要比较；真实 PostgreSQL 初始库进行并发首用户竞争，两笔事务中最多一笔成功；Docker 端到端分别验证显式 `open` 多用户测试模式与默认 `bootstrap` 中错误令牌拒绝、正确令牌一次性使用、之后不可再次注册；原生安装测试验证令牌稳定生成。该修复不等于正式邀请/接受、SSO、生产网络边界或全局滥用防护已完成。
