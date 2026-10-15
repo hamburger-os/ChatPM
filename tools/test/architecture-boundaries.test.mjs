@@ -35,3 +35,18 @@ test('architecture guard rejects a future domain query in the worker',()=>{
   assert.throws(()=>assertWorkerBootstrapBoundary(worker+"\nawait pool.query('DELETE FROM tasks')"),
     /Worker startup must not contain SQL queries|Worker bootstrap cannot mutate/);
 });
+
+test('tenant structure read model keeps SQL and authz out of HTTP route',()=>{
+  const route=readFileSync(new URL('../../apps/api/src/governance-routes.ts',import.meta.url),'utf8');
+  const service=readFileSync(new URL('../../packages/core/src/governance/structure-query.ts',import.meta.url),'utf8');
+  const start=route.indexOf("app.get('/tenants/:tenantId/structure'");
+  const end=route.indexOf("app.post('/tenants/:tenantId/departments'",start);
+  assert.ok(start>=0&&end>start,'Organization structure route exists');
+  const block=route.slice(start,end);
+  assert.match(block,/return getTenantStructure\(tenantId,await authenticated\(req\)\)/);
+  assert.doesNotMatch(block,/pool\.query|SELECT|FROM project_members|FROM tenant_members/,
+    'Structure HTTP route must not perform domain SQL or a stale authz check');
+  assert.match(service,/SET TRANSACTION ISOLATION LEVEL REPEATABLE READ/);
+  assert.match(service,/FOR SHARE/,'Authorization must lock current membership');
+  assert.match(service,/JOIN project_members pm/,'Non-admin project visibility is explicit');
+});
