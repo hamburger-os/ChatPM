@@ -49,11 +49,72 @@ try{
   assert.equal(teams.status,200);
   const tenantId=teams.data.tenants.find(t=>t.role==='admin')?.id;
   assert.ok(tenantId,'Registrant must own a team');
-  const created=await api('/projects',{method:'POST',body:{
-    name:'集成测试项目',tenantId,timezone:'Asia/Shanghai'}});
-  assert.equal(created.status,201,JSON.stringify(created.data));
+  const createInput={idempotencyKey:randomUUID(),
+    name:'集成测试项目',tenantId,timezone:'Asia/Shanghai'};
+  // Simultaneous duplicate HTTP requests must wait on the tenant receipt
+  // unique key rather than generating independent projects/owner rows.
+  const simultaneous=await Promise.all(Array.from({length:4},
+    ()=>api('/projects',{method:'POST',body:createInput})));
+  for(const answer of simultaneous)
+    assert.equal(answer.status,201,JSON.stringify(answer.data));
+  const created=simultaneous[0];
   const pid=created.data.project.id;
+  assert.ok(simultaneous.every(answer=>answer.data.project.id===pid),
+    'Concurrent identical commands must return exactly the same project ID');
   assert.equal(created.data.project.ai_enabled,false);
+  assert.equal(created.data.project.owner_id,uid);
+  const replayCreate=await api('/projects',{method:'POST',body:createInput});
+  assert.equal(replayCreate.status,201);
+  assert.equal(replayCreate.data.project.id,pid,'HTTP retry returns durable created project');
+  const reusedProjectKey=await api('/projects',{method:'POST',body:{
+    ...createInput,name:'Other project name'}});
+  assert.equal(reusedProjectKey.status,409,'Same key with new name is not a new create');
+  const missingProjectKey=await api('/projects',{method:'POST',body:{
+    name:'No key',tenantId,timezone:'Asia/Shanghai'}});
+  assert.equal(missingProjectKey.status,400,'Project creation requires UUID command key');
+  const invalidProjectZone=await api('/projects',{method:'POST',body:{
+    ...createInput,idempotencyKey:randomUUID(),timezone:'Fake/Invalid'}});
+  assert.equal(invalidProjectZone.status,400);
+  const projectsCount=(await db.query(`
+    SELECT count(*)::int AS n FROM projects WHERE tenant_id=$1 AND name=$2
+  `,[tenantId,createInput.name])).rows[0].n;
+  assert.equal(projectsCount,1,'Concurrent retries must never duplicate projects');
+  const ownerCount=(await db.query(`
+    SELECT count(*)::int AS n FROM project_members WHERE project_id=$1 AND role='owner'
+  `,[pid])).rows[0].n;
+  assert.equal(ownerCount,1,'Creation must produce one owner');
+  const rootReceipts=(await db.query(`
+    SELECT project_id,result FROM tenant_command_receipts
+    WHERE tenant_id=$1 AND actor_id=$2 AND kind='project.created.v1'
+      AND idempotency_key=$3
+  `,[tenantId,uid,createInput.idempotencyKey])).rows;
+  assert.equal(rootReceipts.length,1,'One tenant receipt must deduplicate creation');
+  assert.equal(rootReceipts[0].project_id,pid);
+  assert.equal(rootReceipts[0].result.project.id,pid);
+  const creationReceipts=(await db.query(`
+    SELECT id,result FROM command_receipts WHERE project_id=$1
+      AND actor_id=$2 AND kind='project.created.v1'
+  `,[pid,uid])).rows;
+  assert.equal(creationReceipts.length,1,'New project must carry its project-scoped receipt');
+  assert.equal(creationReceipts[0].result.project.id,pid);
+  const createdEvents=(await db.query(`
+    SELECT id,aggregate_version,command_receipt_id FROM domain_events
+    WHERE project_id=$1 AND kind='project.created.v1'
+  `,[pid])).rows;
+  assert.equal(createdEvents.length,1);
+  assert.equal(createdEvents[0].command_receipt_id,creationReceipts[0].id);
+  assert.equal(createdEvents[0].aggregate_version,1);
+  const createOutbox=(await db.query(`
+    SELECT count(*)::int AS n FROM outbox_events
+    WHERE project_id=$1 AND kind='domain.changed'
+      AND payload->>'domainEventId'=$2
+  `,[pid,createdEvents[0].id])).rows[0].n;
+  assert.equal(createOutbox,1,'Create event is delivered through transactional outbox');
+  const createAudits=(await db.query(`
+    SELECT count(*)::int AS n FROM audit_entries
+    WHERE project_id=$1 AND action='project.created.v1'
+  `,[pid])).rows[0].n;
+  assert.equal(createAudits,1,'Concurrent duplicates cannot create extra audit rows');
   const listedInitial=await api('/projects');
   assert.equal(listedInitial.status,200);
   const initialProject=listedInitial.data.projects.find(p=>p.id===pid);
@@ -82,11 +143,17 @@ try{
     body:{idempotencyKey:randomUUID(),title:'越权任务',assigneeId:null,dueDate:null}});
   assert.equal(denied.status,404,'Cross-project write must not be allowed');
   const unauthorizedTenant=await api('/projects',{method:'POST',cookie:cookieB,body:{
-    name:'不能创建的项目',tenantId,timezone:'Asia/Shanghai'}});
+    idempotencyKey:randomUUID(),name:'不能创建的项目',tenantId,
+    timezone:'Asia/Shanghai'}});
   assert.equal(unauthorizedTenant.status,403,'Cannot create projects in another tenant');
   const addOrgMember=await api('/tenants/'+tenantId+'/members',{
     method:'POST',body:{email:'second+'+suffix2+'@example.com'}});
   assert.equal(addOrgMember.status,200,'Tenant administrator must enroll person first');
+  const memberCannotCreate=await api('/projects',{method:'POST',cookie:cookieB,body:{
+    idempotencyKey:randomUUID(),name:'Tenant member no-admin project',tenantId,
+    timezone:'Asia/Shanghai'}});
+  assert.equal(memberCannotCreate.status,403,
+    'Tenant membership alone does not grant project creation');
   // Organization governance: route-level authorization, classification and audit.
   const forbiddenPortfolio=await api('/tenants/'+tenantId+'/portfolios',{
     method:'POST',cookie:cookieB,body:{name:'Forbidden Portfolio'}});
@@ -440,6 +507,7 @@ try{
   const messages=await api('/projects/'+pid+'/messages');
   assert.equal(messages.data.messages.length,1);
   const secondProject=await api('/projects',{method:'POST',body:{
+    idempotencyKey:randomUUID(),
     name:'外键隔离测试项目',tenantId,timezone:'Asia/Shanghai'}});
   assert.equal(secondProject.status,201);
   await assert.rejects(

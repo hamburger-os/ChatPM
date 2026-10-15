@@ -115,3 +115,9 @@ English: Project owners may regenerate an unpublished weekly or monthly draft us
 中文：项目负责人可以查看本项目 Outbox 待处理与死信数量，并对尚未处理的死信事件执行人工重新入队。操作使用单次请求 UUID 回执，网络超时后重试原请求不会第二次恢复，且普通成员无法操作其他项目的死信。重新入队不代表已经处理成功，后续执行仍遵守 Worker 的重试/冷却与 AI 人工批准约束。
 
 English: Project owners can inspect their project's Outbox backlog and dead letters, and manually requeue an unprocessed dead-letter event. A durable UUID command receipt makes a network retry replay the same outcome without resetting the event again; ordinary members cannot perform this action or inspect other projects' dead-letter details. Requeueing is not proof of successful downstream processing and does not bypass Worker retry policies or human AI-approval requirements.
+
+### 安全、幂等地新建项目 / Safe idempotent project creation
+
+中文：组织管理员可新建项目；项目名称与时区经验证，同一次按钮点击在网络超时后重试会沿用原 UUID，而不是额外新建项目。后台先在租户范围保留命令回执，随后原子保存项目及唯一项目负责人，并记录审计、正式领域事件和 Outbox 通知。非该组织的管理员或仅有普通组织成员权限的人员不能新建该组织项目。项目创建时 AI 默认关闭，模型供应商与密钥仍由系统管理员维护。
+
+English: A tenant administrator can create a project with validated name and time zone. Retrying an interrupted request with its original UUID returns the same project rather than creating a duplicate. A tenant-scoped receipt reserves the intent before a project ID exists; the project, unique owner, audit, formal domain event and outbox are saved atomically. Non-admin tenant members and unrelated users cannot create projects in the tenant. AI starts disabled; global model providers and secrets remain system-administrator-only.

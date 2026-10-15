@@ -37,6 +37,7 @@ export default function Home(){
   const [notice,setNotice]=useState('');
   const bottom=useRef<HTMLDivElement>(null);
   const cursor=useRef(0);
+  const createIntent=useRef<{fingerprint:string;key:string}|null>(null);
   const current=projects.find(x=>x.id===selected)||null;
   const canOrg=tenants.some(x=>x.role==='admin');
 
@@ -130,9 +131,16 @@ export default function Home(){
   }
   function createProject(e:FormEvent){
     e.preventDefault();if(!tenantId)return;
+    const data={name:newProject,tenantId,
+      timezone:Intl.DateTimeFormat().resolvedOptions().timeZone||'Asia/Shanghai'};
+    const fingerprint=JSON.stringify(data);
+    const idempotencyKey=createIntent.current?.fingerprint===fingerprint
+      ?createIntent.current.key:crypto.randomUUID();
+    createIntent.current={fingerprint,key:idempotencyKey};
     void action(async()=>{
       const x=await request<{project:Project}>('/projects',{method:'POST',
-        body:json({name:newProject,tenantId,timezone:Intl.DateTimeFormat().resolvedOptions().timeZone||'Asia/Shanghai'})});
+        body:json({...data,idempotencyKey})});
+      createIntent.current=null;
       setNewProject('');await loadProjects();selectProject(x.project.id);
     });
   }

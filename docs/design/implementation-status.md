@@ -114,3 +114,7 @@
 ## ADR-047 · 原子项目负责人交接与唯一 owner
 
 新增 migration 020，为 Project 增加 ownership_revision，数据库对每项目 project_members 中 owner 设部分唯一索引，防止双负责人。当前 owner 可选择仍是有效组织及项目成员的接任人，服务端原子修改旧 owner→manager、接任人→owner 和 projects.owner_id，并提交 Audit/DomainEvent/Outbox/CommandReceipt；请求须含 UUID idempotencyKey、expectedRevision 与 targetUserId。重复的原移交命令在旧 owner 降为 manager 后，若他仍有项目只读权限，可以安全重放原回执；新命令仍需当前 owner 完整权限。Web 需用户确认并刷新角色视图，不能从 AI 聊天自动转让。PostgreSQL smoke 验证双向转交、旧版本冲突、原命令重放、新命令越权、唯一 owner 约束和事件版本 [2,3]。完整企业用户离职策略、Tenant Owner 转让、实机迁移/回滚仍需单独验收。
+
+## ADR-048 · 项目创建正式事务命令
+
+项目列表与新建路由从 api/server.ts 分离到 project-routes.ts；创建前使用 021_tenant_command_receipts.sql 的租户级 receipt 占位，锁住当前 tenant admin 身份，避免尚无项目 ID 时错误复用 project-scoped 命令。成功命令在同一事务内生成 Project、唯一 owner 项目成员、项目级 CommandReceipt、Audit、DomainEvent 和 Outbox，并将真实项目 ID 与结果写回 tenant receipt。相同 tenant/actor/kind/key/payload 的并发请求与网络重试一律返回同一个 ID，不重复业务事件；同键不同 payload 409、无 key 400、普通租户成员 403。原创建者失去对该项目的当前成员访问权不得继续读回执。Web 同一次创建意图重用原 UUID，意图变更使用新键。真实 Postgres API smoke 包含 4 路同时创建同一个项目、旧请求重放、不同内容冲突和 owner、receipt、domain event、outbox、audit 精确条数校验。尚有 Tenant/Department/Portfolio/Program 等组织领域的旧写入需要后续命令迁移；生产升级演练没有由 CI 代替。
