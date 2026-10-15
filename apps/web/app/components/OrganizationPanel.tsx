@@ -1,5 +1,5 @@
 'use client';
-import { useEffect, useState, type FormEvent } from 'react';
+import { useEffect,useRef,useState,type FormEvent } from 'react';
 type Item={id:string;name:string;description?:string;parent_id?:string|null;portfolio_id?:string|null};
 type Project=Item&{department_id:string|null;program_id:string|null;portfolio_id:string|null};
 type Member={id:string;display_name:string;email:string;role:'admin'|'member'};
@@ -32,7 +32,18 @@ export default function OrganizationPanel({tenantId}:{tenantId:string}){
   const [endDate,setEndDate]=useState('');
   const [notice,setNotice]=useState('');
   const [busy,setBusy]=useState(false);
+  const commandKeys=useRef(new Map<string,string>());
   const base='/tenants/'+tenantId;
+  async function write<T>(path:string,method:'POST'|'PATCH',
+    body:Record<string,unknown>):Promise<T>{
+    const intent=JSON.stringify([tenantId,path,method,body]);
+    const idempotencyKey=commandKeys.current.get(intent)??crypto.randomUUID();
+    commandKeys.current.set(intent,idempotencyKey);
+    const result=await api<T>(path,{method,
+      body:JSON.stringify({...body,idempotencyKey})});
+    commandKeys.current.delete(intent);
+    return result;
+  }
   async function reload(){
     const [s,m,a]=await Promise.all([
       api<Structure>(base+'/structure'),
@@ -49,16 +60,16 @@ export default function OrganizationPanel({tenantId}:{tenantId:string}){
   }
   const create=(e:FormEvent)=>{
     e.preventDefault();void run(async()=>{
-      await api(base+'/'+kind,{method:'POST',body:JSON.stringify({
-        name,...(kind==='programs'?{portfolioId:portfolio||null}:{})})});
+      await write(base+'/'+kind,'POST',{
+        name,...(kind==='programs'?{portfolioId:portfolio||null}:{})});
       setName('');
     });
   };
   const classification=(e:FormEvent)=>{
     e.preventDefault();void run(async()=>{
-      await api(base+'/projects/'+projectId+'/classification',{method:'PATCH',
-        body:JSON.stringify({departmentId:departmentId||null,programId:programId||null,
-          portfolioId:programId?null:directPortfolio||null})});
+      await write(base+'/projects/'+projectId+'/classification','PATCH',{
+        departmentId:departmentId||null,programId:programId||null,
+        portfolioId:programId?null:directPortfolio||null});
     });
   };
   return <section className="organization-workspace">
@@ -76,11 +87,11 @@ export default function OrganizationPanel({tenantId}:{tenantId:string}){
     {members.map(m=><div className="member" key={m.id}>
       <strong>{m.display_name}</strong><small>{m.email}</small>
       <select aria-label={'组织角色：'+m.display_name} value={m.role} disabled={busy} onChange={e=>void run(async()=>{
-        await api(base+'/members/'+m.id,{method:'PATCH',body:JSON.stringify({role:e.target.value})});
+        await write(base+'/members/'+m.id,'PATCH',{role:e.target.value});
       })}><option value="admin">组织管理员</option><option value="member">成员</option></select>
     </div>)}
     <form className="row-form" onSubmit={e=>{e.preventDefault();void run(async()=>{
-      await api(base+'/members',{method:'POST',body:JSON.stringify({email})});setEmail('');
+      await write(base+'/members','POST',{email});setEmail('');
     });}}>
       <input type="email" placeholder="将已注册人员加入组织" required value={email} onChange={e=>setEmail(e.target.value)}/>
       <button disabled={busy}>加入</button>
@@ -127,8 +138,8 @@ export default function OrganizationPanel({tenantId}:{tenantId:string}){
     {tab==='resources'&&<div className="stack organization-section">
     <h3>跨项目资源投入计划</h3>
     <form className="stack" onSubmit={e=>{e.preventDefault();void run(async()=>{
-      await api(base+'/allocations',{method:'POST',body:JSON.stringify({
-        projectId,userId:assignee,percentage,startDate,endDate})});
+      await write(base+'/allocations','POST',{
+        projectId,userId:assignee,percentage,startDate,endDate});
     });}}>
       <label>项目<select value={projectId} required onChange={e=>setProjectId(e.target.value)}>
         <option value="">选择项目</option>{data.projects.map(x=><option key={x.id} value={x.id}>{x.name}</option>)}
