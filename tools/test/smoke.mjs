@@ -368,6 +368,100 @@ try{
       decision:'approve'}});
   assert.equal(approved.status,200,JSON.stringify(approved.data));
   assert.equal(approved.data.item.status,'approved');
+  const changeId=change.data.item.id;
+  const workPath=pm+'/changes/'+changeId+'/implementation';
+  const directComplete=await api(workPath,{method:'POST',body:{
+    idempotencyKey:randomUUID(),expectedVersion:2,decision:'complete',
+    evidenceMessageId:randomUUID(),note:'Cannot bypass implementation'}});
+  assert.equal(directComplete.status,409,'An approved change is not implemented yet');
+  const invalidImplementer=await api(workPath,{method:'POST',body:{
+    idempotencyKey:randomUUID(),expectedVersion:2,decision:'start',
+    ownerId:randomUUID(),note:'Missing assignee'}});
+  assert.equal(invalidImplementer.status,400);
+  const startInput={idempotencyKey:randomUUID(),expectedVersion:2,
+    decision:'start',ownerId:second.data.user.id,note:'Begin verified implementation'};
+  const startedChange=await api(workPath,{method:'POST',body:startInput});
+  assert.equal(startedChange.status,200,JSON.stringify(startedChange.data));
+  assert.equal(startedChange.data.item.status,'implementing');
+  assert.equal(startedChange.data.item.version,3);
+  assert.equal((await api(workPath,{method:'POST',body:startInput})).data.item.version,3,
+    'Starting with the same key must replay its receipt');
+  const observerWhileImplementing=await api(
+    '/projects/'+pid+'/members/'+second.data.user.id,{
+      method:'PATCH',body:{idempotencyKey:randomUUID(),role:'observer'}});
+  assert.equal(observerWhileImplementing.status,409,
+    'A project member responsible for implementation cannot become an observer');
+  const earlyEvidence=await api('/projects/'+pid+'/messages',{method:'POST',
+    cookie:cookieB,body:{nonce:randomUUID(),
+      content:'先前开始的准备工作已完成，仍需等待正式重新分配。'}});
+  assert.equal(earlyEvidence.status,201);
+  const reassignA={idempotencyKey:randomUUID(),expectedVersion:3,
+    decision:'reassign',ownerId:uid,note:'Hand back implementation ownership'};
+  const assignedA=await api(workPath,{method:'POST',body:reassignA});
+  assert.equal(assignedA.status,200,JSON.stringify(assignedA.data));
+  assert.equal(assignedA.data.item.version,4);
+  assert.equal(assignedA.data.item.implementation_owner_id,uid);
+  assert.equal((await api(workPath,{method:'POST',body:reassignA})).data.item.version,4);
+  const reassignB={idempotencyKey:randomUUID(),expectedVersion:4,
+    decision:'reassign',ownerId:second.data.user.id,
+    note:'Reassign to implementation owner with fresh evidence window'};
+  const assignedB=await api(workPath,{method:'POST',body:reassignB});
+  assert.equal(assignedB.status,200,JSON.stringify(assignedB.data));
+  assert.equal(assignedB.data.item.version,5);
+  assert.equal(assignedB.data.item.implementation_owner_id,second.data.user.id);
+  const authorWrong=await api('/projects/'+pid+'/messages',{method:'POST',
+    body:{nonce:randomUUID(),content:'审批人自己留下的消息不能冒充实施负责人证据。'}});
+  assert.equal(authorWrong.status,201);
+  const actualEvidence=await api('/projects/'+pid+'/messages',{method:'POST',
+    cookie:cookieB,body:{nonce:randomUUID(),
+      content:'联调与延期范围已按批准计划实施，附验证环境记录。'}});
+  assert.equal(actualEvidence.status,201);
+  const memberSelfVerify=await api(workPath,{method:'POST',cookie:cookieB,body:{
+    idempotencyKey:randomUUID(),expectedVersion:5,decision:'complete',
+    evidenceMessageId:actualEvidence.data.message.id,note:'Self review'}});
+  assert.equal(memberSelfVerify.status,403,
+    'An implementer cannot approve their own completion claim');
+  const staleProof=await api(workPath,{method:'POST',body:{
+    idempotencyKey:randomUUID(),expectedVersion:5,decision:'complete',
+    evidenceMessageId:earlyEvidence.data.message.id,
+    note:'Old evidence before reassignment is invalid'}});
+  assert.equal(staleProof.status,409,'Reassignment resets the evidence clock');
+  const wrongAuthor=await api(workPath,{method:'POST',body:{
+    idempotencyKey:randomUUID(),expectedVersion:5,decision:'complete',
+    evidenceMessageId:authorWrong.data.message.id,note:'Cannot verify wrong author'}});
+  assert.equal(wrongAuthor.status,409);
+  const verifyInput={idempotencyKey:randomUUID(),expectedVersion:5,
+    decision:'complete',evidenceMessageId:actualEvidence.data.message.id,
+    note:'Independent owner reviewed the actual implementation message'};
+  const implemented=await api(workPath,{method:'POST',body:verifyInput});
+  assert.equal(implemented.status,200,JSON.stringify(implemented.data));
+  assert.equal(implemented.data.item.status,'implemented');
+  assert.equal(implemented.data.item.version,6);
+  assert.equal(implemented.data.item.implemented_by,uid);
+  assert.equal(implemented.data.item.implementation_evidence_message_id,
+    actualEvidence.data.message.id);
+  const replayImplemented=await api(workPath,{method:'POST',body:verifyInput});
+  assert.equal(replayImplemented.status,200);
+  assert.equal(replayImplemented.data.item.version,6);
+  const versionConflict=await api(workPath,{method:'POST',body:{
+    ...verifyInput,idempotencyKey:randomUUID()}});
+  assert.equal(versionConflict.status,409,'New command cannot reuse old version');
+  const changeHistory=await api(workPath+'/history',{cookie:cookieB});
+  assert.equal(changeHistory.status,200);
+  assert.deepEqual(changeHistory.data.history.map(x=>x.change_version),[6,5,4,3]);
+  assert.deepEqual(changeHistory.data.history.map(x=>x.action),
+    ['complete','reassign','reassign','start']);
+  const foreignHistory=await api('/projects/'+randomUUID()+
+    '/pm/changes/'+changeId+'/implementation/history');
+  assert.equal(foreignHistory.status,404);
+  const implementationEvents=(await db.query(`
+    SELECT kind,aggregate_version AS version FROM domain_events
+    WHERE project_id=$1 AND aggregate_id=$2
+      AND kind LIKE 'pm.change.implementation%'
+    ORDER BY aggregate_version`,[pid,changeId])).rows;
+  assert.deepEqual(implementationEvents.map(x=>x.version),[3,4,5,6]);
+  assert.equal(implementationEvents.length,4,
+    'Replayed implementation commands cannot double-emit events');
   await db.query("UPDATE project_members SET role='member' WHERE project_id=$1 AND user_id=$2",
     [pid,second.data.user.id]);
   const register=await api(pm);
@@ -505,7 +599,8 @@ try{
   assert.equal(duplicate.status,201);
   assert.equal(posted.data.message.id,duplicate.data.message.id,'Message retry must be idempotent');
   const messages=await api('/projects/'+pid+'/messages');
-  assert.equal(messages.data.messages.length,1);
+  assert.equal(messages.data.messages.filter(m=>m.client_nonce===nonce).length,1,
+    'Original message deduplication remains correct alongside change evidence messages');
   const secondProject=await api('/projects',{method:'POST',body:{
     idempotencyKey:randomUUID(),
     name:'外键隔离测试项目',tenantId,timezone:'Asia/Shanghai'}});
