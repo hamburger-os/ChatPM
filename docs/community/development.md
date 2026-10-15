@@ -363,3 +363,11 @@ AI Worker 现在只能在仍持有有效事件租约时，把模型回复、待�
 ## 2026-10-16 Fenced AI outbox publication (experimental)
 
 A Worker may publish AI replies, proposals, clarifications and analysis states only while its outbox claim is current. The same transaction locks the event claim through commit, preventing a reassigned or expired Worker from overwriting results. Claims are acquired one at a time before use. Real multi-instance load and failure-injection certification remain pending; fencing cannot recall data already sent to the external model.
+
+## 2026-10-16 正式任务命令与历史去噪（实验性）
+
+任务创建/调整现在由 Core 统一执行。一次实际修改会更新版本、审计及可追溯的任务历史；若保存的字段都与当前相同，则提示“任务没有实际变化”，不会制造假版本、报告变更、催办或审计。重复提交同一个已成功命令的幂等键仍返回之前的结果。已补充真实 PostgreSQL 回归和 HTTP Smoke，人员权限与项目隔离保持不变。
+
+## 2026-10-16 Core Task command ownership and no-op discipline (experimental)
+
+Task create/update operations now route through Core commands with the existing idempotent receipt, project membership grants, task prerequisites, FollowUp, audit and outbox behavior. Saving identical status, title, assignee and due date with a new request is a 409 no-op, creating **no** artificial Task version or history entry; replaying the same previously completed command remains idempotent. Other PM register writes and enterprise production validation are outside this increment.

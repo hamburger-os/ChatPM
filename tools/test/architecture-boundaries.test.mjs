@@ -81,3 +81,17 @@ test('AI publication transactions fence all outbox claims and never prelease slo
   assert.ok((clarification.match(/await assertEventClaim\(db,event\)/g)||[]).length>=3,
     'Each clarification persistence branch must be publication-fenced');
 });
+
+test('all direct Task mutations flow through core application commands',()=>{
+  const route=readFileSync(new URL('../../apps/api/src/task-routes.ts',import.meta.url),'utf8');
+  const service=readFileSync(new URL('../../packages/core/src/delivery/task-commands.ts',import.meta.url),'utf8');
+  assert.match(route,/createTask\(projectId,actorId,input\)/);
+  assert.match(route,/updateTask\(projectId,taskId,actorId,input\)/);
+  assert.doesNotMatch(route,/\b(?:INSERT INTO|UPDATE|DELETE FROM) tasks\b/i,
+    'Task API route cannot bypass Core business validation and receipts');
+  assert.doesNotMatch(route,/executePmCommand\(/,
+    'Task command wiring must stay in Core, not the API route');
+  assert.match(service,/executePmCommand\(/);
+  assert.match(service,/hasTaskChanges\(before,next\)/,
+    'Every Task update must verify meaningful state change');
+});

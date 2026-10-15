@@ -136,3 +136,9 @@
 - 完整 AI 授权版本检查与 Outbox 令牌检查缺一不可；失去 Outbox 租约的 Worker 不得写运行结果、失败状态、重新排队或死信。第三方模型已收到的 Prompt 不能因 Worker 取消而撤回，实际隐私防护仍在发送前执行。
 - Worker 不得提前领取大量长时间模型调用的事件，必须 just-in-time 单条 claim，并保留已经实现的独立 AI/提醒/报告 lane。
 - 真实数据库锁/租约测试和静态入口测试不能替代多实例 Worker 同时运行、网络分区、模型长尾延迟和真实关停/重启故障演练。
+
+## ADR-066 · Core Task 命令唯一写入口
+
+- 正式 Task 创建与更新只能通过 Core `createTask/updateTask`，HTTP/Worker 不得绕过当前 Project/Tenant 授权、依赖完成规则、有效负责人和 `executePmCommand` 事务写表。Task 状态、任务计划、FollowUp 与 TaskHistory 的事实必须同源。
+- 只有 status、title、assignee 或 due_date **至少一个发生实际变化** 才创建新的版本、CommandReceipt、DomainEvent、审计、Outbox 与任务历史；新幂等键但完全无变化的调用 409 并完整回滚。完全相同的已完成命令仍按原 key+payload 回放。
+- 任务计划编辑与任务状态编辑分别沿用 Role/action 校验，未审 AI 提议不能绕过 Core 写任务。此次仅迁移 Task 的创建更新写入口，不可将其冒称为完整 PM Domain Runtime 的迁移完成。

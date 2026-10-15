@@ -1255,6 +1255,12 @@ try{
     method:'PATCH',body:taskUpdateInput});
   assert.equal(taskUpdateReplay.status,200);
   assert.equal(taskUpdateReplay.data.task.version,changed.data.task.version);
+  const noTaskChange=await api('/projects/'+pid+'/tasks/'+tid,{
+    method:'PATCH',body:{idempotencyKey:randomUUID(),version:2,status:'doing'}});
+  assert.equal(noTaskChange.status,409,
+    'A Task update with no actual state change cannot fabricate a version/event');
+  assert.equal((await api(historyBase,{cookie:cookieB})).data.history.length,2,
+    'No-op task status request cannot fabricate task history evidence');
   const taskUpdateKeyConflict=await api('/projects/'+pid+'/tasks/'+tid,{
     method:'PATCH',body:{...taskUpdateInput,status:'blocked'}});
   assert.equal(taskUpdateKeyConflict.status,409);
