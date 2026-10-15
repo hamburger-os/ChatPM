@@ -139,3 +139,7 @@ CI 新增 `tools/test/task-linkage-smoke.mjs`：PostgreSQL 创建正式任务与
 ## ADR-042 · 模型出口 SSRF/DNS 重绑定 /review
 
 严格检查三条调用路径 `discoverProviderModels`、`probeModelText/callStructuredLLM`、`ConfiguredLLMProvider` 以及管理员结构化探针不再调用默认未经限制的全局 fetch。URL 仅来自已授权系统模型配置，不接受聊天文本中的 URL；不能凭白名单域名信任其 DNS：任何 A/AAAA 记录为 loopback/私网/保留网段就 fail closed，实际 HTTP(S) lookup 固定已经验证的 IP、TLS SNI/证书仍认原始 hostname，不自动 follow redirect，不经环境代理，响应限制并隐藏上游正文/密钥。明确本地端点保留功能，但其 DNS 也只可指向预期私网地址。单元测试必须包含真实本地 HTTP 请求、敏感头、重定向拒绝、超大响应、恶意 DNS 和空结果；实际网络 egress 与目标厂商实测作为 P4 生产发布外部验收。五项最新 Head CI 全绿与审查无未解决线程后合并。
+
+## ADR-043 · 版本化 Report Command /review
+
+查验报告人工 GET/POST/发布 POST 仅在 `report-routes.ts` 注册，项目/组织身份同时校验；写入使用 `executePmCommand` 的 `report.manage`（仅 owner），UUID idempotencyKey，发布还需 expectedRevision。重复同 key/同 payload 200 且相同报告版本；同 key 改 payload 409；两次新 key 生成草稿必须逐次刷新 revision，已发布报告不得被重写；发布旧 revision 或不同 key 重复发布 409。正式报告状态、发布操作者/时间、审计、领域事件、Outbox 与 Receipt 事务同成败；Worker 定时报告语义不能改变，旧报告迁移不应虚构 publishedAt。校验普通成员越权、跨项目访问、任务统计正确性、浏览器重试、PostgreSQL 迁移、Windows/Linux/Docker 五项最新 Head CI。没有历史统计与来源图时不能称报告为可审计的真实历史绩效。

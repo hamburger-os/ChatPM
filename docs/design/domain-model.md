@@ -80,3 +80,7 @@ ProjectClaim 引用 EvidenceSpan（复合项目外键），记录 `kind`、解�
 ## ADR-040 · 待核实建议与正式事实之间的人类批准关口
 
 `ProposedChange.pending` 和 `TaskProgressUpdate.pending` 是未审核的模型/成员线索，不是正式任务状态。具有权限的项目 owner/manager 选择 accepted/rejected 并提交幂等命令后状态才变更，且只能单向一次性决策。批准 task/risk 提案会在同一事务写入唯一目标事项，决策审计记录源候选与目标 ID；澄清线索保持可查而状态关闭。接受进度证据不自动关闭 Task 或验收 Deliverable，只有 blocker 采纳可以在原冷却策略下提前安排跟进。所有生成正式业务资料必须注明人工批准来源。
+
+## ADR-043 · 报告草稿 revision 与不可变发布
+
+Reporting.Report（project + kind + periodKey）唯一：人工生成时得到当前数据库任务/风险快照；draft 能随真实数据变更重新生成，每次实际重写 revision+1；published 之后即使再次请求生成也仅返回发布版本，不写正文。发布是**仅限项目 owner**的正式状态命令，必须在数据库内比较用户所见 expectedRevision，写入 published_at/published_by 且 revision+1；同 key 请求重放不再次发布。报告的内容与时间表达当前快照，不推断历史实际进度；未来 Evidence/Claim 与任务事件来源关联是独立迭代。本变更不改变 Worker 自动周期生成的原则。

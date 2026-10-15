@@ -85,7 +85,8 @@ export async function generateReport(
      VALUES($1,$2,$3,$4,$5)
      ON CONFLICT(project_id,kind,period_key) DO UPDATE
        SET content=EXCLUDED.content,
-           author_id=COALESCE(EXCLUDED.author_id,reports.author_id)
+           author_id=COALESCE(EXCLUDED.author_id,reports.author_id),
+           revision=reports.revision+1
        WHERE reports.state='draft'
      RETURNING *`,
     [projectId,kind,key,content,authorId],

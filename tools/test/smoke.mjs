@@ -781,23 +781,78 @@ try{
   // Count after accepting the clarified task, not before it.
   const beforeCount=Number((await db.query(
     'SELECT COUNT(*) AS total FROM tasks WHERE project_id=$1',[pid])).rows[0].total);
-  const report=await api('/projects/'+pid+'/reports',{method:'POST',body:{kind:'week'}});
+  const reportInput={idempotencyKey:randomUUID(),kind:'week'};
+  const report=await api('/projects/'+pid+'/reports',{method:'POST',body:reportInput});
   assert.equal(report.status,200,JSON.stringify(report.data));
   assert.equal(report.data.report.state,'draft');
+  assert.ok(report.data.report.revision>=1);
   assert.ok(report.data.report.content.includes('总数：'+beforeCount+'；'),
     'Report counts must not be truncated to 200');
+  const reportReplay=await api('/projects/'+pid+'/reports',{method:'POST',body:reportInput});
+  assert.equal(reportReplay.status,200,'Same report command must replay receipt');
+  assert.equal(reportReplay.data.report.id,report.data.report.id);
+  assert.equal(reportReplay.data.report.revision,report.data.report.revision);
+  const reportKeyCollision=await api('/projects/'+pid+'/reports',{
+    method:'POST',body:{...reportInput,kind:'month'}});
+  assert.equal(reportKeyCollision.status,409,'A report command key cannot mean a new kind');
+  const unkeyedReport=await api('/projects/'+pid+'/reports',{
+    method:'POST',body:{kind:'week'}});
+  assert.equal(unkeyedReport.status,400,'A report request must carry an idempotency key');
+  const deniedReport=await api('/projects/'+pid+'/reports',{
+    method:'POST',cookie:cookieB,
+    body:{idempotencyKey:randomUUID(),kind:'month'}});
+  assert.equal(deniedReport.status,403,'Project members cannot generate official reports');
+
   const changedTask=await api('/projects/'+pid+'/tasks',{method:'POST',
-    body:{idempotencyKey:randomUUID(),title:'晚于草稿新增的任务',assigneeId:null,dueDate:null}});
+    body:{idempotencyKey:randomUUID(),title:'晚于草稿新增的任务',
+      assigneeId:null,dueDate:null}});
   assert.equal(changedTask.status,201);
-  const refreshed=await api('/projects/'+pid+'/reports',{method:'POST',body:{kind:'week'}});
+  const refreshed=await api('/projects/'+pid+'/reports',{method:'POST',
+    body:{idempotencyKey:randomUUID(),kind:'week'}});
+  assert.equal(refreshed.status,200);
   assert.equal(refreshed.data.report.id,report.data.report.id);
+  assert.equal(refreshed.data.report.revision,report.data.report.revision+1,
+    'A refreshed draft must advance its revision once');
   assert.ok(refreshed.data.report.content.includes('总数：'+(beforeCount+1)+'；'),
     'Regenerated draft must reflect new data');
-  const published=await api('/projects/'+pid+'/reports/'+report.data.report.id+'/publish',{method:'POST'});
-  assert.equal(published.status,200);
-  const immutable=await api('/projects/'+pid+'/reports',{method:'POST',body:{kind:'week'}});
+  const publishBase='/projects/'+pid+'/reports/'+report.data.report.id+'/publish';
+  const stalePublication=await api(publishBase,{method:'POST',
+    body:{idempotencyKey:randomUUID(),expectedRevision:report.data.report.revision}});
+  assert.equal(stalePublication.status,409,
+    'Outdated report content may not be published');
+  const publishInput={idempotencyKey:randomUUID(),
+    expectedRevision:refreshed.data.report.revision};
+  const published=await api(publishBase,{method:'POST',body:publishInput});
+  assert.equal(published.status,200,JSON.stringify(published.data));
+  assert.equal(published.data.report.state,'published');
+  assert.equal(published.data.report.revision,refreshed.data.report.revision+1);
+  assert.equal(published.data.report.published_by,uid);
+  assert.ok(published.data.report.published_at);
+  const publishedReplay=await api(publishBase,{method:'POST',body:publishInput});
+  assert.equal(publishedReplay.status,200,'Same publication command should replay');
+  assert.equal(publishedReplay.data.report.revision,published.data.report.revision);
+  const publicationKeyCollision=await api(publishBase,{method:'POST',
+    body:{...publishInput,expectedRevision:refreshed.data.report.revision+1}});
+  assert.equal(publicationKeyCollision.status,409);
+  const repeatedPublication=await api(publishBase,{method:'POST',
+    body:{...publishInput,idempotencyKey:randomUUID()}});
+  assert.equal(repeatedPublication.status,409,
+    'A second publication command must be refused');
+  const immutable=await api('/projects/'+pid+'/reports',{method:'POST',
+    body:{idempotencyKey:randomUUID(),kind:'week'}});
+  assert.equal(immutable.status,200);
   assert.equal(immutable.data.report.content,refreshed.data.report.content,
     'Published reports must remain immutable');
+  assert.equal(immutable.data.report.revision,published.data.report.revision,
+    'Requesting a published report must not advance its revision');
+  const reportEvents=(await db.query(`
+    SELECT kind,count(*)::int AS n FROM domain_events
+    WHERE project_id=$1 AND aggregate_id=$2
+      AND kind IN ('report.generation_requested.v1','report.published.v1')
+    GROUP BY kind`,[pid,report.data.report.id])).rows;
+  assert.equal(reportEvents.find(x=>x.kind==='report.generation_requested.v1')?.n,3);
+  assert.equal(reportEvents.find(x=>x.kind==='report.published.v1')?.n,1);
+
   const removeDenied=await api('/projects/'+pid+'/members/'+second.data.user.id,{
     method:'DELETE',cookie:cookieB});
   assert.equal(removeDenied.status,403);

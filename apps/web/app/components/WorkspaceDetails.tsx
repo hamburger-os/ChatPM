@@ -24,6 +24,7 @@ export default function WorkspaceDetails({project,user,messages}:{
   const createTaskIntent=useRef<string|null>(null);
   const updateTaskIntents=useRef(new Map<string,string>());
   const reviewIntents=useRef(new Map<string,string>());
+  const reportIntents=useRef(new Map<string,string>());
   const [settings,setSettings]=useState({aiEnabled:false,workStart:null as number|null,
     workEnd:null as number|null,cooldownHours:null as number|null});
   const id=project?.id;
@@ -111,6 +112,15 @@ export default function WorkspaceDetails({project,user,messages}:{
     assigneeId:string|null=null,dueDate?:string|null){
     reviewCommand('/proposals/'+p.id+'/decision',decision,{assigneeId,dueDate});
   }
+  function reportCommand(path:string,details:Record<string,unknown>){
+    const intent=JSON.stringify([id,path,details]);
+    const idempotencyKey=reportIntents.current.get(intent)??crypto.randomUUID();
+    reportIntents.current.set(intent,idempotencyKey);
+    void act(async()=>{
+      await request(base+path,{method:'POST',body:json({idempotencyKey,...details})});
+      reportIntents.current.delete(intent);
+    });
+  }
   return <aside className="details">
     <div className="tabs">
       {(['tasks','governance','proposals','reports','settings'] as Tab[]).map(t=>
@@ -176,15 +186,15 @@ export default function WorkspaceDetails({project,user,messages}:{
       <h3>周报与月报</h3>
       {owner&&<div className="actions">
         {(['week','month'] as const).map(kind=><button key={kind} disabled={busy}
-          onClick={()=>void act(async()=>{await request(base+'/reports',
-            {method:'POST',body:json({kind})});})}>生成{kind==='week'?'周':'月'}报</button>)}
+          onClick={()=>reportCommand('/reports',{kind})}>生成{kind==='week'?'周':'月'}报</button>)}
       </div>}
       {reports.map(x=><details className="item" key={x.id}>
-        <summary><strong>{x.kind==='week'?'周报':'月报'} · {x.period_key}</strong></summary>
+        <summary><strong>{x.kind==='week'?'周报':'月报'} · {x.period_key}</strong>
+          <small> · v{x.revision} · {x.state==='published'?'已发布':'草稿'}</small></summary>
         <pre>{x.content}</pre>
-        {owner&&x.state==='draft'&&<button disabled={busy} onClick={()=>void act(async()=>{
-          await request(base+'/reports/'+x.id+'/publish',{method:'POST'});
-        })}>审核并发布</button>}
+        {owner&&x.state==='draft'&&<button disabled={busy} onClick={()=>
+          reportCommand('/reports/'+x.id+'/publish',
+            {expectedRevision:x.revision})}>审核并发布</button>}
       </details>)}
     </>}
     {project&&tab==='settings'&&<>

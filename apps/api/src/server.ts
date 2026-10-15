@@ -8,6 +8,7 @@ import { registerPmRoutes } from './pm-routes.ts';
 import { registerEvidenceRoutes } from './evidence-routes.ts';
 import { registerTaskRoutes } from './task-routes.ts';
 import { registerApprovalRoutes } from './approval-routes.ts';
+import { registerReportRoutes } from './report-routes.ts';
 import { randomUUID } from 'node:crypto';
 import { signedQuotaKey } from '../../../packages/core/src/quota-key.ts';
 import Fastify from 'fastify';
@@ -22,7 +23,7 @@ import { createSession, hashPassword, readSession, revokeSession, verifyPassword
 import { isValidTimezone } from '../../../packages/core/src/policy.ts';
 import { syncFollowup } from '../../../packages/core/src/followup.ts';
 import { insertMessage } from '../../../packages/core/src/messages.ts';
-import { generateReport } from '../../../packages/core/src/reports.ts';
+
 import { deadEvents, outboxSummary } from '../../../packages/core/src/outbox.ts';
 
 const port = serverConfig.API_PORT;
@@ -407,44 +408,12 @@ app.get('/projects/:id/risks',async req=>{
   await member(await authenticated(req),projectId);
   return {risks:(await pool.query('SELECT * FROM risks WHERE project_id=$1 ORDER BY created_at DESC',[projectId])).rows};
 });
-app.get('/projects/:id/reports',async req=>{
-  const projectId=uuid.parse((req.params as {id:string}).id);
-  await member(await authenticated(req),projectId);
-  return {reports:(await pool.query('SELECT * FROM reports WHERE project_id=$1 ORDER BY created_at DESC LIMIT 50',[projectId])).rows};
-});
-app.post('/projects/:id/reports',async req=>{
-  const projectId=uuid.parse((req.params as {id:string}).id);
-  const userId=await authenticated(req);
-  const {kind}=z.object({kind:z.enum(['week','month'])}).parse(req.body);
-  return transaction(async db=>{
-    const access=await lockProjectAccess(db,projectId,userId);
-    assertProject(access.role,'report.manage');
-    const report=await generateReport(db,projectId,kind,userId);
-    await audit(db,projectId,userId,'report.generated',report.id,{kind});
-    return {report};
-  });
-});
-app.post('/projects/:id/reports/:reportId/publish',async req=>{
-  const {id,reportId}=req.params as {id:string,reportId:string};
-  const projectId=uuid.parse(id),report=uuid.parse(reportId);
-  const userId=await authenticated(req);
-  return transaction(async db=>{
-    const access=await lockProjectAccess(db,projectId,userId);
-    assertProject(access.role,'report.manage');
-    const x=await db.query(
-      `UPDATE reports SET state='published' WHERE id=$1 AND project_id=$2 RETURNING id`,
-      [report,projectId]);
-    if(!x.rowCount) fail(404,'报告不存在');
-    await audit(db,projectId,userId,'report.published',report);
-    return {ok:true};
-  });
-});
-
 registerAdminModelRoutes(app,authenticated);
 registerGovernanceRoutes(app,authenticated);
 registerPmRoutes(app,authenticated);
 registerEvidenceRoutes(app,authenticated);
 registerTaskRoutes(app,authenticated);
 registerApprovalRoutes(app,authenticated);
+registerReportRoutes(app,authenticated);
 app.addHook('onClose',async()=>{await pool.end();});
 await app.listen({port,host:serverConfig.API_HOST});
