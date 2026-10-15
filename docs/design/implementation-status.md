@@ -126,3 +126,7 @@
 ## ADR-050 · PostgreSQL Docker 隔离恢复验证
 
 Docker 部署 Smoke 原先仅验证 pg_dump custom-format 文件头和 pg_restore --list；本轮替换为真实隔离库恢复测试。CI 先验证 Docker Web/API Origin/Cookie、Worker heartbeat/Outbox，然后停止 web/api/worker，只保留测试数据库；脚本只能在 CI=true 与 CHATPM_CI_RESTORE_DRILL=1 同时成立时执行。使用现有 Docker backup.mjs 生成私有归档，随机创建 chatpm_restore_drill_* 临时数据库，以 pg_restore --exit-on-error 还原全部 schema 与数据，逐张 public 表比对行数、排序内容摘要以及 schema_migrations 与真实用户数据，必须完全一致。演练结束清理隔离 DB 和临时文件，不对原 chatpm 库进行恢复/drop。纯单元测试覆盖缺表、行丢失、内容篡改、空源、重复指纹和未授权启动；Docker Workflow 验证真实恢复。**局限：** 这是 Docker CI 少量样本；离机加密备份、PITR、真实存量 V1→V2 ETL 与 Win11/Linux 原生、企业数据库规模恢复仍未验收，Issue #51 保持开放。
+
+## ADR-051 · 组织治理写操作的持久幂等回执
+
+已将组织管理 8 个写 API（部门/组合/项目集创建、项目归属、组织成员加入与角色、部门人员、资源投入）统一要求 UUID idempotencyKey，并更新组织前端同一操作网络重试沿用该 key；原先 tenant 互斥锁与当前管理员行级授权不变。OrganizationCommand 使用现有 021_tenant_command_receipts.sql 租户命令表，以当前 tenant/actor/action/key/payload_sha256 保证操作与 OrganizationAudit/Receipt 同一事务；相同 key+payload 返回原结果，不重复组织业务记录/审计；同 key 不同 payload 409，无 key 400，非 admin 403。真实 PostgreSQL Organization Integration 和 API Smoke 覆盖回执、业务失败回滚、审计失败回滚、撤权和 4 路并发 portfolio 创建、资源投入重放、组织成员邀请重放。没有引入虚构的 projectId 或 Tenant Outbox；组织层 DomainEvent/Outbox、项目分类乐观锁与资源累计投入限制仍是后续治理工作，不能宣称全部 V2 完成。
