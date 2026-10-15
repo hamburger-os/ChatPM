@@ -61,6 +61,8 @@ jobs:
         run: node --import tsx packages/core/test/ai-authorization.integration.ts
       - name: One-time organization invitation integration
         run: node --import tsx packages/core/test/invitations.integration.ts
+      - name: Core project classification command and rollback integration
+        run: node --import tsx packages/core/test/classification-command.integration.ts
       - name: Current membership and project visibility read model integration
         run: node --import tsx packages/core/test/tenant-structure.integration.ts
       - name: Real portfolio and program pulse integration
