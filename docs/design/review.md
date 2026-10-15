@@ -123,3 +123,7 @@ CI 新增 `tools/test/task-linkage-smoke.mjs`：PostgreSQL 创建正式任务与
 ## ADR-038 · Evidence/Claim 证据链 /review 核对点
 
 审查是否对源消息使用 `(project_id,id)` 复合外键并在服务端锁定、只接受真实 user 消息、不让上游文本赋予工具权限；Unicode code-point 范围必须在原文内，引用文本不可由客户端自报或篡改；必须有 tenant/project 当前访问授权，member 仅能引用自己发言，只有原作者可确认自己的主张，manager/owner 才可驳回其他人的错误解释。证据与主张、CommandReceipt、DomainEvent、Outbox 和 Audit 在同一事务，重放不会复制数据；文案明确来源确认不是 Task done 或交付物 accepted。API JSON 校验、引文泄漏风险、分页跨项目 404、浏览器异步页签切换、Docker/native/security/docs CI 均需检查。数据库超级用户仍可删历史，不能把应用审计当作法律不可篡改证明。
+
+## ADR-039 · 旧 Task 命令统一 /review
+
+检查旧直接 Task create/update 已不存在绕过 CommandReceipt 的第二写入路由；API 强制 UUID idempotencyKey，客户端编辑不同意图须重新生成，同意图网络重试保持键；相同 key/同 payload 返回同一个 Task/版本、不同 payload 409，消息/AI 无权伪造带身份的动作。DB 正式状态、followup、Audit（含 before/after）、DomainEvent、Outbox、Receipt 全原子提交；项目/组织成员撤权与负责人有效性仍在事务内复核；完成前置任务/悲观锁/乐观版本均沿用。检查 Web UI、Smoke/Worker/报告、命令断言、原生+Docker 及双语文档全部 latest-head CI。提案审批产生 Task 等剩余直接 SQL 按真实状态保持待办，不可虚称全域完成。

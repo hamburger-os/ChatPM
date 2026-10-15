@@ -72,3 +72,7 @@ Issue 是已经发生并影响项目的事实，不是未来可能发生的 Risk
 ProjectClaim 引用 EvidenceSpan（复合项目外键），记录 `kind`、解释摘要、`pending/source_acknowledged/dismissed` 状态、版本及人工操作者。项目 owner/manager 可根据本项目成员发言创建待核实主张；普通成员可从**自己**发送的消息创建主张；只允许消息**原作者**对其主张执行 source_acknowledged，owner/manager 可以 dismiss 不符合上下文的主张。此处的“来源作者已确认”只确认他确实认可自己表述的解释，并不意味着工作已完成或交付物已验收；任何正式 Task/Change/Decision/Acceptance 仍由独立的正式命令和审批维护。
 
 对照来源：server 从数据库同项目锁定原消息，验证片段范围、长度与非空，查询返回来源 UUID、原作者、时间、引文及主张，不能在另一个项目检索同一消息 UUID。所有创建/确认/驳回是幂等受控 Command，复用业务写入/审计/事件/Outbox 原子事务。未来 AI 只能提出带来源的候选，不可自行 source_acknowledged。本切片是 Evidence/Claim 基础，不是自动 Claim 冲突解决、工作承诺引擎或全部 AI Playbook。
+
+## ADR-039 · Task 正式命令语义
+
+直接任务创建和更新统一采用项目级 CommandReceipt，并且任务版本更新、事务内当前角色检查、负责人当下有效项目/组织成员资格、前置任务完成条件、提醒计划与 DomainEvent/Outbox/Audit 同成败。任务新建必须带 `idempotencyKey`；状态/计划编辑必须带 `idempotencyKey` 和 `version`，数据库拒绝重复旧版本。客户端同一个意图重试须保留键；更改请求内容时重新生成键。此设计不将口头完成声明直接升级为已验收交付物，也不允许 AI 自动管理项目基线。

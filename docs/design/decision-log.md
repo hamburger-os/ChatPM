@@ -199,3 +199,9 @@
 **决定：** 证据与业务事实分层存储：新增 EvidenceSpan（消息、code-point 范围、服务器提取原文）和 ProjectClaim（类别、人的解释、pending/source_acknowledged/dismissed 状态）。只允许来源人自己确认，PM 可以驳回错误解释；所有操作使用正式项目 Command/审计/Outbox。允许项目成员引用自己发言形成待确认主张，但禁止跨项目聊天或仅凭系统管理员角色读取。
 
 **理由：** 为聊天中的承诺、阻塞、完成声称、决策线索建立可复核来源，不让模型猜测、工期估计或“已开发完”直接变成已验收事实。**取舍：** 新表留存准确摘录（受项目成员权限保护），避免存一份消息全文；证据量增长与保留期限需要 P4 统一治理。当前不执行 LLM 主张自动抽取或跨来源冲突消解，后续有黄金评测再升级。
+
+## ADR-039 · 正式任务唯一命令提交边界（2026-10-15）
+
+**决定：** 把旧 `POST /projects/:id/tasks` 与 `PATCH /projects/:id/tasks/:taskId` 搬出 API bootstrap，迁入 `delivery/task-routes.ts` 并使用 `executePmCommand`。每个写入请求必须带客户端 UUID `idempotencyKey`；更新仍显式携带 `version` 并保持任务负责人/里程碑依赖/权限条件。正式 Task 状态、审计、DomainEvent、Outbox、CommandReceipt 与提醒计划刷新同事务提交。同命令键/同请求返回原结果；键被不同 payload 复用返回 409。现有前端及集成测试须改为显式唯一命令键，**不为旧请求提供绕过审计的可选降级**。
+
+**理由：** 消除旧直接 Task 路由与新 PM 登记簿不同的幂等/事件语义；将领域 SQL 与 API 验证分离。**限制：** 提案审核触发创建 Task/修订 Risk 的遗留路径仍待后续同类迁移；不能据此宣称全域正式命令一体化或项目管理 V2 全部完成。

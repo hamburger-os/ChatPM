@@ -202,3 +202,7 @@ AI 事件、规则提醒与周期报告 Runner 的应用入口分别归 `package
 ## ADR-038 · EvidenceSource / ProjectClaim 当前代码边界
 
 `015_evidence_claims.sql` 建立 `project_evidence_spans` 和 `project_claims`，均由项目复合 FK 约束。正式服务在事务内验证源消息 `kind='user'`、项目 ID、原作者与 code-point 范围（0-based start inclusive/end exclusive），由服务端截取 quote 并保存；来源消息文本视作不可信数据，不授予任何命令能力。允许 owner/manager 录入其他人来源的待核实主张，普通成员仅可为自己的消息创建；只允许原作者确认措辞与分类，经理可驳回。 `source_acknowledged` 不等同于任务 done、交付物 accepted 或 ChangeRequest approved。统一 CommandReceipt/DomainEvent/Outbox/Audit，服务端必须每次写入重新验证项目与组织成员身份；AI 仅可在未来生成另需审核的 pending 主张。
+
+## ADR-039 · Delivery Task API 命令统一
+
+当前正式 Task create/update 路由通过 `apps/api/src/task-routes.ts` 注册，内部调用 `packages/core/src/pm-command.ts` 的 `executePmCommand`，由核心业务服务在同一数据库事务内执行写入、提醒计划、审计/事件/Outbox/幂等回执。所有直接任务写入请求强制 UUID `idempotencyKey`，Task 修改仍要求 `version`。重复同键/同 payload 应返回同一正式 Task 和版本，冲突 payload 必须 409。前端持久化当前待提交意图的 key，避免网络失败重试重复创建。项目成员撤权/任务负责人效力与前置依赖/状态提交约束不变。注意候选审批生成正式任务、Worker 系统维护等其他路径尚未全部迁入 Command Runtime。

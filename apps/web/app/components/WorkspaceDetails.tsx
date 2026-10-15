@@ -1,5 +1,5 @@
 'use client';
-import { useEffect, useState, type FormEvent } from 'react';
+import { useEffect, useRef, useState, type FormEvent } from 'react';
 import type { Message,Person, Progress, Project, Proposal, Report, Risk, Task, User } from './client';
 import { json, request } from './client';
 import PmRegisterPanel from './PmRegisterPanel';
@@ -21,6 +21,8 @@ export default function WorkspaceDetails({project,user,messages}:{
   const [email,setEmail]=useState('');
   const [notice,setNotice]=useState('');
   const [busy,setBusy]=useState(false);
+  const createTaskIntent=useRef<string|null>(null);
+  const updateTaskIntents=useRef(new Map<string,string>());
   const [settings,setSettings]=useState({aiEnabled:false,workStart:null as number|null,
     workEnd:null as number|null,cooldownHours:null as number|null});
   const id=project?.id;
@@ -73,15 +75,25 @@ export default function WorkspaceDetails({project,user,messages}:{
   }
   const base='/projects/'+id;
   function createTask(e:FormEvent){
-    e.preventDefault();void act(async()=>{
-      await request(base+'/tasks',{method:'POST',body:json({title:taskName,
-        assigneeId:assignee||null,dueDate:due||null})});
+    e.preventDefault();
+    const idempotencyKey=createTaskIntent.current??crypto.randomUUID();
+    createTaskIntent.current=idempotencyKey;
+    void act(async()=>{
+      await request(base+'/tasks',{method:'POST',body:json({idempotencyKey,
+        title:taskName,assigneeId:assignee||null,dueDate:due||null})});
+      createTaskIntent.current=null;
       setTaskName('');setAssignee('');setDue('');
     });
   }
   function patchTask(task:Task,change:Record<string,unknown>){
-    void act(async()=>{await request(base+'/tasks/'+task.id,
-      {method:'PATCH',body:json({version:task.version,...change})});});
+    const intent=JSON.stringify([id,task.id,task.version,change]);
+    const idempotencyKey=updateTaskIntents.current.get(intent)??crypto.randomUUID();
+    updateTaskIntents.current.set(intent,idempotencyKey);
+    void act(async()=>{
+      await request(base+'/tasks/'+task.id,{method:'PATCH',
+        body:json({idempotencyKey,version:task.version,...change})});
+      updateTaskIntents.current.delete(intent);
+    });
   }
   function decide(p:Proposal,decision:'accepted'|'rejected',assigneeId:string|null=null,dueDate?:string|null){
     void act(async()=>{await request(base+'/proposals/'+p.id+'/decision',{
@@ -109,12 +121,12 @@ export default function WorkspaceDetails({project,user,messages}:{
       </article>)}
       <h3>正式任务 ({tasks.length})</h3>
       {manager&&<form className="stack" onSubmit={createTask}>
-        <input required placeholder="任务名称" value={taskName} onChange={e=>setTaskName(e.target.value)}/>
-        <select aria-label="任务负责人" value={assignee} onChange={e=>setAssignee(e.target.value)}>
+        <input required placeholder="任务名称" value={taskName} onChange={e=>{setTaskName(e.target.value);createTaskIntent.current=null;}}/>
+        <select aria-label="任务负责人" value={assignee} onChange={e=>{setAssignee(e.target.value);createTaskIntent.current=null;}}>
           <option value="">负责人待定</option>{people.filter(x=>x.role!=='observer').map(x=>
             <option value={x.id} key={x.id}>{x.display_name}</option>)}
         </select>
-        <input aria-label="任务截止日期" type="date" value={due} onChange={e=>setDue(e.target.value)}/>
+        <input aria-label="任务截止日期" type="date" value={due} onChange={e=>{setDue(e.target.value);createTaskIntent.current=null;}}/>
         <button disabled={busy}>创建任务</button>
       </form>}
       {tasks.map(task=><article className="item" key={task.id}>
