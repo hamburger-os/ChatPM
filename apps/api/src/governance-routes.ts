@@ -31,10 +31,10 @@ export function registerGovernanceRoutes(app:FastifyInstance,
     const member=await pool.query('SELECT role FROM tenant_members WHERE tenant_id=$1 AND user_id=$2',
       [tenantId,user]);
     const visible=member.rows[0]?.role==='admin'
-      ?await pool.query(`SELECT id,name,department_id,program_id,portfolio_id
+      ?await pool.query(`SELECT id,name,department_id,program_id,portfolio_id,classification_revision
         FROM projects WHERE tenant_id=$1 ORDER BY name`,[tenantId])
-      :await pool.query(`SELECT p.id,p.name,p.department_id,p.program_id,p.portfolio_id
-        FROM projects p JOIN project_members pm ON pm.project_id=p.id AND pm.user_id=$2
+      :await pool.query(`SELECT p.id,p.name,p.department_id,p.program_id,p.portfolio_id,
+          p.classification_revision FROM projects p JOIN project_members pm ON pm.project_id=p.id AND pm.user_id=$2
         WHERE p.tenant_id=$1 ORDER BY p.name`,[tenantId,user]);
     return {departments:departments.rows,portfolios:portfolios.rows,
       programs:programs.rows,projects:visible.rows};
@@ -77,18 +77,36 @@ export function registerGovernanceRoutes(app:FastifyInstance,
   app.patch('/tenants/:tenantId/projects/:projectId/classification',async req=>{
     const {tenantId,user}=await scope(req,true);
     const projectId=uuid.parse((req.params as {projectId:string}).projectId);
-    const v=z.object({idempotencyKey:uuid,departmentId:uuid.nullable(),programId:uuid.nullable(),
+    const v=z.object({idempotencyKey:uuid,expectedRevision:z.number().int().positive(),
+      departmentId:uuid.nullable(),programId:uuid.nullable(),
       portfolioId:uuid.nullable()}).refine(x=>!x.programId||!x.portfolioId,
       '项目属于项目集时，通过项目集汇总到组合').parse(req.body);
     const project=await organizationCommand(tenantId,user,'project.classification_changed',
       {idempotencyKey:v.idempotencyKey,payload:v},async db=>{
-      const {rows}=await db.query(`UPDATE projects SET department_id=$3,program_id=$4,
-        portfolio_id=$5 WHERE tenant_id=$1 AND id=$2
-        RETURNING id,department_id,program_id,portfolio_id`,
-        [tenantId,projectId,v.departmentId,v.programId,v.portfolioId]);
-      if(!rows.length)deny(404,'项目不存在');
-      return {value:rows[0],targetId:projectId,
-        metadata:{departmentId:v.departmentId,programId:v.programId,portfolioId:v.portfolioId}};
+      const before=(await db.query<{
+        classification_revision:number;department_id:string|null;
+        program_id:string|null;portfolio_id:string|null;
+      }>(`SELECT classification_revision,department_id,program_id,portfolio_id
+        FROM projects WHERE tenant_id=$1 AND id=$2 FOR UPDATE`,
+        [tenantId,projectId])).rows[0];
+      if(!before)deny(404,'项目不存在');
+      if(before.classification_revision!==v.expectedRevision)
+        deny(409,'项目归属已被修改，请刷新后重新确认');
+      if(before.department_id===v.departmentId&&
+         before.program_id===v.programId&&
+         before.portfolio_id===v.portfolioId)
+        deny(409,'项目已采用该归属，不需要重复修改');
+      const updated=await db.query(`
+        UPDATE projects SET department_id=$3,program_id=$4,
+          portfolio_id=$5,classification_revision=classification_revision+1
+        WHERE tenant_id=$1 AND id=$2 AND classification_revision=$6
+        RETURNING id,department_id,program_id,portfolio_id,classification_revision
+      `,[tenantId,projectId,v.departmentId,v.programId,v.portfolioId,v.expectedRevision]);
+      if(!updated.rowCount)deny(409,'项目归属版本冲突');
+      return {value:updated.rows[0],targetId:projectId,
+        metadata:{previousRevision:before.classification_revision,
+          classificationRevision:updated.rows[0].classification_revision,
+          departmentId:v.departmentId,programId:v.programId,portfolioId:v.portfolioId}};
     });
     return {project};
   });

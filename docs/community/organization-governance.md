@@ -69,6 +69,10 @@ npm run admin:grant -- --email=admin@example.com --confirm
 
 组织管理员在资源投入计划里为同一人员登记多个项目时，系统按日期汇总所有项目的百分比；同一天总和不得超过 100%，否则拒绝保存。开始日、结束日均计入占用。例如 10 月 1–31 日已投入 30%，在 10 月 10–20 日另登记 70% 可以通过，再多 1% 就不能通过；11 月 1 日则可重新安排 100%。网络超时重试同一操作不会重复登记。该比例仅代表规划中的资源容量，不是实际工时记录。
 
+### 项目归属版本与并发管理员
+
+项目可归属一个主部门、一个项目集或直接一个项目组合。组织管理员在「项目结构归属」修改项目时，保存会带上当前显示的版本号：如果别的管理员已经先修改了同一项目，过期的保存请求将被拒绝，不会静默覆盖。选择「刷新所选项目归属」可取回服务器最新的部门、项目集、项目组合和版本，再由人重新确认。成功的网络重试不会重复修改归属。
+
 ## English
 
 ### Organization and project structure
@@ -125,4 +129,7 @@ Creation of departments, programs and portfolios, membership/role edits, project
 ### Cross-project allocation capacity
 
 A tenant administrator may plan a person's contributions to several projects, but the sum for that person on any given date must not exceed 100%. Both start and end dates count. For example, an existing 30% allocation for October 1–31 may coexist with another 70% for October 10–20, but an extra 1% on an overlapping day will be rejected; the person can be allocated 100% starting November 1. Retrying the same saved command never creates a duplicate. Percentages represent planned capacity rather than actual timesheets.
+### Project classification version and concurrent administrators
+
+A project may belong to a primary department, to a program, or directly to a portfolio. When a tenant administrator edits its classification, the submission includes the version they reviewed. If another administrator has already changed the project, the stale save is rejected rather than silently overwriting the new classification. **Refresh selected project classification** loads the current department, program, portfolio and revision for explicit review. Replaying the original completed command does not alter the classification again.
 

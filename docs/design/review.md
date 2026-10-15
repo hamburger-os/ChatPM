@@ -183,3 +183,7 @@ CI 新增 `tools/test/task-linkage-smoke.mjs`：PostgreSQL 创建正式任务与
 ## ADR-052 · 部门多项目资源容量约束 /review
 
 资源 allocation.recorded 不仅校验单条 1–100%，还应按 tenant_id+user_id 汇总所有项目计划投入，在拟登记起止闭区间逐个分配开始日取 peak，`peak+percentage>100` 409；当天结束的旧分配仍计入，当天之后的无重叠安排不会阻止新分配。对不同项目同一人的资源分配既不能各按 100% 独立登记，也不能对不相交日期错误相加。资源领域 SQL 从 API 写路由抽取到可复用的 core 服务，并通过 organizationCommand 的租户 advisory transaction lock 串行化两个不同 key 的并发插入。检查项目与成员关联、租户身份、管理员即时撤权、idempotencyKey 原键重放、同键 payload 冲突、在容量不足时无 Audit/Receipt/业务行脏写。回归验证跨项目 60+40、超出 1%、端点接壤、完全不交叉、另一个人员、并行竞争；原有 Windows/Linux/Docker、API、Worker、模型安全、文档均不得回退。项目组合/项目集归属不影响按人容量总和，部门汇总不得冒充工时数据。合并需最新 Head 五项 CI success，且无 unresolved review threads。
+
+## ADR-053 · 项目组合/项目集/部门分类的版本冲突 /review
+
+核验组织结构列表返回 classification_revision；归属写入强制 UUID idempotencyKey 与 expectedRevision。只能当前 tenant admin 操作本组织项目（组织互斥 advisory + 当前管理员行锁）；项目 FOR UPDATE 后检验版本匹配，再校验待归属不是完全相同的状态，否则明确 409，不能写虚假 OrganizationAudit。实际变更 revision+1，仍必须满足只设置 Program 或直接 Portfolio 的业务约束与同 tenant 复合 FK。两个并发管理员不同 key、相同 expectedRevision 时仅一人成功；成功 UUID/key/payload 重放 200 且不再改版本，已成功的 key 改 payload 409，新 key 携带旧版本 409；跨租户项目 404，丢失组织管理员身份 403。界面显示当前归属版本，过期保存需要让用户刷新并重新选择，不静默覆盖。新 023 SQL 不改写既有 001–022 checksum，API/PostgreSQL smoke 检查版本 1/2/3/4、旧版本、独立修改、重复请求与无审计脏数据。合并须最新 SHA Product/Docs/Security/Native/Docker 五项 CI 全绿且无 unresolved threads。

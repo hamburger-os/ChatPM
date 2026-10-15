@@ -217,15 +217,81 @@ try{
       name:'Integration '+suffix,description:'Program for smoke',
       portfolioId:portfolio.data.portfolio.id}});
   assert.equal(program.status,201,JSON.stringify(program.data));
-  const classification=await api('/tenants/'+tenantId+'/projects/'+pid+'/classification',{
-    method:'PATCH',body:{idempotencyKey:randomUUID(),
-      departmentId:dep.data.department.id,
-      programId:program.data.program.id,portfolioId:null}});
+  const classificationPath='/tenants/'+tenantId+'/projects/'+pid+'/classification';
+  const originalClassification={idempotencyKey:randomUUID(),expectedRevision:1,
+    departmentId:dep.data.department.id,programId:program.data.program.id,
+    portfolioId:null};
+  const classification=await api(classificationPath,{
+    method:'PATCH',body:originalClassification});
   assert.equal(classification.status,200,JSON.stringify(classification.data));
   assert.equal(classification.data.project.program_id,program.data.program.id);
+  assert.equal(classification.data.project.classification_revision,2);
+  const classificationReplay=await api(classificationPath,{
+    method:'PATCH',body:originalClassification});
+  assert.equal(classificationReplay.status,200);
+  assert.equal(classificationReplay.data.project.classification_revision,2,
+    'Same org classification key must replay the original revision');
+  const classificationCollision=await api(classificationPath,{method:'PATCH',
+    body:{...originalClassification,departmentId:null}});
+  assert.equal(classificationCollision.status,409);
+  const noVersion=await api(classificationPath,{method:'PATCH',body:{
+    idempotencyKey:randomUUID(),departmentId:null,programId:null,portfolioId:null}});
+  assert.equal(noVersion.status,400);
+  const staleClassification=await api(classificationPath,{method:'PATCH',body:{
+    ...originalClassification,idempotencyKey:randomUUID(),portfolioId:null,
+    programId:null}});
+  assert.equal(staleClassification.status,409,'Stale classification cannot overwrite');
+  const noOpClassification=await api(classificationPath,{method:'PATCH',body:{
+    ...originalClassification,idempotencyKey:randomUUID(),expectedRevision:2}});
+  assert.equal(noOpClassification.status,409,
+    'Identical new command cannot invent another classification change');
+  const nonAdminClassification=await api(classificationPath,{method:'PATCH',
+    cookie:cookieB,body:{...originalClassification,
+      idempotencyKey:randomUUID(),expectedRevision:2}});
+  assert.equal(nonAdminClassification.status,403);
+  const invisibleClassification=await api(
+    '/tenants/'+tenantId+'/projects/'+randomUUID()+'/classification',{
+      method:'PATCH',body:{...originalClassification,idempotencyKey:randomUUID(),
+        expectedRevision:1}});
+  assert.equal(invisibleClassification.status,404);
+  const toPortfolio=await api(classificationPath,{method:'PATCH',body:{
+    idempotencyKey:randomUUID(),expectedRevision:2,
+    departmentId:dep.data.department.id,programId:null,
+    portfolioId:portfolio.data.portfolio.id}});
+  assert.equal(toPortfolio.status,200);
+  assert.equal(toPortfolio.data.project.classification_revision,3);
+  const backToProgram=await api(classificationPath,{method:'PATCH',body:{
+    idempotencyKey:randomUUID(),expectedRevision:3,
+    departmentId:dep.data.department.id,programId:program.data.program.id,
+    portfolioId:null}});
+  assert.equal(backToProgram.status,200);
+  assert.equal(backToProgram.data.project.classification_revision,4);
   const structure=await api('/tenants/'+tenantId+'/structure');
   assert.equal(structure.status,200,JSON.stringify(structure.data));
-  assert.ok(structure.data.projects.some(p=>p.id===pid&&p.program_id===program.data.program.id));
+  const classifiedProject=structure.data.projects.find(p=>p.id===pid);
+  assert.equal(classifiedProject?.program_id,program.data.program.id);
+  assert.equal(classifiedProject?.classification_revision,4);
+
+  const concurrentClassification=await Promise.all([
+    api(classificationPath,{method:'PATCH',body:{idempotencyKey:randomUUID(),
+      expectedRevision:4,departmentId:null,programId:null,portfolioId:null}}),
+    api(classificationPath,{method:'PATCH',body:{idempotencyKey:randomUUID(),
+      expectedRevision:4,departmentId:dep.data.department.id,
+      programId:null,portfolioId:portfolio.data.portfolio.id}}),
+  ]);
+  assert.deepEqual(concurrentClassification.map(x=>x.status).sort(),[200,409],
+    'Two independent old snapshots cannot overwrite one another');
+  const restoredClassification=await api(classificationPath,{method:'PATCH',body:{
+    idempotencyKey:randomUUID(),expectedRevision:5,
+    departmentId:dep.data.department.id,programId:program.data.program.id,
+    portfolioId:null}});
+  assert.equal(restoredClassification.status,200);
+  assert.equal(restoredClassification.data.project.classification_revision,6);
+  const realClassificationAudits=(await db.query(`SELECT count(*)::int AS n
+    FROM organization_audit_entries WHERE tenant_id=$1
+      AND action='project.classification_changed'`,[tenantId])).rows[0].n;
+  assert.equal(realClassificationAudits,5,
+    'Only five real changes may create classification audit records');
   const assignDepartment=await api('/tenants/'+tenantId+'/departments/'+
     dep.data.department.id+'/members',{
     method:'POST',body:{idempotencyKey:randomUUID(),
