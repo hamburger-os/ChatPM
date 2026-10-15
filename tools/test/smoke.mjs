@@ -507,6 +507,7 @@ try{
   const messages=await api('/projects/'+pid+'/messages');
   assert.equal(messages.data.messages.length,1);
   const secondProject=await api('/projects',{method:'POST',body:{
+    idempotencyKey:randomUUID(),
     name:'外键隔离测试项目',tenantId,timezone:'Asia/Shanghai'}});
   assert.equal(secondProject.status,201);
   await assert.rejects(
