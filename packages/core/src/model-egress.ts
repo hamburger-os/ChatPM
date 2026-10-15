@@ -13,12 +13,13 @@ for(const [subnet,prefix] of [
   ['169.254.0.0',16],['172.16.0.0',12],['192.0.0.0',24],
   ['192.168.0.0',16],['198.18.0.0',15],['224.0.0.0',4],
   ['240.0.0.0',4],['192.0.2.0',24],['198.51.100.0',24],
-  ['203.0.113.0',24],
+  ['203.0.113.0',24],['192.88.99.0',24],
 ] as const)forbidden.addSubnet(subnet,prefix,'ipv4');
 for(const [subnet,prefix] of [
   ['::',128],['::1',128],['fc00::',7],['fe80::',10],
   ['ff00::',8],['2001:db8::',32],['2002::',16],
-  ['2001::',32],['64:ff9b::',96],
+  ['2001::',32],['64:ff9b::',96],['64:ff9b:1::',48],
+  ['fec0::',10],
 ] as const)forbidden.addSubnet(subnet,prefix,'ipv6');
 
 function hostOf(url:URL):string{
@@ -27,6 +28,18 @@ function hostOf(url:URL):string{
 export function isPrivateModelAddress(address:string):boolean{
   const family=isIP(address);
   return !family||forbidden.check(address,family===4?'ipv4':'ipv6');
+}
+// Docker host gateway may legitimately use RFC1918/ULA addresses, but it
+// must NEVER resolve to link-local/cloud metadata, CGNAT, benchmark, loopback
+// or globally routable endpoints. This is narrower than 'any private IP'.
+const dockerGateway=new BlockList();
+for(const [net,prefix] of [
+  ['10.0.0.0',8],['172.16.0.0',12],['192.168.0.0',16],
+] as const)dockerGateway.addSubnet(net,prefix,'ipv4');
+dockerGateway.addSubnet('fc00::',7,'ipv6');
+export function isAllowedDockerGatewayAddress(address:string):boolean{
+  const family=isIP(address);
+  return family!==0&&dockerGateway.check(address,family===4?'ipv4':'ipv6');
 }
 function invalidUrl():never{throw new Error('MODEL_EGRESS_INVALID_URL');}
 function unsafe():never{throw new Error('MODEL_CATALOG_UNSAFE_ENDPOINT');}
@@ -55,10 +68,11 @@ async function pinnedModelAddress(url:URL,resolve:Resolver=dnsLookup):
   for(const address of addresses){
     if(!isIP(address.address)||![4,6].includes(address.family))unsafe();
     if(local){
-      const privateIp=isPrivateModelAddress(address.address);
       const loopback=address.address==='::1'||
         /^127\./.test(address.address);
-      if(!privateIp||(host==='localhost'&&!loopback))unsafe();
+      if(host==='localhost'){
+        if(!loopback)unsafe();
+      }else if(!isAllowedDockerGatewayAddress(address.address))unsafe();
     }else if(isPrivateModelAddress(address.address))unsafe();
   }
   // Subsequent socket creation uses ONLY this already checked address:
@@ -91,7 +105,14 @@ export const secureModelFetch:typeof fetch=async(input,init)=>{
     throw new Error('MODEL_EGRESS_INVALID_BODY');
   const pinned=await pinnedModelAddress(url);
   const headers:Record<string,string>={'Accept-Encoding':'identity'};
-  new Headers(init?.headers).forEach((value,name)=>{headers[name]=value;});
+  // The adapter only needs these three headers. In particular, never allow
+  // Host, Proxy-Authorization, hop-by-hop or framing overrides: those can
+  // redirect credentials or desynchronize intermediary HTTP parsing.
+  const allowedHeaders=new Set(['accept','authorization','content-type']);
+  new Headers(init?.headers).forEach((value,name)=>{
+    if(!allowedHeaders.has(name))throw new Error('MODEL_EGRESS_INVALID_HEADER');
+    headers[name]=value;
+  });
   const maxBytes=url.pathname.endsWith('/models')?512_000:2_000_000;
   const send=url.protocol==='https:'?httpsRequest:httpRequest;
   return new Promise<Response>((resolve,reject)=>{
