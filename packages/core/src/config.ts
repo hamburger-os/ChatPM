@@ -1,5 +1,6 @@
 import 'dotenv/config';
 import { z } from 'zod';
+import { configuredRegistrationMode } from './identity/registration-policy.ts';
 
 /** One runtime contract shared by native services and containers. */
 const schema = z.object({
@@ -36,6 +37,5 @@ if (!parsed.success) {
     parsed.error.issues.map(i => i.path.join('.') + ': ' + i.message).join('; '));
 }
 export const serverConfig = {...parsed.data,
-  REGISTRATION_MODE:parsed.data.REGISTRATION_MODE??
-    (parsed.data.NODE_ENV==='production'?'bootstrap':'open'),
+  REGISTRATION_MODE:configuredRegistrationMode(parsed.data.NODE_ENV,parsed.data.REGISTRATION_MODE),
 };
