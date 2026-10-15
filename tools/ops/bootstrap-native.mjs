@@ -15,13 +15,17 @@ export function prepareNativeEnv(source) {
   for (const [key,template] of [
     ['SESSION_SECRET',placeholder],
     ['MODEL_ENCRYPTION_KEY','replace-with-a-separate-long-random-model-key'],
+    ['BOOTSTRAP_TOKEN',''],
   ]) {
     const lines=output.split(/\r?\n/);
     const matches=lines.flatMap((line,index)=>line.startsWith(key+'=')?[index]:[]);
     if(matches.length>1)throw new Error('Duplicate '+key+' setting');
     const raw=matches.length?lines[matches[0]].slice(key.length+1).trim():'';
     if(raw&&raw!==template){
-      if(raw.length<32)throw new Error(key+' must contain at least 32 characters');
+      if(key==='BOOTSTRAP_TOKEN'&&!/^[a-fA-F0-9]{64}$/.test(raw))
+        throw new Error('BOOTSTRAP_TOKEN must contain 64 hexadecimal characters');
+      if(key!=='BOOTSTRAP_TOKEN'&&raw.length<32)
+        throw new Error(key+' must contain at least 32 characters');
       continue;
     }
     const value=key+'='+randomBytes(32).toString('hex');
@@ -45,6 +49,9 @@ export function validateNativeEnv(text) {
   const modelKey=get('MODEL_ENCRYPTION_KEY');
   if(!modelKey||modelKey.length<32||/replace|example|changeme/i.test(modelKey))
     errors.push('Configure a strong MODEL_ENCRYPTION_KEY.');
+  const registrationMode=get('REGISTRATION_MODE')||'bootstrap';
+  if(registrationMode==='bootstrap'&&!/^[a-fA-F0-9]{64}$/.test(get('BOOTSTRAP_TOKEN')||''))
+    errors.push('Set a 64-hex BOOTSTRAP_TOKEN for first-account operator verification.');
   const secret = get('SESSION_SECRET');
   if (!secret || secret.length < 32 || /replace|example|changeme/i.test(secret))
     errors.push('Configure a strong SESSION_SECRET.');
@@ -73,6 +80,7 @@ export function main() {
     console.log('Updated missing/template session secret; other settings preserved.');
   }
   if (process.platform !== 'win32') chmodSync(envFile, 0o600);
+  console.log('Read first-account BOOTSTRAP_TOKEN from your private .env; never share it in chat.');
   const errors = validateNativeEnv(next);
   if (errors.length) {
     console.error('Complete these preflight steps in .env, then rerun npm run setup:local:');
