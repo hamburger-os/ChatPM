@@ -347,3 +347,11 @@ A remote model endpoint requires HTTPS and safe resolved public IPs. `localhost`
 ## 2026-10-16 Organization structure authorization
 
 The organization structure read API now uses one transactional core query service. Tenant members can see organizational taxonomy, but non-admins only see project classification for projects they explicitly belong to; membership removals are coordinated with the read transaction. This is one bounded read-model refactor, not a claim that all API SQL or Worker concurrency hardening has been completed.
+
+## 2026-10-16 项目归属命令治理收敛（实验性）
+
+项目主责部门、参与部门、项目集、项目组合归属仍在原有「部门与项目结构」页面操作；服务端现统一通过 Core 分类命令处理。变更继续接受当前管理员权限校验、乐观版本、防重复提交和完整审计。即使未来增加自动化或其他入口，相关业务约束也在 Core 中执行，不依赖浏览器隐藏按钮。这个重构不会改变现有页面数据格式或自动授予参与部门人员项目权限。
+
+## 2026-10-16 Core project classification command boundary (experimental)
+
+Project classification updates now flow through one core command service instead of inline HTTP route SQL. Tenant admin authorization, command receipts, revision fencing, tenant foreign keys and audit remain transactional, with business invariants rechecked in core. This covers only the project-classification write path; other API and Worker refactors are still open.
