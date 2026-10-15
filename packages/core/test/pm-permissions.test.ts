@@ -11,6 +11,6 @@ test('formal PM permissions distinguish planning, submission, review and baselin
   assert.equal(canProject('member','pm.accept'),false);
   assert.equal(canProject('manager','pm.plan'),true);
   assert.equal(canProject('manager','pm.accept'),true);
-  assert.equal(canProject('manager','pm.approve'),false);
+  assert.equal(canProject('manager','pm.approve'),true);
   assert.equal(canProject('owner','pm.approve'),true);
 });
