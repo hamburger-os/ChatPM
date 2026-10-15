@@ -24,7 +24,7 @@ export function registerGovernanceRoutes(app:FastifyInstance,
   app.get('/tenants/:tenantId/governance-pulse',async req=>{
     const tenantId=uuid.parse((req.params as {tenantId:string}).tenantId);
     const actorId=await authenticated(req);
-    const query=z.object({on:z.string().regex(/^\\d{4}-\\d{2}-\\d{2}$/).optional()})
+    const query=z.object({on:z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional()})
       .strict().parse(req.query);
     const on=query.on??new Date().toISOString().slice(0,10);
     if(Number.isNaN(Date.parse(on+'T00:00:00Z'))||
