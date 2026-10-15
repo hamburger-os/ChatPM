@@ -32,11 +32,12 @@ async function lockInvitation(db:DbClient,token:unknown):Promise<InvitationRow>{
     ['tenant-governance:'+scoped.rows[0].tenant_id]);
   if(typeof token!=='string'||!(/^[0-9a-f]{64}$/i.test(token)))denied();
   const result=await db.query<InvitationRow>(`SELECT id,tenant_id,email,expires_at,
-    accepted_at,revoked_at FROM tenant_invitations WHERE token_sha256=$1 FOR UPDATE`,
+    accepted_at,revoked_at FROM tenant_invitations
+    WHERE token_sha256=$1 AND expires_at>NOW()
+      AND accepted_at IS NULL AND revoked_at IS NULL FOR UPDATE`,
     [inviteDigest(token.toLowerCase())]);
   const item=result.rows[0];
-  if(!item||item.accepted_at||item.revoked_at||
-     new Date(item.expires_at).getTime()<=Date.now())denied();
+  if(!item)denied();
   return item;
 }
 export async function createTenantInvitation(args:{
