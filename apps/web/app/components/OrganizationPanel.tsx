@@ -2,7 +2,8 @@
 import { useEffect,useRef,useState,type FormEvent } from 'react';
 type Item={id:string;name:string;description?:string;parent_id?:string|null;portfolio_id?:string|null};
 type Project=Item&{department_id:string|null;program_id:string|null;
-  portfolio_id:string|null;classification_revision:number};
+  portfolio_id:string|null;classification_revision:number;
+  participating_department_ids:string[]};
 type Member={id:string;display_name:string;email:string;role:'admin'|'member'};
 type Invitation={id:string;email:string;created_at:string;expires_at:string;
   accepted_at:string|null;revoked_at:string|null};
@@ -29,6 +30,7 @@ export default function OrganizationPanel({tenantId,currentUserId}:{tenantId:str
   const [portfolio,setPortfolio]=useState('');
   const [projectId,setProjectId]=useState('');
   const [departmentId,setDepartmentId]=useState('');
+  const [participatingDepartmentIds,setParticipatingDepartmentIds]=useState<string[]>([]);
   const [programId,setProgramId]=useState('');
   const [directPortfolio,setDirectPortfolio]=useState('');
   const [email,setEmail]=useState('');
@@ -83,7 +85,8 @@ export default function OrganizationPanel({tenantId,currentUserId}:{tenantId:str
       await write(base+'/projects/'+projectId+'/classification','PATCH',{
         expectedRevision:project.classification_revision,
         departmentId:departmentId||null,programId:programId||null,
-        portfolioId:programId?null:directPortfolio||null});
+        portfolioId:programId?null:directPortfolio||null,
+        participatingDepartmentIds:participatingDepartmentIds});
     });
   };
   async function refreshClassification(){
@@ -91,6 +94,7 @@ export default function OrganizationPanel({tenantId,currentUserId}:{tenantId:str
     setData(result);
     const project=result.projects.find(p=>p.id===projectId);
     setDepartmentId(project?.department_id||'');
+    setParticipatingDepartmentIds(project?.participating_department_ids??[]);
     setProgramId(project?.program_id||'');
     setDirectPortfolio(project?.portfolio_id||'');
   }
@@ -171,7 +175,12 @@ export default function OrganizationPanel({tenantId,currentUserId}:{tenantId:str
     <h3>部门 / 项目组合 / 项目集</h3>
     {(['departments','portfolios','programs'] as const).map(k=><div key={k} className="item">
       <strong>{({departments:'部门',portfolios:'项目组合',programs:'项目集'})[k]} ({data[k].length})</strong>
-      {data[k].map(x=><p key={x.id} className="hint">{x.name}</p>)}
+      {data[k].map(x=><p key={x.id} className="hint">{x.name}
+        {k==='departments'&&<small>
+          {' · 主责 '+data.projects.filter(p=>p.department_id===x.id).length+' 个项目'}
+          {' · 参与 '+data.projects.filter(p=>p.participating_department_ids.includes(x.id)).length+' 个项目'}
+        </small>}
+      </p>)}
     </div>)}
     <form className="stack" onSubmit={create}>
       <label>创建类型<select value={kind} onChange={e=>setKind(e.target.value as typeof kind)}>
@@ -190,12 +199,28 @@ export default function OrganizationPanel({tenantId,currentUserId}:{tenantId:str
       <label>项目<select value={projectId} onChange={e=>{
         const p=data.projects.find(x=>x.id===e.target.value);
         setProjectId(e.target.value);setDepartmentId(p?.department_id||'');
+        setParticipatingDepartmentIds(p?.participating_department_ids??[]);
         setProgramId(p?.program_id||'');setDirectPortfolio(p?.portfolio_id||'');
       }} required><option value="">选择项目</option>{data.projects.map(x=>
         <option value={x.id} key={x.id}>{x.name}</option>)}</select></label>
-      <label>主部门<select value={departmentId} onChange={e=>setDepartmentId(e.target.value)}>
+      <label>唯一主责部门<select value={departmentId} onChange={e=>{
+        const next=e.target.value;
+        setDepartmentId(next);
+        setParticipatingDepartmentIds(old=>old.filter(id=>id!==next));
+      }}>
         <option value="">未设置</option>{data.departments.map(x=><option value={x.id} key={x.id}>{x.name}</option>)}
       </select></label>
+      <fieldset>
+        <legend>参与部门（可多选）</legend>
+        <small>仅用于组织协作与资源汇总，不会自动获得项目聊天和任务修改权限。</small>
+        {data.departments.filter(x=>x.id!==departmentId).map(dep=>
+          <label key={dep.id}>
+            <input type="checkbox" checked={participatingDepartmentIds.includes(dep.id)}
+              onChange={e=>setParticipatingDepartmentIds(old=>e.target.checked?
+                [...old,dep.id].sort():old.filter(id=>id!==dep.id))}/>
+            {dep.name}
+          </label>)}
+      </fieldset>
       <label>所属项目集<select value={programId} onChange={e=>{setProgramId(e.target.value);if(e.target.value)setDirectPortfolio('');}}>
         <option value="">独立项目</option>{data.programs.map(x=><option value={x.id} key={x.id}>{x.name}</option>)}
       </select></label>

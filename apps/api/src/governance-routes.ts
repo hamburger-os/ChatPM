@@ -31,11 +31,19 @@ export function registerGovernanceRoutes(app:FastifyInstance,
     const member=await pool.query('SELECT role FROM tenant_members WHERE tenant_id=$1 AND user_id=$2',
       [tenantId,user]);
     const visible=member.rows[0]?.role==='admin'
-      ?await pool.query(`SELECT id,name,department_id,program_id,portfolio_id,classification_revision
-        FROM projects WHERE tenant_id=$1 ORDER BY name`,[tenantId])
-      :await pool.query(`SELECT p.id,p.name,p.department_id,p.program_id,p.portfolio_id,
-          p.classification_revision FROM projects p JOIN project_members pm ON pm.project_id=p.id AND pm.user_id=$2
-        WHERE p.tenant_id=$1 ORDER BY p.name`,[tenantId,user]);
+      ?await pool.query(`SELECT p.id,p.name,p.department_id,p.program_id,
+        p.portfolio_id,p.classification_revision,
+        (SELECT COALESCE(array_agg(pd.department_id ORDER BY pd.department_id),ARRAY[]::uuid[])
+         FROM project_departments pd WHERE pd.project_id=p.id
+           AND pd.tenant_id=p.tenant_id) AS participating_department_ids
+        FROM projects p WHERE p.tenant_id=$1 ORDER BY p.name`,[tenantId])
+      :await pool.query(`SELECT p.id,p.name,p.department_id,p.program_id,
+          p.portfolio_id,p.classification_revision,
+          (SELECT COALESCE(array_agg(pd.department_id ORDER BY pd.department_id),ARRAY[]::uuid[])
+           FROM project_departments pd WHERE pd.project_id=p.id
+             AND pd.tenant_id=p.tenant_id) AS participating_department_ids
+          FROM projects p JOIN project_members pm ON pm.project_id=p.id AND pm.user_id=$2
+          WHERE p.tenant_id=$1 ORDER BY p.name`,[tenantId,user]);
     return {departments:departments.rows,portfolios:portfolios.rows,
       programs:programs.rows,projects:visible.rows};
   });
@@ -79,8 +87,14 @@ export function registerGovernanceRoutes(app:FastifyInstance,
     const projectId=uuid.parse((req.params as {projectId:string}).projectId);
     const v=z.object({idempotencyKey:uuid,expectedRevision:z.number().int().positive(),
       departmentId:uuid.nullable(),programId:uuid.nullable(),
-      portfolioId:uuid.nullable()}).refine(x=>!x.programId||!x.portfolioId,
-      '项目属于项目集时，通过项目集汇总到组合').parse(req.body);
+      portfolioId:uuid.nullable(),
+      participatingDepartmentIds:z.array(uuid).max(50)
+        .refine(v=>new Set(v).size===v.length,'参与部门不能重复'),
+      }).strict().refine(x=>!x.programId||!x.portfolioId,
+      '项目属于项目集时，通过项目集汇总到组合')
+      .refine(x=>!x.departmentId||
+        !x.participatingDepartmentIds.includes(x.departmentId),
+        '项目主责部门不能同时列为参与部门').parse(req.body);
     const project=await organizationCommand(tenantId,user,'project.classification_changed',
       {idempotencyKey:v.idempotencyKey,payload:v},async db=>{
       const before=(await db.query<{
@@ -92,9 +106,16 @@ export function registerGovernanceRoutes(app:FastifyInstance,
       if(!before)deny(404,'项目不存在');
       if(before.classification_revision!==v.expectedRevision)
         deny(409,'项目归属已被修改，请刷新后重新确认');
+      const previous=(await db.query<{department_id:string}>(`
+        SELECT department_id FROM project_departments
+        WHERE tenant_id=$1 AND project_id=$2 ORDER BY department_id FOR UPDATE
+      `,[tenantId,projectId])).rows.map(x=>x.department_id);
+      const participants=[...v.participatingDepartmentIds].sort();
+      const unchanged=previous.length===participants.length&&
+        previous.every((id,i)=>id===participants[i]);
       if(before.department_id===v.departmentId&&
          before.program_id===v.programId&&
-         before.portfolio_id===v.portfolioId)
+         before.portfolio_id===v.portfolioId&&unchanged)
         deny(409,'项目已采用该归属，不需要重复修改');
       const updated=await db.query(`
         UPDATE projects SET department_id=$3,program_id=$4,
@@ -103,10 +124,18 @@ export function registerGovernanceRoutes(app:FastifyInstance,
         RETURNING id,department_id,program_id,portfolio_id,classification_revision
       `,[tenantId,projectId,v.departmentId,v.programId,v.portfolioId,v.expectedRevision]);
       if(!updated.rowCount)deny(409,'项目归属版本冲突');
-      return {value:updated.rows[0],targetId:projectId,
+      await db.query('DELETE FROM project_departments WHERE tenant_id=$1 AND project_id=$2',
+        [tenantId,projectId]);
+      if(participants.length)await db.query(`
+        INSERT INTO project_departments(tenant_id,project_id,department_id)
+        SELECT $1,$2,unnest($3::uuid[])`,[tenantId,projectId,participants]);
+      return {value:{...updated.rows[0],
+        participating_department_ids:participants},targetId:projectId,
         metadata:{previousRevision:before.classification_revision,
           classificationRevision:updated.rows[0].classification_revision,
-          departmentId:v.departmentId,programId:v.programId,portfolioId:v.portfolioId}};
+          departmentId:v.departmentId,programId:v.programId,portfolioId:v.portfolioId,
+          participatingDepartmentIds:participants,
+          previousParticipatingDepartmentIds:previous}};
     });
     return {project};
   });

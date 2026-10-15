@@ -266,6 +266,10 @@ try{
     method:'POST',body:{idempotencyKey:randomUUID(),
       name:'Engineering '+suffix,parentId:null}});
   assert.equal(dep.status,201,JSON.stringify(dep.data));
+  const collaboration=await api('/tenants/'+tenantId+'/departments',{
+    method:'POST',body:{idempotencyKey:randomUUID(),name:'Quality '+suffix,parentId:null}});
+  assert.equal(collaboration.status,201,JSON.stringify(collaboration.data));
+  const collaboratorDepartmentId=collaboration.data.department.id;
   const portfolioInput={idempotencyKey:randomUUID(),
     name:'Delivery '+suffix,description:'Portfolio for smoke'};
   const portfolios=await Promise.all(Array.from({length:4},
@@ -306,12 +310,13 @@ try{
   const classificationPath='/tenants/'+tenantId+'/projects/'+pid+'/classification';
   const originalClassification={idempotencyKey:randomUUID(),expectedRevision:1,
     departmentId:dep.data.department.id,programId:program.data.program.id,
-    portfolioId:null};
+    portfolioId:null,participatingDepartmentIds:[collaboratorDepartmentId]};
   const classification=await api(classificationPath,{
     method:'PATCH',body:originalClassification});
   assert.equal(classification.status,200,JSON.stringify(classification.data));
   assert.equal(classification.data.project.program_id,program.data.program.id);
   assert.equal(classification.data.project.classification_revision,2);
+  assert.deepEqual(classification.data.project.participating_department_ids,[collaboratorDepartmentId]);
   const classificationReplay=await api(classificationPath,{
     method:'PATCH',body:originalClassification});
   assert.equal(classificationReplay.status,200);
@@ -321,7 +326,8 @@ try{
     body:{...originalClassification,departmentId:null}});
   assert.equal(classificationCollision.status,409);
   const noVersion=await api(classificationPath,{method:'PATCH',body:{
-    idempotencyKey:randomUUID(),departmentId:null,programId:null,portfolioId:null}});
+    idempotencyKey:randomUUID(),departmentId:null,programId:null,portfolioId:null,
+    participatingDepartmentIds:[]}});
   assert.equal(noVersion.status,400);
   const staleClassification=await api(classificationPath,{method:'PATCH',body:{
     ...originalClassification,idempotencyKey:randomUUID(),portfolioId:null,
@@ -343,13 +349,14 @@ try{
   const toPortfolio=await api(classificationPath,{method:'PATCH',body:{
     idempotencyKey:randomUUID(),expectedRevision:2,
     departmentId:dep.data.department.id,programId:null,
-    portfolioId:portfolio.data.portfolio.id}});
+    portfolioId:portfolio.data.portfolio.id,
+    participatingDepartmentIds:[collaboratorDepartmentId]}});
   assert.equal(toPortfolio.status,200);
   assert.equal(toPortfolio.data.project.classification_revision,3);
   const backToProgram=await api(classificationPath,{method:'PATCH',body:{
     idempotencyKey:randomUUID(),expectedRevision:3,
     departmentId:dep.data.department.id,programId:program.data.program.id,
-    portfolioId:null}});
+    portfolioId:null,participatingDepartmentIds:[collaboratorDepartmentId]}});
   assert.equal(backToProgram.status,200);
   assert.equal(backToProgram.data.project.classification_revision,4);
   const structure=await api('/tenants/'+tenantId+'/structure');
@@ -357,27 +364,49 @@ try{
   const classifiedProject=structure.data.projects.find(p=>p.id===pid);
   assert.equal(classifiedProject?.program_id,program.data.program.id);
   assert.equal(classifiedProject?.classification_revision,4);
+  assert.deepEqual(classifiedProject?.participating_department_ids,[collaboratorDepartmentId]);
 
   const concurrentClassification=await Promise.all([
     api(classificationPath,{method:'PATCH',body:{idempotencyKey:randomUUID(),
-      expectedRevision:4,departmentId:null,programId:null,portfolioId:null}}),
+      expectedRevision:4,departmentId:null,programId:null,portfolioId:null,
+       participatingDepartmentIds:[]}}),
     api(classificationPath,{method:'PATCH',body:{idempotencyKey:randomUUID(),
       expectedRevision:4,departmentId:dep.data.department.id,
-      programId:null,portfolioId:portfolio.data.portfolio.id}}),
+      programId:null,portfolioId:portfolio.data.portfolio.id,
+       participatingDepartmentIds:[collaboratorDepartmentId]}}),
   ]);
   assert.deepEqual(concurrentClassification.map(x=>x.status).sort(),[200,409],
     'Two independent old snapshots cannot overwrite one another');
   const restoredClassification=await api(classificationPath,{method:'PATCH',body:{
     idempotencyKey:randomUUID(),expectedRevision:5,
     departmentId:dep.data.department.id,programId:program.data.program.id,
-    portfolioId:null}});
+    portfolioId:null,participatingDepartmentIds:[collaboratorDepartmentId]}});
   assert.equal(restoredClassification.status,200);
   assert.equal(restoredClassification.data.project.classification_revision,6);
+  const participationOnly=await api(classificationPath,{method:'PATCH',body:{
+    idempotencyKey:randomUUID(),expectedRevision:6,
+    departmentId:dep.data.department.id,programId:program.data.program.id,
+    portfolioId:null,participatingDepartmentIds:[]}});
+  assert.equal(participationOnly.status,200,'Changing only participants must be versioned');
+  assert.equal(participationOnly.data.project.classification_revision,7);
+  assert.deepEqual(participationOnly.data.project.participating_department_ids,[]);
+  const invalidOwnerParticipant=await api(classificationPath,{method:'PATCH',body:{
+    idempotencyKey:randomUUID(),expectedRevision:7,
+    departmentId:dep.data.department.id,programId:program.data.program.id,
+    portfolioId:null,participatingDepartmentIds:[dep.data.department.id]}});
+  assert.equal(invalidOwnerParticipant.status,400,'Main department cannot be duplicated');
+  const nonexistentParticipant=await api(classificationPath,{method:'PATCH',body:{
+    idempotencyKey:randomUUID(),expectedRevision:7,
+    departmentId:dep.data.department.id,programId:program.data.program.id,
+    portfolioId:null,participatingDepartmentIds:[randomUUID()]}});
+  assert.equal(nonexistentParticipant.status,409,'Participants must exist inside tenant');
+  assert.equal((await db.query('SELECT COUNT(*)::int AS n FROM project_departments WHERE project_id=$1',[pid])).rows[0].n,0,
+    'Failed participant commands must roll back atomically');
   const realClassificationAudits=(await db.query(`SELECT count(*)::int AS n
     FROM organization_audit_entries WHERE tenant_id=$1
       AND action='project.classification_changed'`,[tenantId])).rows[0].n;
-  assert.equal(realClassificationAudits,5,
-    'Only five real changes may create classification audit records');
+  assert.equal(realClassificationAudits,6,
+    'Five classification transitions plus one participant-only change must be audited');
   const deptMemberPath='/tenants/'+tenantId+'/departments/'+
     dep.data.department.id+'/members';
   const initialDepartmentRole={idempotencyKey:randomUUID(),
