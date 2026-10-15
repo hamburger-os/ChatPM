@@ -104,7 +104,7 @@ export function registerGovernanceRoutes(app:FastifyInstance,
     return organizationCommand(tenantId,user,'tenant.member_added',
       {idempotencyKey:v.idempotencyKey,payload:v},async db=>{
       const found=await db.query('SELECT id FROM users WHERE email=$1',[v.email]);
-      if(!found.rowCount)deny(404,'请先让该人员注册账号（邀请机制仍在规划中）');
+      if(!found.rowCount)deny(404,'请先为该人员签发组织邀请码，待其接受邀请后再管理组织成员');
       const memberId=found.rows[0].id as string;
       const inserted=await db.query(`INSERT INTO tenant_members(tenant_id,user_id,role)
         VALUES($1,$2,'member') ON CONFLICT DO NOTHING RETURNING user_id`,[tenantId,memberId]);
