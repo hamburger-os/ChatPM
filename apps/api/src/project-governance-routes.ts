@@ -235,6 +235,13 @@ export function registerProjectGovernanceRoutes(
         if(!before)fail(404,'项目不存在');
         if(before.settings_revision!==input.expectedRevision)
           fail(409,'项目设置版本已变化，请刷新后重试');
+        // Never emit a "settings changed" event or replan follow-ups for
+        // a brand-new command that did not change any persisted setting.
+        if(before.ai_enabled===input.aiEnabled&&
+           before.work_start===input.workStart&&
+           before.work_end===input.workEnd&&
+           before.cooldown_hours===input.cooldownHours)
+          fail(409,'项目设置未发生变化');
         if(input.aiEnabled){
           try{await resolveProjectModel(projectId);}
           catch{fail(400,'服务器尚未正确配置 AI 模型');}
