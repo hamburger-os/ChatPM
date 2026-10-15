@@ -1157,6 +1157,23 @@ try{
   const taskUpdateInput={idempotencyKey:randomUUID(),status:'doing',version:1};
   const changed=await api('/projects/'+pid+'/tasks/'+tid,{method:'PATCH',body:taskUpdateInput});
   assert.equal(changed.status,200);
+  const historyBase='/projects/'+pid+'/tasks/'+tid+'/history';
+  const taskHistory=await api(historyBase,{cookie:cookieB});
+  assert.equal(taskHistory.status,200,'Current member can inspect task history');
+  assert.equal(taskHistory.data.history.length,2,
+    'Task creation and genuine status change must be recorded once');
+  assert.deepEqual(taskHistory.data.history.map(x=>x.kind),['updated','created']);
+  const eventId=taskHistory.data.history[0].id;
+  const source=await api(historyBase+'/'+eventId,{cookie:cookieB});
+  assert.equal(source.status,200);
+  assert.equal(source.data.event.after_status,'doing');
+  assert.equal((await api('/projects/'+randomUUID()+'/tasks/'+tid+
+    '/history/'+eventId)).status,404,
+    'History events cannot be read by changing the project selector');
+  assert.equal((await api(historyBase+'/'+randomUUID())).status,404,
+    'Unknown event must return a scoped 404');
+  assert.equal((await api(historyBase+'?beforeAt=2026-10-01T00:00:00Z')).status,400,
+    'Partial history pagination cursors are invalid');
   const taskUpdateReplay=await api('/projects/'+pid+'/tasks/'+tid,{
     method:'PATCH',body:taskUpdateInput});
   assert.equal(taskUpdateReplay.status,200);
@@ -1493,6 +1510,10 @@ try{
     'SELECT COUNT(*) AS total FROM tasks WHERE project_id=$1',[pid])).rows[0].total);
   const reportInput={idempotencyKey:randomUUID(),kind:'week'};
   const report=await api('/projects/'+pid+'/reports',{method:'POST',body:reportInput});
+  assert.match(report.data.report.content,/本期任务实际变化/,
+    'Report must contain actual period deltas');
+  assert.ok(report.data.report.content.includes(eventId),
+    'Historical report must reference the correct task change event');
   assert.equal(report.status,200,JSON.stringify(report.data));
   assert.equal(report.data.report.state,'draft');
   assert.ok(report.data.report.revision>=1);
