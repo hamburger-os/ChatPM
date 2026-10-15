@@ -179,3 +179,7 @@ CI 新增 `tools/test/task-linkage-smoke.mjs`：PostgreSQL 创建正式任务与
 ## ADR-051 · Tenant Governance Command /review
 
 核验原组织级 tenant-governance 事务 advisory lock 与 tenant_members FOR UPDATE 当前 admin 身份验证未被简化；所有 8 个组织治理 POST/PATCH 写请求均必须解析 UUID idempotencyKey，调用 OrganizationCommand，在同事务 INSERT tenant_command_receipts (tenant/actor/kind/key 唯一、payload SHA256) → 真正业务变更 → organization_audit_entries → Receipt.result。重复 key+payload 即使并发只能返回原结果，不新增业务或审计；同 key 不同 payload 必须 409、缺 key 400、普通租户成员 403、角色撤销后不能回放原管理员回执。正确复用项目创建时已增加的 021 表，不改迁移 checksum；组织级写入不能伪造 project domain event/outbox。Web 同一业务意图失败重试键稳定、操作成功后清键。真实 Postgres Organization Integration 包含权限撤销、事务失败回滚和 payload hash；完整 API Smoke 包含 4 个同键并发 Portfolio 创建、身份拒绝、已有角色/部门/分类/投入业务回归与复用原键重试，检查唯一 receipt 和组织审计。合并必须在 PR 最新 Head 五项 CI 全 success、无未解决审查线程后执行；完整项目组合价值管理与 Tenant Outbox/乐观并发仍需另行验收。
+
+## ADR-052 · 部门多项目资源容量约束 /review
+
+资源 allocation.recorded 不仅校验单条 1–100%，还应按 tenant_id+user_id 汇总所有项目计划投入，在拟登记起止闭区间逐个分配开始日取 peak，`peak+percentage>100` 409；当天结束的旧分配仍计入，当天之后的无重叠安排不会阻止新分配。对不同项目同一人的资源分配既不能各按 100% 独立登记，也不能对不相交日期错误相加。资源领域 SQL 从 API 写路由抽取到可复用的 core 服务，并通过 organizationCommand 的租户 advisory transaction lock 串行化两个不同 key 的并发插入。检查项目与成员关联、租户身份、管理员即时撤权、idempotencyKey 原键重放、同键 payload 冲突、在容量不足时无 Audit/Receipt/业务行脏写。回归验证跨项目 60+40、超出 1%、端点接壤、完全不交叉、另一个人员、并行竞争；原有 Windows/Linux/Docker、API、Worker、模型安全、文档均不得回退。项目组合/项目集归属不影响按人容量总和，部门汇总不得冒充工时数据。合并需最新 Head 五项 CI success，且无 unresolved review threads。
