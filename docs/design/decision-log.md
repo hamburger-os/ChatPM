@@ -295,3 +295,11 @@
 **取舍：** implemented 仅表示已按人类证据完成实施并复核，不自动改变既有里程碑、范围基线或历史任务计划；审批的后续计划影响仍需单独的受控基线变更命令。模型不得因为聊天中的完成声明自动修改正式变更。真实多团队工作流、计划 baseline 应用和实体变更对账仍是 #48/#50 的未完成验收。
 
 **ADR-049 补充 · 责任移交：** 变更实施中允许有授权的 owner/manager 以 reassign 命令重新指派当前有效负责人员；实施状态仍保持 implementing，版本 +1、历史 action=reassign，并将 implementation_started_at 更新到这次交接时间，使旧负责人先前的消息不再满足本次证据窗口。成员在 status=implementing 且仍被指派时不能降为 observer 或移出项目，必须先办理正式重新指派。被撤销组织或项目资格的实施负责人亦不能被拿来完成验证。这是防止“旧聊天证据复用”和孤立实施事项的必需约束。
+
+## ADR-050 · PostgreSQL 备份到隔离库的全表恢复核验（2026-10-15）
+
+**问题：** 已有 backup 命令把 pg_dump custom 文件写入受限目录，但 Docker CI 目前仅检查 PGDMP 头和 pg_restore --list，不能证明恢复可行，也无恢复后的表行数或数据一致性证据。
+
+**决定：** 在 Docker 完成应用健康、Web 认证与 Worker 检查后停止 web/api/worker 写入者；以原有备份入口生成私有 custom-format archive，计算源库所有 public 普通表的行数和稳定内容指纹。随机创建单独的 chatpm_restore_drill_* 数据库，使用 pg_restore --exit-on-error --no-owner --no-privileges 真正恢复，并要求源/目标所有表名、行数及数据摘要完全相等且包含应用数据与 schema_migrations。演练后删除**自己创建**的隔离库和私有备份目录，绝不 drop 源库、替换源数据卷或将备份正文打印到 CI log。
+
+**安全边界：** 仅当 CI=true 且显式设置 CHATPM_CI_RESTORE_DRILL=1 才允许运行；业务应用容器未停必须拒绝。新数据库名需随机且以前缀固定，目标创建成功才可删除。所有操作均是 Docker 集成测试，不等于生产数据全量 ETL、跨机器加密冷备、PITR、Windows/Linux 实机重建或任何 RTO/RPO 服务承诺。Issue #51 必须保持开放。
