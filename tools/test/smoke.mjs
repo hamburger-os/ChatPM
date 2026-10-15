@@ -50,6 +50,10 @@ async function api(path,{method='GET',body,cookie=cookieA}={},retries=0){
 }
 try{
   await waitForHealth();
+  const registrationPolicy=await api('/auth/registration-policy',{cookie:''});
+  assert.equal(registrationPolicy.status,200);
+  assert.equal(registrationPolicy.data.allowed,true,
+    'Development and explicitly open CI instances permit team signups');
   const suffix=randomUUID().slice(0,8);
   const signup=await api('/auth/register',{method:'POST',cookie:'',body:{
     email:'first+'+suffix+'@example.com',password:'Passw0rd-Strong-123',displayName:'张工',
