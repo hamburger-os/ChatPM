@@ -221,3 +221,13 @@ bootstrap 只允许创建全库首位用户；创建检查在同一个数据库�
 Docker `deploy:docker` 与 Windows/Linux 原生 `setup:local` 在私有 `.env` 中生成独立随机令牌，Docker Compose 仅将令牌交给 API/非 Web 服务器容器；Next.js 客户端只有是否需要输入密钥的布尔信号。不能把令牌提交版本库、粘贴到聊天或者通过公开 URL 传递。全新部署在仅绑定 127.0.0.1 时设置首位可信操作员并检查登入后，方可配置 TLS 与公网反向代理。成功注册后建议设置 `REGISTRATION_MODE=closed` 并重启 API 服务；保留的私有令牌无权再次创建用户。
 
 回归：单元测试验证无令牌、错误令牌、格式和摘要比较；真实 PostgreSQL 初始库进行并发首用户竞争，两笔事务中最多一笔成功；Docker 端到端分别验证显式 `open` 多用户测试模式与默认 `bootstrap` 中错误令牌拒绝、正确令牌一次性使用、之后不可再次注册；原生安装测试验证令牌稳定生成。该修复不等于正式邀请/接受、SSO、生产网络边界或全局滥用防护已完成。
+
+## ADR-059 · 组织成员受控邀请与一次性加入（2026-10-15）
+
+生产在 bootstrap 完成后关闭匿名注册，管理员必须使用受控邀请让新成员进入系统。本轮新增 `026_tenant_invitations.sql`：邀请码使用 CSPRNG 生成 32 字节随机值（64 位十六进制），仅持久保存 SHA-256 摘要，限定受邀邮箱、目标 Tenant、发起组织管理员、固定 7 日有效期和接受/撤销的互斥状态。管理员创建/撤销经过既有 `organizationCommand` 的现时授权、租户 advisory lock、持久幂等回执与组织审计；再次签发同邮箱邀请码会撤销此前所有尚未接受邀请。
+
+不能把邀请码明文保存在 `tenant_command_receipts.result` 或审计 metadata：响应首次签发时返回一次性 code，相同 idempotencyKey 重放只能得到邀请记录，不能恢复 code，丢失需撤销/重发。管理员组织页面可以复制单次显示的 code 并查看状态、撤销；不发送自动邮件、不把 code 放 URL 或日志。
+
+匿名 `POST /auth/invitations/claim` 使用一次性 token、严格匹配受邀邮箱、强密码/昵称，为此前未注册的人创建用户并且只加入目标组织为 `member`（绝不授予组织 admin 或项目聊天权限）。已有 ChatPM 用户先登录，通过 `POST /auth/invitations/claim-existing` 领取匹配其账户邮箱的邀请。接收动作在相同 PostgreSQL 事务中锁定 Tenant 管理 advisory lock 和邀请码行，创建 tenant_members、记录 accepted_by/time 及审计；过期、撤销、已使用、重复领取与错误邮箱均拒绝。还未加入项目的受邀成员需项目负责人独立授权。
+
+限制：目前无邮件发送服务、企业 SSO、邀请码重发自动通知或时间窗清理作业；发码只能由管理员私下安全传达。没有完整生产入职/离职 SCIM 工作流和滥用管理。本改进须通过真实 PostgreSQL 并发、跨邮箱/租户访问、Docker 闭合注册入职回归和五组 CI，不能直接宣称达到生产全面身份治理。
