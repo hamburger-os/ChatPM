@@ -40,6 +40,10 @@ npm run admin:grant -- --email=admin@example.com --confirm
 
 项目治理中可以从当前项目聊天引用原始消息的精确片段，登记“进度线索、完成声称、个人承诺、阻塞、风险/问题/决策/变更线索”等待核实主张。普通成员只能引用自己的发言；项目负责人和管理者可以记录项目内其他成员发言。只有原发言人可以确认自己表达的意思，项目管理者可以驳回错误解释；任何此类确认均**不等同于任务完成、交付物验收或批准变更**。系统按项目权限隔离证据。当前尚不支持 AI 自动抽取/冲突调解。
 
+### AI 候选与进度建议的审核
+
+项目负责人和管理者可以批准或驳回项目内的 AI 候选任务/风险及待核实进度；审批现在是幂等且可审计的正式命令。只有批准的任务/风险候选会进入正式项目登记簿；确认进度或“已完成”的发言，不代表任务自动完结或交付物自动验收。网络重试不会重复创建正式工作，重复审核只能返回原回执或被拒绝。模型不能自行批准。 
+
 ## English
 
 ### Organization and project structure
@@ -72,4 +76,8 @@ Project owners and managers can record a resolution note for an occurred issue a
 ### Chat evidence and unverified claims
 
 The Project Governance workspace can cite exact spans of a project member's existing chat message and register a pending claim about progress, completion statements, personal commitments, blockers, and risk/issue/decision/change signals. Members can cite their own messages; project owners and managers may register interpretations of other project members' messages. Only the original speaker may acknowledge their wording, while authorized managers can dismiss inaccurate claims. **Acknowledgment does not mean a task is done, a deliverable is accepted, or a change is approved.** Project membership limits access to citations. Automated model extraction and conflict adjudication are not implemented.
+
+### AI candidate and progress approvals
+
+Project owners and managers can approve or reject pending AI task/risk proposals and progress evidence. These decisions now use auditable, idempotent commands. Only human-approved proposals create official tasks or risks. Acknowledging a progress report or completion statement never automatically closes a task or accepts a deliverable. Retrying the same request cannot create duplicate work; AI cannot approve on behalf of a person.
 

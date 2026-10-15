@@ -206,3 +206,7 @@ AI 事件、规则提醒与周期报告 Runner 的应用入口分别归 `package
 ## ADR-039 · Delivery Task API 命令统一
 
 当前正式 Task create/update 路由通过 `apps/api/src/task-routes.ts` 注册，内部调用 `packages/core/src/pm-command.ts` 的 `executePmCommand`，由核心业务服务在同一数据库事务内执行写入、提醒计划、审计/事件/Outbox/幂等回执。所有直接任务写入请求强制 UUID `idempotencyKey`，Task 修改仍要求 `version`。重复同键/同 payload 应返回同一正式 Task 和版本，冲突 payload 必须 409。前端持久化当前待提交意图的 key，避免网络失败重试重复创建。项目成员撤权/任务负责人效力与前置依赖/状态提交约束不变。注意候选审批生成正式任务、Worker 系统维护等其他路径尚未全部迁入 Command Runtime。
+
+## ADR-040 · AI 候选审核正式命令边界
+
+通过 `apps/api/src/approval-routes.ts` 暴露已有 `/projects/:id/proposals/:proposalId/decision` 和 `/projects/:id/progress/:progressId/decision`，所有 POST 必填 `idempotencyKey`。只有当前组织与项目中具有 `proposal.approve` 能力的 owner/manager 能执行；worker/LLM 不可直接审批。命令调用正式 `executePmCommand`：以候选 UUID 作为 aggregateId、一次性状态变更 aggregateVersion=1、项目聚合锁/约束有效。采纳正式 Task/Risk 与其 Proposal Receipt 归同一事务，审计中记录被创建的目标 ID；取消或者驳回不生成正式 Task/Risk。进度采纳不代表任务验收，保留 blocker followup 冷却条件。相同 key 原样重放不新增 DomainEvent/Outbox，不同 key 第二次操作返回 409。

@@ -127,3 +127,7 @@ CI 新增 `tools/test/task-linkage-smoke.mjs`：PostgreSQL 创建正式任务与
 ## ADR-039 · 旧 Task 命令统一 /review
 
 检查旧直接 Task create/update 已不存在绕过 CommandReceipt 的第二写入路由；API 强制 UUID idempotencyKey，客户端编辑不同意图须重新生成，同意图网络重试保持键；相同 key/同 payload 返回同一个 Task/版本、不同 payload 409，消息/AI 无权伪造带身份的动作。DB 正式状态、followup、Audit（含 before/after）、DomainEvent、Outbox、Receipt 全原子提交；项目/组织成员撤权与负责人有效性仍在事务内复核；完成前置任务/悲观锁/乐观版本均沿用。检查 Web UI、Smoke/Worker/报告、命令断言、原生+Docker 及双语文档全部 latest-head CI。提案审批产生 Task 等剩余直接 SQL 按真实状态保持待办，不可虚称全域完成。
+
+## ADR-040 · 提案和进度审核 /review
+
+服务端再查当前组织和项目身份，对 owner/manager 使用 `proposal.approve`，不接受由模型自行审批；写路径必须要求 UUID 幂等键，并在 receipt 幂等守卫内对 pending 状态执行单次决策。验证 risk 和 task 两分支生成唯一真实事项，Task 同事务刷新 FollowUp，accepted blocker 保持上一次成功发送的冷却；已审核候选换新 key 仍 409，同 key 原样重试返回回执且不新建二次事件，改 payload 同 key 409。业务状态、澄清 thread、Audit/DomainEvent/Outbox/CommandReceipt 同事务。测试成员越权 403、同项目隔离、Risk 分支、原有 Worker/消息/任务/报表回归。更新 UI 后仍要验证错误恢复重试保留键而新意图生成新键。五项最新 PR Head CI、代码审查线程清零后才合并。来源人的“完成声明”不自动将任务标记为 done。

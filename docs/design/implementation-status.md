@@ -82,3 +82,7 @@
 ## ADR-039 · 直接 Task 写入正式命令统一
 
 已将旧直写 Task create/update 路由抽离到 `apps/api/src/task-routes.ts`，要求客户端 UUID idempotencyKey（更新还需乐观 version），并用 `executePmCommand` 统一权限、任务表、提醒计划、详细 before/after 审计、DomainEvent、Outbox 与回执的同事务提交；重复同输入不重复创建/增加版本，同 key 不同输入返回 409。公共 `delivery/task-assignee.ts` 检查当前项目和组织成员，其他仍使用的候选审批通道复用该成员校验。项目 Web 发送稳定意图键。**仍未完成**：提案审批等遗留正式任务/风险写入路径还没有迁入全域 CommandReceipt；全部业务 API 薄路由与模型发现/确认链路尚不齐全。对应验证必须看本 PR 最新 SHA 全五项 CI。
+
+## ADR-040 · AI 候选与进度审批正式命令闭环
+
+原先两个直接审批写入路由已从 `server.ts` 迁往 `apps/api/src/approval-routes.ts`：`POST /projects/:id/proposals/:proposalId/decision` 和 `POST /projects/:id/progress/:progressId/decision` 均要求 UUID `idempotencyKey`。只有有效项目/租户身份及 owner/manager 的 `proposal.approve` 权限可操作。接受候选 Task/Risk 才创建一条正式事项，关闭澄清 thread；同一事务写入人类决策 Audit、DomainEvent、Outbox、CommandReceipt；进度审核不直接变更 Task.done，采纳 blocker 继续尊重已发送提醒的冷却。项目 UI 和 HTTP smoke 已调整为同意图键重试并检查越权、重复和事件数。此为 PR 实现范围，是否可发布仍以最终提交的 CI/Review 为准。报告发布、成员移除、项目设置及其他遗留正式写入尚未全部迁移；不得标称所有领域写入已统一。

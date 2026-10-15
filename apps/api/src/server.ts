@@ -7,6 +7,7 @@ import { registerGovernanceRoutes } from './governance-routes.ts';
 import { registerPmRoutes } from './pm-routes.ts';
 import { registerEvidenceRoutes } from './evidence-routes.ts';
 import { registerTaskRoutes } from './task-routes.ts';
+import { registerApprovalRoutes } from './approval-routes.ts';
 import { randomUUID } from 'node:crypto';
 import { signedQuotaKey } from '../../../packages/core/src/quota-key.ts';
 import Fastify from 'fastify';
@@ -16,7 +17,6 @@ import helmet from '@fastify/helmet';
 import rateLimit from '@fastify/rate-limit';
 import { z, ZodError } from 'zod';
 import { pool, transaction, audit } from '../../../packages/core/src/db.ts';
-import { ensureTaskAssignee } from '../../../packages/core/src/delivery/task-assignee.ts';
 import { createSession, hashPassword, readSession, revokeSession, verifyPassword } from '../../../packages/core/src/security.ts';
 import { isValidTimezone } from '../../../packages/core/src/policy.ts';
 import { syncFollowup } from '../../../packages/core/src/followup.ts';
@@ -27,9 +27,6 @@ import { deadEvents, outboxSummary } from '../../../packages/core/src/outbox.ts'
 const port = serverConfig.API_PORT;
 const origin = serverConfig.WEB_ORIGIN;
 const uuid = z.string().uuid();
-const dateOnly=z.string().regex(/^\d{4}-\d{2}-\d{2}$/).refine(
-  v=>!Number.isNaN(Date.parse(v+'T00:00:00Z')) &&
-  new Date(v+'T00:00:00Z').toISOString().slice(0,10)===v,'Invalid calendar date');
 const text = z.string().trim().min(1).max(10000);
 const app = Fastify({ logger: true, bodyLimit: 128 * 1024 });
 
@@ -357,32 +354,6 @@ app.get('/projects/:id/progress',async req=>{
     WHERE u.project_id=$1 ORDER BY u.created_at DESC LIMIT 150`,[id]);
   return {updates:rows};
 });
-app.post('/projects/:id/progress/:progressId/decision',async req=>{
-  const {id,progressId}=req.params as {id:string,progressId:string};
-  const projectId=uuid.parse(id),progress=uuid.parse(progressId);
-  const userId=await authenticated(req);
-  assertProject((await member(userId,projectId)).role,'proposal.approve');
-  const {decision}=z.object({decision:z.enum(['accepted','rejected'])}).parse(req.body);
-  return transaction(async db=>{
-    const {rows}=await db.query(`UPDATE task_progress_updates
-      SET status=$3,reviewed_by=$4,reviewed_at=NOW()
-      WHERE id=$1 AND project_id=$2 AND status='pending' RETURNING task_id`,
-      [progress,projectId,decision,userId]);
-    if(!rows.length)fail(409,'进度建议已处理或不存在');
-    await audit(db,projectId,userId,'task.progress_'+decision,progress,{taskId:rows[0].task_id});
-    // A newly accepted blocker should be checked promptly, without bypassing
-    // the reminder policy's existing last-successful-send cooldown.
-    if(decision==='accepted'){
-      await db.query(`UPDATE followup_plans fp SET next_at=GREATEST(
-        LEAST(fp.next_at,NOW()+INTERVAL '1 minute'),
-        COALESCE(fp.last_sent_at+(p.cooldown_hours*INTERVAL '1 hour'),NOW()))
-        FROM projects p JOIN task_progress_updates u ON u.project_id=p.id
-        WHERE u.id=$1 AND fp.project_id=$2 AND fp.task_id=u.task_id
-          AND u.kind='blocker' AND fp.active`,[progress,projectId]);
-    }
-    return {ok:true};
-  });
-});
 app.get('/projects/:id/proposals',async req=>{
   const projectId=uuid.parse((req.params as {id:string}).id);
   await member(await authenticated(req),projectId);
@@ -395,52 +366,6 @@ app.get('/projects/:id/proposals',async req=>{
     [projectId]);
   return {proposals:rows};
 });
-app.post('/projects/:id/proposals/:proposalId/decision',async req=>{
-  const {id,proposalId}=req.params as {id:string,proposalId:string};
-  const projectId=uuid.parse(id),candidate=uuid.parse(proposalId);
-  const userId=await authenticated(req);
-  assertProject((await member(userId,projectId)).role,'proposal.approve');
-  const v=z.object({decision:z.enum(['accepted','rejected']),
-    assigneeId:uuid.nullable().default(null),
-    dueDate:dateOnly.nullable().optional()}).parse(req.body);
-  return transaction(async db=>{
-    const p=(await db.query(
-      `SELECT pc.*,ct.due_at AS clarified_due_at FROM proposed_changes pc
-       LEFT JOIN clarification_threads ct ON ct.proposal_id=pc.id
-       WHERE pc.id=$1 AND pc.project_id=$2 FOR UPDATE OF pc`,
-      [candidate,projectId])).rows[0];
-    if(!p) fail(404,'待确认事项不存在');
-    if(p.status!=='pending') fail(409,'该事项已经处理');
-    if(v.assigneeId) await ensureTaskAssignee(db,projectId,v.assigneeId);
-    if(v.decision==='accepted') {
-      if(p.kind==='task') {
-        const t=(await db.query(
-          `INSERT INTO tasks(project_id,title,detail,assignee_id,due_date,source_proposal_id)
-           VALUES($1,$2,$3,$4,
-             CASE WHEN $5::boolean THEN $6::date
-             ELSE (COALESCE($7::timestamptz,$8::timestamptz)
-               AT TIME ZONE (SELECT timezone FROM projects WHERE id=$1))::date END,
-             $9) RETURNING id`,
-          [projectId,p.title,p.detail,v.assigneeId,v.dueDate!==undefined,
-            v.dueDate??null,p.clarified_due_at,p.due_at,p.id])).rows[0];
-        await syncFollowup(db,projectId,t.id);
-      } else {
-        await db.query(
-          `INSERT INTO risks(project_id,title,detail,source_proposal_id)
-           VALUES($1,$2,$3,$4)`,[projectId,p.title,p.detail,p.id]);
-      }
-    }
-    await db.query(
-      'UPDATE proposed_changes SET status=$1,approved_by=$2 WHERE id=$3',
-      [v.decision,userId,candidate]);
-    await db.query(
-      "UPDATE clarification_threads SET status='closed',updated_at=NOW() WHERE proposal_id=$1",
-      [candidate]);
-    await audit(db,projectId,userId,'proposal.'+v.decision,candidate);
-    return {ok:true};
-  });
-});
-
 app.get('/projects/:id/outbox/summary',async req=>{
   const projectId=uuid.parse((req.params as {id:string}).id);
   owner(await member(await authenticated(req),projectId));
@@ -509,5 +434,6 @@ registerGovernanceRoutes(app,authenticated);
 registerPmRoutes(app,authenticated);
 registerEvidenceRoutes(app,authenticated);
 registerTaskRoutes(app,authenticated);
+registerApprovalRoutes(app,authenticated);
 app.addHook('onClose',async()=>{await pool.end();});
 await app.listen({port,host:serverConfig.API_HOST});

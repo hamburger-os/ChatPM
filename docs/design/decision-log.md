@@ -205,3 +205,11 @@
 **决定：** 把旧 `POST /projects/:id/tasks` 与 `PATCH /projects/:id/tasks/:taskId` 搬出 API bootstrap，迁入 `delivery/task-routes.ts` 并使用 `executePmCommand`。每个写入请求必须带客户端 UUID `idempotencyKey`；更新仍显式携带 `version` 并保持任务负责人/里程碑依赖/权限条件。正式 Task 状态、审计、DomainEvent、Outbox、CommandReceipt 与提醒计划刷新同事务提交。同命令键/同请求返回原结果；键被不同 payload 复用返回 409。现有前端及集成测试须改为显式唯一命令键，**不为旧请求提供绕过审计的可选降级**。
 
 **理由：** 消除旧直接 Task 路由与新 PM 登记簿不同的幂等/事件语义；将领域 SQL 与 API 验证分离。**限制：** 提案审核触发创建 Task/修订 Risk 的遗留路径仍待后续同类迁移；不能据此宣称全域正式命令一体化或项目管理 V2 全部完成。
+
+## ADR-040 · 候选提案与任务进度审核的唯一正式命令（2026-10-15）
+
+**决定：** 将旧 `POST /projects/:id/proposals/:proposalId/decision` 和 `POST /projects/:id/progress/:progressId/decision` 从 API bootstrap 抽离到独立 `approval-routes.ts`，每个命令强制 UUID `idempotencyKey` 并通过 `executePmCommand` 统一当前租户+项目成员权限、行锁、幂等回执、Audit、DomainEvent、Outbox。AI 只是 pending 建议；由 owner/manager 核准，审批接受 task 候选时才写正式 Task，risk 候选才写正式 Risk，已审核候选不得被另一个 key 二次接受。进度审核只记录“建议采纳/驳回”，完成声明**不直接更改 Task.done/Deliverable.accepted**。采纳 blocker 的原有提醒冷却保持不变。
+
+**原子性：** 命令、更新候选 status/reviewedBy、澄清 thread 关闭、正式事项写入、任务 followup 与领域事件审计在同一事务中提交；相同 key 同 payload 重试直接返回回执，不重复创建事项；同 key 不同 payload 409；不同 key 重复决策因 status 已非 pending 而 409。当前两张遗留审批表没有自然 version，故该一次性审核事件的 aggregateVersion 为 1，不能误认为整个 Task 版本。
+
+**取舍：** 为所有现有 UI 审核动作同步添加“同意图稳定 key”，以及测试正式命令事件数量/角色限制/重复行为；旧无 key 路径不再存在。此切片不包含报告发布、成员管理、后续 Playbook 或 AI 自动采纳。

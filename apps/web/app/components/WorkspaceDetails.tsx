@@ -23,6 +23,7 @@ export default function WorkspaceDetails({project,user,messages}:{
   const [busy,setBusy]=useState(false);
   const createTaskIntent=useRef<string|null>(null);
   const updateTaskIntents=useRef(new Map<string,string>());
+  const reviewIntents=useRef(new Map<string,string>());
   const [settings,setSettings]=useState({aiEnabled:false,workStart:null as number|null,
     workEnd:null as number|null,cooldownHours:null as number|null});
   const id=project?.id;
@@ -95,9 +96,20 @@ export default function WorkspaceDetails({project,user,messages}:{
       updateTaskIntents.current.delete(intent);
     });
   }
-  function decide(p:Proposal,decision:'accepted'|'rejected',assigneeId:string|null=null,dueDate?:string|null){
-    void act(async()=>{await request(base+'/proposals/'+p.id+'/decision',{
-      method:'POST',body:json({decision,assigneeId,dueDate})});});
+  function reviewCommand(path:string,decision:'accepted'|'rejected',
+    input:Record<string,unknown>={}){
+    const signature=JSON.stringify([id,path,decision,input]);
+    const idempotencyKey=reviewIntents.current.get(signature)??crypto.randomUUID();
+    reviewIntents.current.set(signature,idempotencyKey);
+    void act(async()=>{
+      await request(base+path,{method:'POST',
+        body:json({idempotencyKey,decision,...input})});
+      reviewIntents.current.delete(signature);
+    });
+  }
+  function decide(p:Proposal,decision:'accepted'|'rejected',
+    assigneeId:string|null=null,dueDate?:string|null){
+    reviewCommand('/proposals/'+p.id+'/decision',decision,{assigneeId,dueDate});
   }
   return <aside className="details">
     <div className="tabs">
@@ -113,10 +125,8 @@ export default function WorkspaceDetails({project,user,messages}:{
       {progress.filter(x=>x.status==='pending').map(x=><article className="item" key={x.id}>
         <strong>{x.task_title}</strong><p>{x.summary}</p><small>{x.kind}</small>
         {manager&&<div className="actions">
-          <button disabled={busy} onClick={()=>void act(async()=>{await request(base+'/progress/'+x.id+'/decision',
-            {method:'POST',body:json({decision:'accepted'})});})}>确认进度</button>
-          <button disabled={busy} className="secondary" onClick={()=>void act(async()=>{await request(base+'/progress/'+x.id+'/decision',
-            {method:'POST',body:json({decision:'rejected'})});})}>忽略</button>
+          <button disabled={busy} onClick={()=>reviewCommand('/progress/'+x.id+'/decision','accepted')}>确认进度</button>
+          <button disabled={busy} className="secondary" onClick={()=>reviewCommand('/progress/'+x.id+'/decision','rejected')}>忽略</button>
         </div>}
       </article>)}
       <h3>正式任务 ({tasks.length})</h3>
