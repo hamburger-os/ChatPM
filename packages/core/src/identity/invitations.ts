@@ -1,5 +1,6 @@
 import {createHash,randomBytes} from 'node:crypto';
 import {transaction,type DbClient} from '../db.ts';
+import {hashPassword} from '../security.ts';
 import {organizationCommand} from '../organization-commands.ts';
 
 export const invitationLifetimeDays=7;
@@ -73,7 +74,7 @@ export async function revokeTenantInvitation(args:{
     });
 }
 export async function acceptTenantInvitationNew(args:{
-  token:string;email:string;displayName:string;passwordHash:string;
+  token:string;email:string;displayName:string;password:string;
 }):Promise<string>{
   return transaction(async db=>{
     const invite=await lockInvitation(db,args.token);
@@ -82,7 +83,7 @@ export async function acceptTenantInvitationNew(args:{
     if(found.rowCount)conflict('账号已存在，请先登录再接受邀请');
     const created=await db.query<{id:string}>(`INSERT INTO users
       (email,display_name,password_hash) VALUES($1,$2,$3) RETURNING id`,
-      [args.email,args.displayName,args.passwordHash]);
+      [args.email,args.displayName,hashPassword(args.password)]);
     const userId=created.rows[0].id;
     await consumeInvitation(db,invite,userId);
     return userId;
