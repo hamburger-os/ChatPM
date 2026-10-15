@@ -210,3 +210,7 @@ AI 事件、规则提醒与周期报告 Runner 的应用入口分别归 `package
 ## ADR-040 · AI 候选审核正式命令边界
 
 通过 `apps/api/src/approval-routes.ts` 暴露已有 `/projects/:id/proposals/:proposalId/decision` 和 `/projects/:id/progress/:progressId/decision`，所有 POST 必填 `idempotencyKey`。只有当前组织与项目中具有 `proposal.approve` 能力的 owner/manager 能执行；worker/LLM 不可直接审批。命令调用正式 `executePmCommand`：以候选 UUID 作为 aggregateId、一次性状态变更 aggregateVersion=1、项目聚合锁/约束有效。采纳正式 Task/Risk 与其 Proposal Receipt 归同一事务，审计中记录被创建的目标 ID；取消或者驳回不生成正式 Task/Risk。进度采纳不代表任务验收，保留 blocker followup 冷却条件。相同 key 原样重放不新增 DomainEvent/Outbox，不同 key 第二次操作返回 409。
+
+## ADR-041 · 旧 Owner-only 路由的事务授权边界
+
+apps/api/src/server.ts 中成员增删及权限调整、AI/提醒设置、Outbox 重试、人工报告生成/发布复用 identity/project-access.ts 的 lockProjectAccess(db,projectId,actorId)，在修改状态的业务事务内检查**当前** tenant/project 成员身份及对应的 ProjectAction。不得在事务外只读取旧角色并在后续事务提交写入。本次仅统一权限边界，不假装这些接口已经统一拥有幂等 Receipt 或领域事件。
