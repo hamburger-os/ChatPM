@@ -4,6 +4,7 @@ import { randomUUID } from 'node:crypto';
 import { pool, transaction } from '../src/db.ts';
 import { insertMessage } from '../src/messages.ts';
 import { processClarification } from '../src/clarification.ts';
+import {claimEvents,type EventRow} from '../src/outbox.ts';
 import { projectAnalysisContext } from '../src/project-context.ts';
 import { DailyAIBudgetExceeded } from '../src/ai-provider.ts';
 import { encryptModelKey } from '../src/project-model.ts';
@@ -71,20 +72,37 @@ try{
       content:'【候选:'+proposal.id+'】 '+suffix,nonce:randomUUID(),
     }));
   }
+  const claimByMessage=new Map<string,EventRow>();
+  async function processWithLease(message:{
+    id:string;projectId:string;content:string;projectName:string;
+  }){
+    let event=claimByMessage.get(message.id);
+    if(!event){
+      const created=(await pool.query<{id:string}>(`
+        INSERT INTO outbox_events(project_id,kind,message_id)
+        VALUES($1,'message.created',$2) RETURNING id`,
+        [message.projectId,message.id])).rows[0];
+      const next=(await claimEvents(1))[0];
+      assert.equal(next.id,created.id,'Tests must acquire a real live outbox lease');
+      event=next;
+      claimByMessage.set(message.id,event);
+    }
+    return processClarification(message,event);
+  }
   const answer1=await reply('负责人：测试负责人');
   assert.ok(answer1);
-  assert.equal(await processClarification({
+  assert.equal(await processWithLease({
     id:answer1.id,projectId:project.id,content:answer1.content,projectName:'AI mocked project',
   }),true);
   assert.equal(providerCalls,1);
   // Replaying a source event must not charge AI quota or emit a second response.
-  await processClarification({
+  await processWithLease({
     id:answer1.id,projectId:project.id,content:answer1.content,projectName:'AI mocked project',
   });
   assert.equal(providerCalls,1);
   const answer2=await reply('截止时间补充 2026-12-10T10:00:00+08:00');
   assert.ok(answer2);
-  await processClarification({
+  await processWithLease({
     id:answer2.id,projectId:project.id,content:answer2.content,projectName:'AI mocked project',
   });
   assert.equal(providerCalls,2);
@@ -113,7 +131,7 @@ try{
     content:'由测试负责人负责，2026年12月10日完成。',nonce:randomUUID(),
   }));
   assert.ok(plain);
-  assert.equal(await processClarification({
+  assert.equal(await processWithLease({
     id:plain.id,projectId:project.id,content:plain.content,projectName:'AI mocked project',
   }),true);
   assert.equal(providerCalls,3);
@@ -123,11 +141,11 @@ try{
   // Unparseable dates are acknowledged but never guessed; replays cannot double-spend.
   const vague=await reply('仅说九月底');
   assert.ok(vague);
-  assert.equal(await processClarification({
+  assert.equal(await processWithLease({
     id:vague.id,projectId:project.id,content:vague.content,projectName:'AI mocked project',
   }),true);
   assert.equal(providerCalls,4);
-  await processClarification({
+  await processWithLease({
     id:vague.id,projectId:project.id,content:vague.content,projectName:'AI mocked project',
   });
   assert.equal(providerCalls,4);
@@ -140,7 +158,7 @@ try{
   const answer3=await reply('补充备注');
   assert.ok(answer3);
   await assert.rejects(
-    processClarification({
+    processWithLease({
       id:answer3.id,projectId:project.id,content:answer3.content,projectName:'AI mocked project',
     }),
     DailyAIBudgetExceeded,
@@ -151,7 +169,7 @@ try{
     content:'【候选:'+randomUUID()+'】不属于本项目',nonce:randomUUID(),
   }));
   assert.ok(unknown);
-  assert.equal(await processClarification({
+  assert.equal(await processWithLease({
     id:unknown.id,projectId:project.id,content:unknown.content,projectName:'AI mocked project',
   }),true);
   assert.equal(providerCalls,4,'Unrelated proposals must not trigger model calls');
