@@ -1,8 +1,15 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import type { DbClient } from '../src/db.ts';
-import { enforceRegistration,mayRegister } from '../src/identity/registration-policy.ts';
+import { configuredRegistrationMode,enforceRegistration,mayRegister } from '../src/identity/registration-policy.ts';
 
+test('production defaults to bootstrap, not unrestricted public registration',()=>{
+  assert.equal(configuredRegistrationMode('production'),'bootstrap');
+  assert.equal(configuredRegistrationMode('development'),'open');
+  assert.equal(configuredRegistrationMode('test'),'open');
+  assert.equal(configuredRegistrationMode('production','open'),'open');
+  assert.equal(configuredRegistrationMode('production','closed'),'closed');
+});
 test('only explicitly open public registration accepts additional accounts',()=>{
   for(const [mode,hasUsers,allowed] of [
     ['open',false,true],['open',true,true],
