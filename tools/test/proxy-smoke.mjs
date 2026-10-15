@@ -56,6 +56,35 @@ const me=await request('/api/me',{headers:{cookie}});
 assert.equal(me.status,200,'Auth cookie forwarding failed');
 const identity=await me.json();
 assert.equal(identity.user.email,email);
+const tenantResponse=await request('/api/tenants',{headers:{cookie}});
+assert.equal(tenantResponse.status,200);
+const tenantId=(await tenantResponse.json()).tenants.find(t=>t.role==='admin')?.id;
+assert.ok(tenantId);
+const targetEmail='invited-'+randomUUID()+'@example.test';
+const issued=await request('/api/tenants/'+tenantId+'/invitations',{
+  method:'POST',headers:{...headers,cookie},
+  body:JSON.stringify({idempotencyKey:randomUUID(),email:targetEmail}),
+});
+assert.equal(issued.status,201,'Only a tenant admin may issue a member invitation');
+const invitation=await issued.json();
+assert.match(invitation.code,/^[0-9a-f]{64}$/);
+const invited=await request('/api/auth/invitations/claim',{
+  method:'POST',headers,
+  body:JSON.stringify({code:invitation.code,email:targetEmail,
+    displayName:'Invited Member',password:'another-strong-password-12345'}),
+});
+assert.equal(invited.status,201,'An invited account must join with public signup closed');
+const inviteCookie=invited.headers.getSetCookie().map(c=>c.split(';')[0]).join('; ');
+const memberTeams=await request('/api/tenants',{headers:{cookie:inviteCookie}});
+assert.equal(memberTeams.status,200);
+assert.equal((await memberTeams.json()).tenants.find(t=>t.id===tenantId)?.role,'member');
+const reused=await request('/api/auth/invitations/claim',{
+  method:'POST',headers,
+  body:JSON.stringify({code:invitation.code,email:targetEmail,
+    displayName:'Replay',password:'another-strong-password-12345'}),
+});
+assert.equal(reused.status,403,'Invite can only be accepted once');
+
 const forbidden=await request('/api/auth/logout',{
   method:'POST',headers:{origin:'https://malicious.example',cookie}
 });
