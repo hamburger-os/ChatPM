@@ -48,6 +48,10 @@ npm run admin:grant -- --email=admin@example.com --confirm
 
 项目 owner 可以添加已由组织管理员加入的注册用户，修改 manager/member/observer 角色，并移除非 owner 的项目成员。仍有未完成任务时必须先移交或取消；不能移除项目 owner。成员操作可审计，同一次网络重试不会重复增加、修改或删除人员。项目 AI 开关和提醒时间独立使用设置版本，其他浏览器已修改设置时，过期的保存请求会被拒绝而不是覆盖。模型供应商、密钥与默认模型继续仅由系统总管理员统一设置。
 
+### 风险评估与人工应对
+
+风险描述尚未发生但可能影响项目目标的事项，与已实际发生的「问题」分开登记。AI 可以建议风险，项目负责人或管理者必须人工审核后才形成正式开放风险。项目负责人/管理者评估发生可能性与影响（各 1–5）、指定项目内有效责任人并填写应对计划，才能把风险推进为「应对中」，之后可记录解决说明并关闭；情况变化时可重新打开。每次评估和状态变更可查历史，普通成员只能查看。正在应对的风险仍列入未解决风险报告；移除或降级负责人前必须移交未关闭风险。
+
 ## English
 
 ### Organization and project structure
@@ -88,4 +92,7 @@ Project owners and managers can approve or reject pending AI task/risk proposals
 ### Project membership commands and settings versions
 
 Project owners can add registered members already authorized in the tenant, change manager/member/observer roles, and remove non-owner members. Incomplete assigned tasks must be reassigned or cancelled before removal; the project owner cannot be removed. Membership commands are audited and idempotent across network retries. Project AI enablement and reminder settings have an optimistic revision so a stale browser cannot overwrite another owner's update. Provider credentials and the default model remain system-administrator-only.
+### Human-owned risk assessments and response lifecycle
+
+Risks are prospective uncertainties, distinct from already-occurred issues. AI may propose a risk, but a project owner or manager must approve it before it becomes an open, unassessed official risk. Owners/managers score likelihood and impact (1–5 each), assign an active project owner for the response and record a response plan before transitioning to mitigating; resolution requires a human note and the risk can later be reopened. All assessments and transitions have auditable history; ordinary members may read but not manage them. Mitigating risks remain in unresolved-risk reports. Unresolved risk ownership must be reassigned before removing or demoting the owner to observer.
 
