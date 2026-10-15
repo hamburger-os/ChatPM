@@ -265,6 +265,8 @@ export function registerPmRoutes(app:FastifyInstance,
   const implementationSchema=z.discriminatedUnion('decision',[
     versioned.extend({decision:z.literal('start'),ownerId:uuid,
       note:z.string().trim().min(1).max(2000)}),
+    versioned.extend({decision:z.literal('reassign'),ownerId:uuid,
+      note:z.string().trim().min(1).max(2000)}),
     versioned.extend({decision:z.literal('complete'),evidenceMessageId:uuid,
       note:z.string().trim().min(1).max(2000)}),
   ]);
@@ -274,9 +276,10 @@ export function registerPmRoutes(app:FastifyInstance,
     const input=implementationSchema.parse(req.body);
     return executePmCommand({
       projectId,actorId:user,idempotencyKey:input.idempotencyKey,
-      action:input.decision==='start'?'pm.plan':'pm.accept',
+      action:input.decision==='complete'?'pm.accept':'pm.plan',
       kind:input.decision==='start'?'pm.change.implementation_started.v1':
-        'pm.change.implemented.v1',
+        input.decision==='reassign'?'pm.change.implementation_reassigned.v1':
+          'pm.change.implemented.v1',
       payload:{id,...input},
       mutate:async db=>{
         const before=(await db.query<{
@@ -289,8 +292,15 @@ export function registerPmRoutes(app:FastifyInstance,
         if(before.version!==input.expectedVersion)fail(409,'变更申请版本冲突');
         let changed:Record<string,unknown>;
         let evidenceId:string|null=null;
-        if(input.decision==='start'){
-          if(before.status!=='approved')fail(409,'只有已批准变更可以启动实施');
+        if(input.decision==='start'||input.decision==='reassign'){
+          if(input.decision==='start'&&before.status!=='approved')
+            fail(409,'只有已批准变更可以启动实施');
+          if(input.decision==='reassign'){
+            if(before.status!=='implementing')
+              fail(409,'只有实施中的变更可以重新分配责任人');
+            if(before.implementation_owner_id===input.ownerId)
+              fail(409,'实施责任人尚未发生变化');
+          }
           const active=await db.query(`
             SELECT 1 FROM project_members pm
             JOIN projects p ON p.id=pm.project_id
@@ -311,6 +321,15 @@ export function registerPmRoutes(app:FastifyInstance,
             fail(409,'变更缺少实施责任人或开始时间');
           if(before.implementation_owner_id===user)
             fail(403,'实施责任人不能自我核验变更完成');
+          const stillActive=await db.query(`
+            SELECT 1 FROM project_members pm
+            JOIN projects p ON p.id=pm.project_id
+            JOIN tenant_members tm ON tm.tenant_id=p.tenant_id AND tm.user_id=pm.user_id
+            WHERE pm.project_id=$1 AND pm.user_id=$2 AND pm.role<>'observer'
+            FOR SHARE OF pm,tm
+          `,[projectId,before.implementation_owner_id]);
+          if(!stillActive.rowCount)
+            fail(409,'实施责任人已失去项目资格，请重新指派');
           const evidence=await db.query(`
             SELECT 1 FROM messages
             WHERE project_id=$1 AND id=$2 AND kind='user'

@@ -27,7 +27,7 @@ CREATE TABLE project_change_implementation_history(
   project_id UUID NOT NULL,
   change_id UUID NOT NULL,
   change_version INTEGER NOT NULL CHECK(change_version>2),
-  action TEXT NOT NULL CHECK(action IN ('start','complete')),
+  action TEXT NOT NULL CHECK(action IN ('start','reassign','complete')),
   from_status TEXT NOT NULL CHECK(from_status IN ('approved','implementing')),
   to_status TEXT NOT NULL CHECK(to_status IN ('implementing','implemented')),
   note TEXT NOT NULL CHECK(length(trim(note)) BETWEEN 1 AND 2000),
@@ -42,7 +42,9 @@ CREATE TABLE project_change_implementation_history(
   CHECK((action='start' AND from_status='approved' AND to_status='implementing'
     AND evidence_message_id IS NULL) OR
     (action='complete' AND from_status='implementing' AND to_status='implemented'
-    AND evidence_message_id IS NOT NULL))
+    AND evidence_message_id IS NOT NULL) OR
+    (action='reassign' AND from_status='implementing' AND to_status='implementing'
+    AND evidence_message_id IS NULL))
 );
 CREATE INDEX idx_change_implementation_history_recent
   ON project_change_implementation_history(project_id,change_id,change_version DESC);
