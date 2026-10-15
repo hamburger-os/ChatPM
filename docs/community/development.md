@@ -315,3 +315,11 @@ The installer creates a private 64-hex-character `BOOTSTRAP_TOKEN` in the server
 ## 2026-10-15 One-time organization invitations (experimental)
 
 Tenant admins can issue a seven-day, email-bound invitation under Organization → People. The secret is displayed once only and must be shared privately. New users select invitation enrollment on the sign-in screen; existing users sign in and accept it under Account Settings. The invited account joins **only that tenant** as a regular member. Project access requires a separate project grant. Revoked, expired, mismatched or consumed codes are rejected. There is no automated invitation email, SCIM, or enterprise SSO in this increment.
+
+## 2026-10-15 多部门项目协作归属（实验性）
+
+组织管理员现在可以在「组织管理 → 部门与项目结构」为项目指定一个主责部门，并从其他部门多选参与部门。页面显示各部门主责及参与项目数量。项目集与组合仍独立选择，组织归属版本用于防止管理员并发覆盖。参与部门只代表协作关系，不会自动把部门成员加入项目聊天室或给其任务管理权限；项目负责人仍需授权项目成员。更高阶的项目集收益治理、项目组合优先级、部门级资源调剂仍待实施。
+
+## 2026-10-15 Cross-department project participation (experimental)
+
+A project may have one owning department and several participating departments. Tenant admins edit them together with program/portfolio classification under one optimistic revision, while department membership alone never gives project read/write permissions. Program benefit realization, portfolio strategic prioritization and full shared-resource optimization are not included.
