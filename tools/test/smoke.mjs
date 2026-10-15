@@ -405,8 +405,8 @@ try{
   const realClassificationAudits=(await db.query(`SELECT count(*)::int AS n
     FROM organization_audit_entries WHERE tenant_id=$1
       AND action='project.classification_changed'`,[tenantId])).rows[0].n;
-  assert.equal(realClassificationAudits,5,
-    'Only five real changes may create classification audit records');
+  assert.equal(realClassificationAudits,6,
+    'Five classification transitions plus one participant-only change must be audited');
   const deptMemberPath='/tenants/'+tenantId+'/departments/'+
     dep.data.department.id+'/members';
   const initialDepartmentRole={idempotencyKey:randomUUID(),
