@@ -9,6 +9,7 @@ import { registerEvidenceRoutes } from './evidence-routes.ts';
 import { registerTaskRoutes } from './task-routes.ts';
 import { registerApprovalRoutes } from './approval-routes.ts';
 import { registerReportRoutes } from './report-routes.ts';
+import { registerProjectGovernanceRoutes } from './project-governance-routes.ts';
 import { randomUUID } from 'node:crypto';
 import { signedQuotaKey } from '../../../packages/core/src/quota-key.ts';
 import Fastify from 'fastify';
@@ -145,7 +146,7 @@ app.get('/tenants',async req=>{
 app.get('/projects',async req=>{
   const userId=await authenticated(req);
   const {rows}=await pool.query(
-    `SELECT p.id,p.name,p.timezone,p.ai_enabled,p.work_start,p.work_end,p.cooldown_hours,pm.role
+    `SELECT p.id,p.name,p.timezone,p.ai_enabled,p.work_start,p.work_end,p.cooldown_hours,p.settings_revision,pm.role
      FROM projects p JOIN project_members pm ON pm.project_id=p.id
      JOIN tenant_members tm ON tm.tenant_id=p.tenant_id AND tm.user_id=pm.user_id
      WHERE pm.user_id=$1 ORDER BY p.created_at DESC`,[userId]);
@@ -162,7 +163,7 @@ app.post('/projects',async(req,reply)=>{
       [input.tenantId,userId])).rows[0];
     if(!ten) fail(403,'没有创建项目权限');
     const row=(await db.query(
-      'INSERT INTO projects(tenant_id,name,owner_id,timezone) VALUES($1,$2,$3,$4) RETURNING id,tenant_id,name,timezone,ai_enabled,work_start,work_end,cooldown_hours',
+      'INSERT INTO projects(tenant_id,name,owner_id,timezone) VALUES($1,$2,$3,$4) RETURNING id,tenant_id,name,timezone,ai_enabled,work_start,work_end,cooldown_hours,settings_revision',
       [ten.tenant_id,input.name,userId,input.timezone])).rows[0];
     await db.query('INSERT INTO project_members(project_id,user_id,role) VALUES($1,$2,$3)',
       [row.id,userId,'owner']);
@@ -176,112 +177,9 @@ app.get('/projects/:id',async req=>{
   const userId=await authenticated(req);
   await member(userId,projectId);
   const {rows}=await pool.query(
-    `SELECT id,name,timezone,ai_enabled,work_start,work_end,cooldown_hours FROM projects WHERE id=$1`,
+    `SELECT id,name,timezone,ai_enabled,work_start,work_end,cooldown_hours,settings_revision FROM projects WHERE id=$1`,
     [projectId]);
   return {project:rows[0]};
-});
-app.get('/projects/:id/members',async req=>{
-  const projectId=uuid.parse((req.params as {id:string}).id);
-  const userId=await authenticated(req);
-  await member(userId,projectId);
-  const {rows}=await pool.query(
-    `SELECT u.id,u.display_name,u.email,pm.role FROM project_members pm
-     JOIN users u ON u.id=pm.user_id WHERE pm.project_id=$1 ORDER BY u.display_name`,
-    [projectId]);
-  return {members:rows};
-});
-app.post('/projects/:id/members',async req=>{
-  const projectId=uuid.parse((req.params as {id:string}).id);
-  const userId=await authenticated(req);
-  const {email}=z.object({email:z.string().email().transform(v=>v.toLowerCase())}).parse(req.body);
-  return transaction(async db=>{
-    const access=await lockProjectAccess(db,projectId,userId);
-    assertProject(access.role,'members.manage');
-    const person=(await db.query('SELECT id FROM users WHERE email=$1',[email])).rows[0];
-    if (!person) fail(404,'该邮箱尚未注册');
-    const existing=await db.query(
-      'SELECT 1 FROM tenant_members WHERE tenant_id=$1 AND user_id=$2 FOR SHARE',
-      [access.tenantId,person.id]);
-    if(!existing.rowCount)fail(403,'请先由组织管理员将人员加入该组织');
-    await db.query(
-      `INSERT INTO project_members(project_id,user_id,role) VALUES($1,$2,'member')
-       ON CONFLICT DO NOTHING`,[projectId,person.id]);
-    await audit(db,projectId,userId,'project.member_added',person.id);
-    return {ok:true};
-  });
-});
-app.patch('/projects/:id/members/:memberId',async req=>{
-  const {id,memberId}=req.params as {id:string;memberId:string};
-  const projectId=uuid.parse(id),target=uuid.parse(memberId);
-  const actor=await authenticated(req);
-  const {role}=z.object({role:z.enum(['manager','member','observer'])}).parse(req.body);
-  return transaction(async db=>{
-    const access=await lockProjectAccess(db,projectId,actor);
-    assertProject(access.role,'members.manage');
-    const existing=await db.query(`SELECT role FROM project_members
-      WHERE project_id=$1 AND user_id=$2 FOR UPDATE`,[projectId,target]);
-    if(!existing.rowCount || existing.rows[0].role==='owner')fail(403,'不能修改项目负责人的角色');
-    if(role==='observer'){
-      const assigned=await db.query(`SELECT 1 FROM tasks WHERE project_id=$1 AND assignee_id=$2
-        AND status NOT IN ('done','cancelled') LIMIT 1`,[projectId,target]);
-      if(assigned.rowCount)fail(409,'该人员仍有未完成任务，请先移交任务');
-    }
-    await db.query('UPDATE project_members SET role=$3 WHERE project_id=$1 AND user_id=$2',
-      [projectId,target,role]);
-    await audit(db,projectId,actor,'project.member_role_changed',target,{role});
-    return {ok:true};
-  });
-});
-app.delete('/projects/:id/members/:memberId',async req=>{
-  const {id,memberId}=req.params as {id:string;memberId:string};
-  const projectId=uuid.parse(id),target=uuid.parse(memberId);
-  const actor=await authenticated(req);
-  return transaction(async db=>{
-    const access=await lockProjectAccess(db,projectId,actor);
-    assertProject(access.role,'members.manage');
-    // Authorize before self-removal validation; members must get 403, not a
-    // misleading owner-only rule or an authorization oracle.
-    if(actor===target) fail(400,'不能通过此接口移除项目负责人');
-    // Serialize revocation with task creation/assignment using the member row lock.
-    const found=await db.query(`SELECT 1 FROM project_members
-      WHERE project_id=$1 AND user_id=$2 AND role='member' FOR UPDATE`,
-      [projectId,target]);
-    if(!found.rowCount) fail(404,'项目成员不存在');
-    const assigned=await db.query(`SELECT 1 FROM tasks
-      WHERE project_id=$1 AND assignee_id=$2 AND status NOT IN ('done','cancelled')
-      LIMIT 1`,[projectId,target]);
-    if(assigned.rowCount) fail(409,'该成员仍有未完成任务，请先重新指派或取消任务');
-    await db.query(`DELETE FROM project_members
-      WHERE project_id=$1 AND user_id=$2 AND role='member'`,[projectId,target]);
-    await audit(db,projectId,actor,'project.member_removed',target);
-    return {ok:true};
-  });
-});
-app.patch('/projects/:id/settings',async req=>{
-  const projectId=uuid.parse((req.params as {id:string}).id);
-  const userId=await authenticated(req);
-  const v=z.object({aiEnabled:z.boolean(),workStart:z.number().int().min(0).max(23).nullable(),
-    workEnd:z.number().int().min(1).max(24).nullable(),
-    cooldownHours:z.number().int().min(1).max(168).nullable()}).parse(req.body);
-  const none=v.workStart===null && v.workEnd===null && v.cooldownHours===null;
-  if(!none && (v.workStart===null||v.workEnd===null||v.cooldownHours===null ||
-    v.workStart>=v.workEnd)) fail(400,'提醒策略必须完整配置');
-  if(v.aiEnabled) {
-    try { await resolveProjectModel(projectId); }
-    catch { fail(400,'服务器尚未正确配置 AI 模型'); }
-  }
-  return transaction(async db=>{
-    const access=await lockProjectAccess(db,projectId,userId);
-    assertProject(access.role,'settings.manage');
-    await db.query(
-      `UPDATE projects SET ai_enabled=$1,work_start=$2,work_end=$3,cooldown_hours=$4 WHERE id=$5`,
-      [v.aiEnabled,v.workStart,v.workEnd,v.cooldownHours,projectId]);
-    const ts=await db.query('SELECT id FROM tasks WHERE project_id=$1',[projectId]);
-    for(const t of ts.rows) await syncFollowup(db,projectId,t.id);
-    await audit(db,projectId,userId,'project.settings_changed',projectId,
-      {aiEnabled:v.aiEnabled,hasReminderPolicy:!none});
-    return {ok:true};
-  });
 });
 app.get('/projects/:id/ai/authorization',async req=>{
   const id=uuid.parse((req.params as {id:string}).id);
@@ -415,5 +313,6 @@ registerEvidenceRoutes(app,authenticated);
 registerTaskRoutes(app,authenticated);
 registerApprovalRoutes(app,authenticated);
 registerReportRoutes(app,authenticated);
+registerProjectGovernanceRoutes(app,authenticated);
 app.addHook('onClose',async()=>{await pool.end();});
 await app.listen({port,host:serverConfig.API_HOST});

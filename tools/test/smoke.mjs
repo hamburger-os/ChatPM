@@ -125,10 +125,35 @@ try{
     assert.ok(audited.has(action),'Missing organization audit: '+action);
   }
 
-  const invited=await api('/projects/'+pid+'/members',{method:'POST',body:{
-    email:'second+'+suffix2+'@example.com',
-  }});
+  const invitation={idempotencyKey:randomUUID(),email:'second+'+suffix2+'@example.com'};
+  const invited=await api('/projects/'+pid+'/members',{method:'POST',body:invitation});
   assert.equal(invited.status,200,'Owner should be able to add a registered project member');
+  const invitedReplay=await api('/projects/'+pid+'/members',{method:'POST',body:invitation});
+  assert.equal(invitedReplay.status,200,'Same invitation must replay a receipt');
+  const inviteKeyCollision=await api('/projects/'+pid+'/members',{method:'POST',
+    body:{...invitation,email:'different@example.com'}});
+  assert.equal(inviteKeyCollision.status,409,'Invitation key reuse with other email must fail');
+  const duplicateInvitation=await api('/projects/'+pid+'/members',{method:'POST',
+    body:{...invitation,idempotencyKey:randomUUID()}});
+  assert.equal(duplicateInvitation.status,409,'New command must not claim an existing member');
+  const memberCreatedEvents=(await db.query(`SELECT count(*)::int AS n
+    FROM domain_events WHERE project_id=$1 AND aggregate_id=$2
+      AND kind='project.member_added.v1'`,[pid,second.data.user.id])).rows[0].n;
+  assert.equal(memberCreatedEvents,1,'Duplicate invitation cannot append domain events');
+  const memberPath='/projects/'+pid+'/members/'+second.data.user.id;
+  const managerCommand={idempotencyKey:randomUUID(),role:'manager'};
+  const promoted=await api(memberPath,{method:'PATCH',body:managerCommand});
+  assert.equal(promoted.status,200,'Owner may promote a member to manager');
+  assert.equal((await api(memberPath,{method:'PATCH',body:managerCommand})).status,200,
+    'Same role change replays its receipt');
+  assert.equal((await api(memberPath,{method:'PATCH',body:{
+    ...managerCommand,role:'observer'}})).status,409);
+  assert.equal((await api(memberPath,{method:'PATCH',body:{
+    idempotencyKey:randomUUID(),role:'manager'}})).status,409,
+    'A second identical role change must not claim another event');
+  const restored=await api(memberPath,{method:'PATCH',body:{
+    idempotencyKey:randomUUID(),role:'member'}});
+  assert.equal(restored.status,200,'Member can be restored before permission tests');
   const pm='/projects/'+pid+'/pm';
 
   const forbiddenGoal=await api(pm+'/goals',{method:'POST',cookie:cookieB,
@@ -295,7 +320,8 @@ try{
   const memberView=await api('/projects/'+pid+'/members',{cookie:cookieB});
   assert.equal(memberView.status,200);
   const ownerOnly=await api('/projects/'+pid+'/settings',{method:'PATCH',cookie:cookieB,
-    body:{aiEnabled:false,workStart:9,workEnd:18,cooldownHours:24}});
+    body:{idempotencyKey:randomUUID(),expectedRevision:1,
+      aiEnabled:false,workStart:9,workEnd:18,cooldownHours:24}});
   assert.equal(ownerOnly.status,403,'Project members cannot change AI or reminder policy');
   const deniedModel=await api('/admin/ai/models');
   assert.equal(deniedModel.status,403,'Tenant owner is not a platform system administrator');
@@ -653,16 +679,36 @@ try{
     version:2,assigneeId:uid,dueDate:new Date(Date.now()+86400000).toISOString().slice(0,10),
   }});
   assert.equal(edited.status,200,'Owner may edit task plan');
-  const configured=await api('/projects/'+pid+'/settings',{method:'PATCH',body:{
-    aiEnabled:false,workStart:9,workEnd:18,cooldownHours:24,
-  }});
+  const settingsCommand={idempotencyKey:randomUUID(),expectedRevision:1,
+    aiEnabled:false,workStart:9,workEnd:18,cooldownHours:24};
+  const configured=await api('/projects/'+pid+'/settings',{
+    method:'PATCH',body:settingsCommand});
   assert.equal(configured.status,200);
+  assert.equal(configured.data.settingsRevision,2);
+  const configurationReplay=await api('/projects/'+pid+'/settings',{
+    method:'PATCH',body:settingsCommand});
+  assert.equal(configurationReplay.status,200);
+  assert.equal(configurationReplay.data.settingsRevision,2);
+  const settingsConflict=await api('/projects/'+pid+'/settings',{
+    method:'PATCH',body:{...settingsCommand,workStart:10}});
+  assert.equal(settingsConflict.status,409,'Same key cannot hide altered project settings');
+  const staleSettings=await api('/projects/'+pid+'/settings',{
+    method:'PATCH',body:{...settingsCommand,idempotencyKey:randomUUID()}});
+  assert.equal(staleSettings.status,409,'Stale project settings revision must fail');
+  const unkeyedSettings=await api('/projects/'+pid+'/settings',{method:'PATCH',
+    body:{aiEnabled:false,workStart:9,workEnd:18,cooldownHours:24}});
+  assert.equal(unkeyedSettings.status,400);
   const listedConfigured=await api('/projects');
   assert.equal(listedConfigured.status,200);
   const configuredProject=listedConfigured.data.projects.find(p=>p.id===pid);
   assert.equal(configuredProject.work_start,9);
   assert.equal(configuredProject.work_end,18);
   assert.equal(configuredProject.cooldown_hours,24);
+  assert.equal(configuredProject.settings_revision,2,'Settings revision must be listed');
+  const settingsEvents=(await db.query(`SELECT count(*)::int AS n
+    FROM domain_events WHERE project_id=$1 AND aggregate_id=$2
+      AND kind='project.settings_changed.v1'`,[pid,pid])).rows[0].n;
+  assert.equal(settingsEvents,1,'Stale settings writes must not emit extra events');
   const followup=await db.query(
     'SELECT active FROM followup_plans WHERE task_id=$1',[tid]);
   assert.equal(followup.rows[0]?.active,true,'Task follow-up must be durable');
@@ -854,9 +900,10 @@ try{
   assert.equal(reportEvents.find(x=>x.kind==='report.published.v1')?.n,1);
 
   const removeDenied=await api('/projects/'+pid+'/members/'+second.data.user.id,{
-    method:'DELETE',cookie:cookieB});
+    method:'DELETE',cookie:cookieB,body:{idempotencyKey:randomUUID()}});
   assert.equal(removeDenied.status,403);
-  const blockedRemoval=await api('/projects/'+pid+'/members/'+second.data.user.id,{method:'DELETE'});
+  const blockedRemoval=await api('/projects/'+pid+'/members/'+second.data.user.id,{
+    method:'DELETE',body:{idempotencyKey:randomUUID()}});
   assert.equal(blockedRemoval.status,409,'Members with unfinished assigned tasks must be reassigned first');
   const reassigned=await api('/projects/'+pid+'/tasks/'+linked.rows[0].id,{
     method:'PATCH',body:{idempotencyKey:randomUUID(),version:1,assigneeId:uid}});
@@ -867,8 +914,22 @@ try{
   const markDone=await api('/projects/'+pid+'/tasks/'+historical.data.task.id,{
     method:'PATCH',body:{idempotencyKey:randomUUID(),version:historical.data.task.version,status:'done'}});
   assert.equal(markDone.status,200);
-  const removed=await api('/projects/'+pid+'/members/'+second.data.user.id,{method:'DELETE'});
+  const promoteBeforeRemoval=await api(memberPath,{method:'PATCH',
+    body:{idempotencyKey:randomUUID(),role:'manager'}});
+  assert.equal(promoteBeforeRemoval.status,200);
+  const removalInput={idempotencyKey:randomUUID()};
+  const removed=await api(memberPath,{method:'DELETE',body:removalInput});
   assert.equal(removed.status,200);
+  assert.equal((await api(memberPath,{method:'DELETE',body:removalInput})).status,200,
+    'Same removal request must return durable receipt');
+  assert.equal((await api(memberPath,{method:'DELETE',
+    body:{idempotencyKey:randomUUID()}})).status,404,
+    'Removing the same member with a new command must not create another event');
+  const removeEvents=(await db.query(`SELECT count(*)::int AS n
+    FROM domain_events WHERE project_id=$1 AND aggregate_id=$2
+      AND kind='project.member_removed.v1'`,
+    [pid,second.data.user.id])).rows[0].n;
+  assert.equal(removeEvents,1,'Repeated removal cannot append a second domain event');
   const reopenFormerMember=await api('/projects/'+pid+'/tasks/'+historical.data.task.id,{
     method:'PATCH',body:{idempotencyKey:randomUUID(),version:markDone.data.task.version,status:'doing'}});
   assert.equal(reopenFormerMember.status,400,'Reopening must reject a revoked assignee');
