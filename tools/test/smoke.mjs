@@ -27,12 +27,24 @@ const db=new pg.Client({connectionString:process.env.DATABASE_URL});
 await db.connect();
 const origin=process.env.WEB_ORIGIN||'http://localhost:3000';
 let cookieA='',cookieB='';
-async function api(path,{method='GET',body,cookie=cookieA}={}){
+async function api(path,{method='GET',body,cookie=cookieA}={},retries=0){
   const r=await fetch(host+path,{
     method,headers:{...(body!==undefined?{'Content-Type':'application/json'}:{}),Origin:origin,
       ...(cookie?{Cookie:cookie}:{})},
     body:body===undefined?undefined:JSON.stringify(body),
   });
+  // The complete smoke suite issues more than the production 180/minute quota.
+  // Keep the REAL API limiter active: honor its standard retry hint rather
+  // than weakening server policy or hiding application-level 429 responses.
+  if(r.status===429&&retries<2&&
+    (r.headers.has('x-ratelimit-limit')||r.headers.has('ratelimit-limit'))){
+    const seconds=Number(r.headers.get('retry-after'));
+    if(Number.isFinite(seconds)&&seconds>=0&&seconds<=90){
+      await r.arrayBuffer();
+      await delay((Math.ceil(seconds)+1)*1000);
+      return api(path,{method,body,cookie},retries+1);
+    }
+  }
   let data;try{data=await r.json();}catch{data={};}
   return {status:r.status,data,cookie:r.headers.get('set-cookie')?.split(';')[0]||''};
 }
