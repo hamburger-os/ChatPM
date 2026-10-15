@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import {createServer} from 'node:http';
 import { randomUUID } from 'node:crypto';
 import { pool, transaction } from '../src/db.ts';
 import { insertMessage } from '../src/messages.ts';
@@ -8,24 +9,36 @@ import { DailyAIBudgetExceeded } from '../src/ai-provider.ts';
 import { encryptModelKey } from '../src/project-model.ts';
 
 const id=randomUUID();
-const previousFetch=globalThis.fetch;
 const previousLimit=process.env.AI_DAILY_REQUEST_LIMIT;
 let providerCalls=0;
-try{
-  process.env.AI_DAILY_REQUEST_LIMIT='4';
-  globalThis.fetch=async(_input,init)=>{
+// Exercise the REAL guarded model HTTP transport, not a global fetch monkeypatch.
+const fakeProvider=createServer((request,response)=>{
+  assert.equal(request.method,'POST');
+  assert.equal(request.url,'/v1/responses');
+  assert.equal(request.headers.authorization,'Bearer fake-key-for-mocked-requests');
+  let json='';
+  request.setEncoding('utf8');
+  request.on('data',chunk=>{json+=chunk;});
+  request.on('end',()=>{
     providerCalls++;
-    assert.equal(String(_input),'https://api.openai.com/v1/responses');
-    const body=JSON.parse(String(init?.body));
+    const body=JSON.parse(json);
     assert.equal(body.text.format.type,'json_schema');
     assert.ok(body.input[0].content.includes('不可信'));
     const noDetails=body.input[1].content.includes('仅说九月底');
-    return new Response(JSON.stringify({output:[{content:[{
+    response.writeHead(200,{'content-type':'application/json'});
+    response.end(JSON.stringify({output:[{content:[{
       type:'output_text',text:JSON.stringify(noDetails
         ? {assignee_hint:null,due_at:null,confidence:0.3}
         : {assignee_hint:'测试负责人',due_at:'2026-12-10T10:00:00+08:00',confidence:0.9}),
-    }]}]}),{status:200,headers:{'content-type':'application/json'}});
-  };
+    }]}]}));
+  });
+});
+await new Promise<void>(resolve=>fakeProvider.listen(0,'127.0.0.1',resolve));
+const bound=fakeProvider.address();
+if(!bound||typeof bound==='string')throw new Error('Mock provider port missing');
+const mockBaseUrl='http://127.0.0.1:'+bound.port+'/v1';
+try{
+  process.env.AI_DAILY_REQUEST_LIMIT='4';
   const user=(await pool.query(
     "INSERT INTO users(email,display_name,password_hash) VALUES($1,'Mock','unused') RETURNING id",
     ['mock-'+id+'@example.com'])).rows[0];
@@ -36,8 +49,9 @@ try{
     [tenant.id,user.id])).rows[0];
   const provider=(await pool.query(`INSERT INTO ai_provider_connections
     (name,base_url,api_style,api_key_ciphertext,enabled)
-    VALUES($1,'https://api.openai.com/v1','responses',$2,TRUE) RETURNING id`,
-    ['integration-provider-'+id,encryptModelKey('fake-key-for-mocked-requests')])).rows[0];
+    VALUES($1,$2,'responses',$3,TRUE) RETURNING id`,
+    ['integration-provider-'+id,mockBaseUrl,
+      encryptModelKey('fake-key-for-mocked-requests')])).rows[0];
   await pool.query(`INSERT INTO ai_model_configs
     (name,model_id,provider_id,enabled,is_default)
     VALUES($1,'mock-project-model',$2,TRUE,TRUE)`,['integration-'+id,provider.id]);
@@ -152,8 +166,8 @@ try{
 
   console.log('AI integration passed: source-bound multi-turn evidence, replay, budget and no automatic task updates');
 }finally{
-  globalThis.fetch=previousFetch;
   if(previousLimit===undefined)delete process.env.AI_DAILY_REQUEST_LIMIT;
   else process.env.AI_DAILY_REQUEST_LIMIT=previousLimit;
   await pool.end();
+  await new Promise<void>(resolve=>fakeProvider.close(()=>resolve()));
 }

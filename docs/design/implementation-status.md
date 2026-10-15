@@ -90,3 +90,7 @@
 ## ADR-041 · 负责人写入权限撤销保护
 
 本切片将旧 API 中的 7 类 owner-only 正式操作改为业务事务内调用 lockProjectAccess，覆盖项目成员加入/降级/移除、项目设置、Outbox 死信重试、周/月报生成和发布，当前 tenant/project 身份与精确 ProjectAction 同时检查并行锁授权记录。目标成员入项目时检查其当前组织成员身份并持共享锁。新增真实 PostgreSQL 集成回归检查 owner-only 权限矩阵、项目身份降级后拒绝操作，以及组织成员撤销不得绕过已在途授权事务。该补丁保留现有请求契约，**不代表**这些旧操作已全部使用 CommandReceipt/DomainEvent；完整 P1/P2/P4 仍有未达成条件。最终状态以 PR 五项最新 SHA CI 和 /review 为准。
+
+## ADR-042 · 固定 DNS 的模型出站安全切片
+
+系统配置模型端点的目录查询、连接探针、AI 聊天/候选抽取与 opt-in 黄金评测现在共用 `model-egress.ts` 的默认网络发送器；在建立 socket 之前解析 DNS A/AAAA 整体地址集合并拒绝任意公网域名指向的私网/保留地址、重定向、非本地 HTTP。Node HTTP(S) 的真实 socket 仅使用事先校验过的地址，且每次请求禁用代理/长连接池，维持原域名 TLS 认证。显式 localhost/127.0.0.1/::1/host.docker.internal 仍可调用本地模型。测试包含模拟 DNS 混合/空地址、恶意目标以及真实 loopback POST/重定向/响应过大。**边界：** 单元集成的本机 HTTP 和 GitHub CI 不等于生产网络环境的 egress、防火墙、代理、TLS 与 SSRF/DNS 真实故障注入演练；P4 Issue #51 继续开放。状态以本 PR 最终 CI 和 /review 为准。

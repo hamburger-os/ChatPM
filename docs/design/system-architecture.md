@@ -46,3 +46,7 @@ Identity/Tenancy、Projects、Conversations、Work、Risk/Decision、AI Orchestr
 Worker 是独立部署的调度进程，而非所有领域业务的所有者。将事件/AI 候选处理、规则提醒、周期报告分为 `Conversation.AIEventRunner`、`Automation.ReminderRunner` 与 `Reporting.PeriodRunner`，在 `packages/core/src/` 内共享数据库事务与项目时区策略；Worker 仅调度，不重复实现相关 SQL。消息事件/AI 候选逻辑保持原有 SQL 与模型行为，但代码移入 `packages/core/src/conversation/ai-event-runner.ts`。进程入口只调度、心跳和优雅关闭。
 
 该抽取不改变 Outbox 至少一次投递、提醒静默窗口/冷却时间、消息 nonce 幂等或历史报告的“当前项目周期状态快照”限制，也不引入 Redis、微服务或复杂工作流引擎。API/Worker 同源对领域命令的完全收敛仍为目标，非本批已完成。
+
+## ADR-042 · 统一 ModelEgress 出口
+
+模型配置源自系统管理员，然而“管理员配置”不等于允许服务自动读取内部网络服务。ModelEgress 在目录发现、连接探针和正式推理三个调用面统一施行地址安全策略：解析公网 DNS 的 A/AAAA 全集，任何地址为私网/保留地址则 fail closed；将验证通过的 IP 固定到 Node HTTP(S) socket 的 lookup；禁用重定向和连接复用，保留目标域名证书验证并限制请求超时/响应大小。只有明确配置的本地端点允许 HTTP/私网 DNS，避免破坏本机 Ollama 和容器 host.docker.internal 用法。第三方响应只用于数据处理，不信任其指令或可执行 URL。网络层出站控制、代理环境、实际厂商 TLS 与大规模请求均在正式部署前另行验收。

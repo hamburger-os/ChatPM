@@ -135,3 +135,7 @@ CI 新增 `tools/test/task-linkage-smoke.mjs`：PostgreSQL 创建正式任务与
 ## ADR-041 · Owner 写入与撤权竞态 /review
 
 审查 server.ts 中项目负责人控制的 POST/PATCH/DELETE，必须在业务事务**内部**调用 lockProjectAccess 并按动作授权，不能凭事务前 member() 或 UI 按钮授权。覆盖成员邀请/角色变更/移除、设置更新、Outbox 死信 retry、周/月报告生成和发布；目标成员角色与未完成任务检查继续使用锁。项目/租户成员撤权与授权事务应通过数据库行锁互斥。报告已发布内容不得被新生成覆盖；审计同事务。完整验收以最新提交五项 CI 与代码审查为准。
+
+## ADR-042 · 模型出口 SSRF/DNS 重绑定 /review
+
+严格检查三条调用路径 `discoverProviderModels`、`probeModelText/callStructuredLLM`、`ConfiguredLLMProvider` 以及管理员结构化探针不再调用默认未经限制的全局 fetch。URL 仅来自已授权系统模型配置，不接受聊天文本中的 URL；不能凭白名单域名信任其 DNS：任何 A/AAAA 记录为 loopback/私网/保留网段就 fail closed，实际 HTTP(S) lookup 固定已经验证的 IP、TLS SNI/证书仍认原始 hostname，不自动 follow redirect，不经环境代理，响应限制并隐藏上游正文/密钥。明确本地端点保留功能，但其 DNS 也只可指向预期私网地址。单元测试必须包含真实本地 HTTP 请求、敏感头、重定向拒绝、超大响应、恶意 DNS 和空结果；实际网络 egress 与目标厂商实测作为 P4 生产发布外部验收。五项最新 Head CI 全绿与审查无未解决线程后合并。
