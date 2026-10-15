@@ -16,7 +16,6 @@ x-app: &app
     WEB_ORIGIN: ${WEB_ORIGIN:-http://localhost:3000}
     DB_POOL_MAX: ${DB_POOL_MAX:-10}
     REGISTRATION_MODE: ${REGISTRATION_MODE:-bootstrap}
-    BOOTSTRAP_TOKEN: ${BOOTSTRAP_TOKEN:-}
   depends_on:
     migrate:
       condition: service_completed_successfully
@@ -53,6 +52,7 @@ services:
       <<: *app-env
       API_HOST: 0.0.0.0
       API_PORT: 3001
+      BOOTSTRAP_TOKEN: ${BOOTSTRAP_TOKEN:-}
     healthcheck:
       test: ["CMD","node","-e","fetch('http://127.0.0.1:3001/health').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"]
       interval: 15s
