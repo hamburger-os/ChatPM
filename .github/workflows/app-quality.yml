@@ -55,6 +55,8 @@ jobs:
         run: npm run db:migrate
       - name: Verify migrations are repeatable
         run: npm run db:migrate
+      - name: First-account bootstrap token and race integration
+        run: node --import tsx packages/core/test/bootstrap.integration.ts
       - name: AI authorization version and denial integration
         run: node --import tsx packages/core/test/ai-authorization.integration.ts
       - name: Organization governance transaction integration
