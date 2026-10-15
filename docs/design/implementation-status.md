@@ -138,3 +138,7 @@ Docker 部署 Smoke 原先仅验证 pg_dump custom-format 文件头和 pg_restor
 ## ADR-053 · 部门 / 项目集 / 项目组合归属版本管理
 
 新增 023_project_classification_revision.sql（增量迁移，旧迁移 checksum 不变），Project 的部门/Program/直接 Portfolio 分类拥有独立 classification_revision，初值 1，不与 AI 开关、Project Owner、提醒设置版本混用。组织结构 GET 返回分类版本，PATCH 必须携带当前 expectedRevision、UUID idempotencyKey，仅能由当前租户管理员执行；已有组织命令事务锁内 Project FOR UPDATE 检查旧版本，真正变更时三个分类列与版本同时更新，过期版本或新的无变化命令返回 409，不能悄悄覆盖其他组织管理员或制造虚假审计；原命令正确重放仍返回原结果。UI 显示选中项目的分类版本，过期冲突后可刷新当前部门、项目集与组合归属再重新确认。API/PostgreSQL smoke 验证首改 1→2，原键重放、换 payload 409、无 key/版本 400、跨组织/普通管理员越权、无变化拒绝、切直接组合与回项目集、两次独立过期命令并发一成功一冲突、精确审计行数。组织操作仍只有既有租户审计与持久 receipt，不冒充已有项目级 Outbox 或自动 AI 决策。多项目跨团队容量及生产实机数据库迁移仍分别验收。
+
+## ADR-054 · 组织重复变更与自降权重试语义
+
+重复邀请租户成员、同角色设置、同身份部门人员指派，不再产生虚假更改审计或新 Receipt（不同 key 新命令返回 409）；相同 key 的成功变更重放仍返回原结果。另一管理员存在时 tenant admin 可自行降为 member，事务成功后可以凭原命令继续读取**自己的同一次成功回执**，但不能凭新 key 再修改组织角色。只有组织角色路由允许当前 tenant member 对已完成 Receipt 的重放，organizationCommand 的其它路径仍要求当前 admin；保持 last-admin 约束、租户互斥与当前权限锁。没有新 migration，不代表所有组织级 DomainEvent/Outbox 已完成或达到真实生产签署。
