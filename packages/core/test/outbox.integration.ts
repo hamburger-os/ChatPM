@@ -116,14 +116,18 @@ try {
       VALUES($1,NULL,'outbox.committed_owner_fenced',$2)`,[project.id,renewed.id]);
   });
   await acquired;
-  // With the live row locked by a publishing transaction, a competing
-  // consumer must skip the row rather than steal the token mid-commit.
-  await pool.query("UPDATE outbox_events SET claimed_at=NOW()-INTERVAL '6 minutes' WHERE id=$1 AND FALSE",
-    [expiredEvent.id]);
-  const competing=await claimEvents(1);
-  assert.ok(competing.every(x=>x.id!==expiredEvent.id));
-  unlock();
-  await publication;
+  // The publisher holds the row lock until its business transaction commits.
+  // A second worker cannot change this claim while the side effect is written.
+  try{
+    await assert.rejects(
+      pool.query('SELECT id FROM outbox_events WHERE id=$1 FOR UPDATE NOWAIT',
+        [expiredEvent.id]),
+      (error:unknown)=>(error as {code?:string}).code==='55P03',
+      'A competing transaction must not steal a claim during publication');
+  }finally{
+    unlock();
+    await publication;
+  }
   await finishEvent(renewed);
   assert.equal((await pool.query(`SELECT COUNT(*)::int AS n FROM audit_entries
     WHERE project_id=$1 AND action='outbox.committed_owner_fenced'`,
