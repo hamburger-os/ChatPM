@@ -339,3 +339,11 @@ Tenant administrators have a cross-project overview of current task/risk states 
 ## 2026-10-16 Model egress local alias tightening (experimental)
 
 A remote model endpoint requires HTTPS and safe resolved public IPs. `localhost` must resolve to loopback; `host.docker.internal` now accepts only RFC1918 or IPv6 ULA gateway addresses, rejecting link-local metadata, CGNAT, public addresses and mixed unsafe DNS answers. The transport rejects caller-supplied Host, proxy and HTTP-framing headers before creating a socket. Real Docker/QNAP/IPv6 routing and egress policy still require deployment-specific tests; CI alone is not a production network security certification.
+
+## 2026-10-16 组织结构访问与撤权一致性
+
+「组织管理 → 部门与项目结构」的数据现在由一个受控查询服务返回。合法组织成员可以查看部门、项目集、项目组合的基础目录，但只有组织管理员或被正式加入项目的人员可以看到对应项目的归属关系。接口读取过程中会锁定组织和相关项目成员资格，避免成员权限被撤销时仍返回其他项目的信息。该改进是治理领域的一个查询边界重构，不是整个 API/Worker 架构改造或生产安全认证。
+
+## 2026-10-16 Organization structure authorization
+
+The organization structure read API now uses one transactional core query service. Tenant members can see organizational taxonomy, but non-admins only see project classification for projects they explicitly belong to; membership removals are coordinated with the read transaction. This is one bounded read-model refactor, not a claim that all API SQL or Worker concurrency hardening has been completed.
