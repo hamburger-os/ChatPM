@@ -1,4 +1,4 @@
-import { pool, transaction } from './db.ts';
+import { pool, transaction, type DbClient } from './db.ts';
 import { DailyAIBudgetExceeded } from './ai-provider.ts';
 
 export const MAX_EVENT_ATTEMPTS=8;
@@ -27,6 +27,25 @@ export async function claimEvents(limit=12):Promise<EventRow[]>{
       [rows.map((r:{id:string})=>r.id)]);
     return claimed.rows as EventRow[];
   });
+}
+
+export const OUTBOX_LEASE_MINUTES=5;
+
+/**
+ * Publication fence: hold the live claim row FOR UPDATE until the same
+ * transaction commits its AI reply/candidate/clarification. Another worker's
+ * SKIP LOCKED reclaim cannot replace this token while effects are committed.
+ * An expired (even not yet reclaimed) or completed lease is never authority.
+ */
+export async function assertEventClaim(db:DbClient,event:EventRow):Promise<void>{
+  const {rowCount}=await db.query(`
+    SELECT 1 FROM outbox_events
+    WHERE id=$1 AND project_id=$2 AND claim_token=$3
+      AND claimed_at>NOW()-INTERVAL '5 minutes'
+      AND processed_at IS NULL AND dead_at IS NULL
+    FOR UPDATE
+  `,[event.id,event.project_id,event.claim_token]);
+  if(!rowCount)throw new Error('OUTBOX_LEASE_LOST');
 }
 
 export async function finishEvent(event:EventRow){
