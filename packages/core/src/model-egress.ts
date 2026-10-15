@@ -30,7 +30,7 @@ export function isPrivateModelAddress(address:string):boolean{
 }
 function invalidUrl():never{throw new Error('MODEL_EGRESS_INVALID_URL');}
 function unsafe():never{throw new Error('MODEL_CATALOG_UNSAFE_ENDPOINT');}
-type Resolver=typeof dnsLookup;
+type Resolver=(hostname:string,options:{all:true})=>Promise<LookupAddress[]>;
 
 function validateTarget(url:URL):{host:string;local:boolean}{
   const host=hostOf(url);

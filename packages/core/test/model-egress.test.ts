@@ -16,19 +16,19 @@ test('public endpoint addresses are checked as an entire DNS answer set',async()
     assert.equal(isPrivateModelAddress(address),true,address);
   assert.equal(isPrivateModelAddress('8.8.8.8'),false);
   await assert.doesNotReject(assertPublicModelHost('https://api.example.com/v1',
-    publicDns as typeof import('node:dns/promises').lookup));
+    publicDns));
   await assert.rejects(assertPublicModelHost('https://api.example.com/v1',
     (async()=>[{address:'8.8.8.8',family:4},
-      {address:'169.254.169.254',family:4}]) as typeof import('node:dns/promises').lookup),
+      {address:'169.254.169.254',family:4}])),
     /MODEL_CATALOG_UNSAFE_ENDPOINT/);
   await assert.rejects(assertPublicModelHost('https://api.example.com/v1',
-    (async()=>[{address:'::1',family:6}]) as typeof import('node:dns/promises').lookup),
+    (async()=>[{address:'::1',family:6}])),
     /MODEL_CATALOG_UNSAFE_ENDPOINT/);
   await assert.rejects(assertPublicModelHost('https://api.example.com/v1',
-    (async()=>[]) as typeof import('node:dns/promises').lookup),
+    (async()=>[])),
     /MODEL_CATALOG_UNSAFE_ENDPOINT/);
   await assert.rejects(assertPublicModelHost('https://api.example.com/v1',
-    (async()=>{throw new Error('resolver secret');}) as typeof import('node:dns/promises').lookup),
+    (async()=>{throw new Error('resolver secret');})),
     /MODEL_CATALOG_DNS_FAILED/);
 });
 test('local exceptions remain explicit and reject public DNS aliases',async()=>{
@@ -39,7 +39,7 @@ test('local exceptions remain explicit and reject public DNS aliases',async()=>{
   await assert.rejects(assertPublicModelHost('http://api.example.com/v1'),
     /MODEL_EGRESS_INVALID_URL/);
   await assert.rejects(assertPublicModelHost('https://localhost/v1',
-    (async()=>[{address:'8.8.8.8',family:4}]) as typeof import('node:dns/promises').lookup),
+    (async()=>[{address:'8.8.8.8',family:4}])),
     /MODEL_CATALOG_UNSAFE_ENDPOINT/);
 });
 test('real local socket POST retains authorization but refuses redirects and bounded bodies',async()=>{

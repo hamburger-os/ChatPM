@@ -5,30 +5,6 @@ export {assertPublicModelHost,isPrivateModelAddress} from './model-egress.ts';
 
 export type CatalogModel={id:string;name:string;ownedBy:string|null};
 export type CatalogResult={models:CatalogModel[];latencyMs:number;truncated:boolean};
-export function isPrivateModelAddress(address:string):boolean{
-  const type=isIP(address);
-  return !type||forbidden.check(address,type===4?'ipv4':'ipv6');
-}
-
-export async function assertPublicModelHost(
-  baseUrl:string,resolve:typeof lookup=lookup,
-):Promise<void>{
-  const url=new URL(baseUrl);
-  // Local integrations are an explicit administrator-controlled trust choice.
-  if(['localhost','127.0.0.1','[::1]','host.docker.internal'].includes(url.hostname.toLowerCase()))
-    return;
-  if(isIP(url.hostname)){
-    if(isPrivateModelAddress(url.hostname))throw new Error('MODEL_CATALOG_UNSAFE_ENDPOINT');
-    return;
-  }
-  let addresses:{address:string;family:number}[];
-  try{addresses=await resolve(url.hostname,{all:true});}
-  catch{throw new Error('MODEL_CATALOG_DNS_FAILED');}
-  if(!Array.isArray(addresses)||addresses.length===0||
-    addresses.some(item=>isPrivateModelAddress(item.address)))
-    throw new Error('MODEL_CATALOG_UNSAFE_ENDPOINT');
-}
-
 async function readSmallJson(response:Response):Promise<unknown>{
   const declared=Number(response.headers.get('content-length')??0);
   if(declared>512_000)throw new Error('MODEL_CATALOG_TOO_LARGE');
