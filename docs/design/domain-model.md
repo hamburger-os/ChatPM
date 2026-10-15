@@ -76,3 +76,7 @@ ProjectClaim 引用 EvidenceSpan（复合项目外键），记录 `kind`、解�
 ## ADR-039 · Task 正式命令语义
 
 直接任务创建和更新统一采用项目级 CommandReceipt，并且任务版本更新、事务内当前角色检查、负责人当下有效项目/组织成员资格、前置任务完成条件、提醒计划与 DomainEvent/Outbox/Audit 同成败。任务新建必须带 `idempotencyKey`；状态/计划编辑必须带 `idempotencyKey` 和 `version`，数据库拒绝重复旧版本。客户端同一个意图重试须保留键；更改请求内容时重新生成键。此设计不将口头完成声明直接升级为已验收交付物，也不允许 AI 自动管理项目基线。
+
+## ADR-040 · 待核实建议与正式事实之间的人类批准关口
+
+`ProposedChange.pending` 和 `TaskProgressUpdate.pending` 是未审核的模型/成员线索，不是正式任务状态。具有权限的项目 owner/manager 选择 accepted/rejected 并提交幂等命令后状态才变更，且只能单向一次性决策。批准 task/risk 提案会在同一事务写入唯一目标事项，决策审计记录源候选与目标 ID；澄清线索保持可查而状态关闭。接受进度证据不自动关闭 Task 或验收 Deliverable，只有 blocker 采纳可以在原冷却策略下提前安排跟进。所有生成正式业务资料必须注明人工批准来源。
