@@ -106,9 +106,16 @@ export function registerGovernanceRoutes(app:FastifyInstance,
       if(!before)deny(404,'项目不存在');
       if(before.classification_revision!==v.expectedRevision)
         deny(409,'项目归属已被修改，请刷新后重新确认');
+      const previous=(await db.query<{department_id:string}>(`
+        SELECT department_id FROM project_departments
+        WHERE tenant_id=$1 AND project_id=$2 ORDER BY department_id FOR UPDATE
+      `,[tenantId,projectId])).rows.map(x=>x.department_id);
+      const participants=[...v.participatingDepartmentIds].sort();
+      const unchanged=previous.length===participants.length&&
+        previous.every((id,i)=>id===participants[i]);
       if(before.department_id===v.departmentId&&
          before.program_id===v.programId&&
-         before.portfolio_id===v.portfolioId)
+         before.portfolio_id===v.portfolioId&&unchanged)
         deny(409,'项目已采用该归属，不需要重复修改');
       const updated=await db.query(`
         UPDATE projects SET department_id=$3,program_id=$4,
@@ -117,10 +124,18 @@ export function registerGovernanceRoutes(app:FastifyInstance,
         RETURNING id,department_id,program_id,portfolio_id,classification_revision
       `,[tenantId,projectId,v.departmentId,v.programId,v.portfolioId,v.expectedRevision]);
       if(!updated.rowCount)deny(409,'项目归属版本冲突');
-      return {value:updated.rows[0],targetId:projectId,
+      await db.query('DELETE FROM project_departments WHERE tenant_id=$1 AND project_id=$2',
+        [tenantId,projectId]);
+      if(participants.length)await db.query(`
+        INSERT INTO project_departments(tenant_id,project_id,department_id)
+        SELECT $1,$2,unnest($3::uuid[])`,[tenantId,projectId,participants]);
+      return {value:{...updated.rows[0],
+        participating_department_ids:participants},targetId:projectId,
         metadata:{previousRevision:before.classification_revision,
           classificationRevision:updated.rows[0].classification_revision,
-          departmentId:v.departmentId,programId:v.programId,portfolioId:v.portfolioId}};
+          departmentId:v.departmentId,programId:v.programId,portfolioId:v.portfolioId,
+          participatingDepartmentIds:participants,
+          previousParticipatingDepartmentIds:previous}};
     });
     return {project};
   });
