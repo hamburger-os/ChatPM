@@ -31,11 +31,19 @@ export function registerGovernanceRoutes(app:FastifyInstance,
     const member=await pool.query('SELECT role FROM tenant_members WHERE tenant_id=$1 AND user_id=$2',
       [tenantId,user]);
     const visible=member.rows[0]?.role==='admin'
-      ?await pool.query(`SELECT id,name,department_id,program_id,portfolio_id,classification_revision
-        FROM projects WHERE tenant_id=$1 ORDER BY name`,[tenantId])
-      :await pool.query(`SELECT p.id,p.name,p.department_id,p.program_id,p.portfolio_id,
-          p.classification_revision FROM projects p JOIN project_members pm ON pm.project_id=p.id AND pm.user_id=$2
-        WHERE p.tenant_id=$1 ORDER BY p.name`,[tenantId,user]);
+      ?await pool.query(`SELECT p.id,p.name,p.department_id,p.program_id,
+        p.portfolio_id,p.classification_revision,
+        (SELECT COALESCE(array_agg(pd.department_id ORDER BY pd.department_id),ARRAY[]::uuid[])
+         FROM project_departments pd WHERE pd.project_id=p.id
+           AND pd.tenant_id=p.tenant_id) AS participating_department_ids
+        FROM projects p WHERE p.tenant_id=$1 ORDER BY p.name`,[tenantId])
+      :await pool.query(`SELECT p.id,p.name,p.department_id,p.program_id,
+          p.portfolio_id,p.classification_revision,
+          (SELECT COALESCE(array_agg(pd.department_id ORDER BY pd.department_id),ARRAY[]::uuid[])
+           FROM project_departments pd WHERE pd.project_id=p.id
+             AND pd.tenant_id=p.tenant_id) AS participating_department_ids
+          FROM projects p JOIN project_members pm ON pm.project_id=p.id AND pm.user_id=$2
+          WHERE p.tenant_id=$1 ORDER BY p.name`,[tenantId,user]);
     return {departments:departments.rows,portfolios:portfolios.rows,
       programs:programs.rows,projects:visible.rows};
   });
@@ -79,8 +87,14 @@ export function registerGovernanceRoutes(app:FastifyInstance,
     const projectId=uuid.parse((req.params as {projectId:string}).projectId);
     const v=z.object({idempotencyKey:uuid,expectedRevision:z.number().int().positive(),
       departmentId:uuid.nullable(),programId:uuid.nullable(),
-      portfolioId:uuid.nullable()}).refine(x=>!x.programId||!x.portfolioId,
-      '项目属于项目集时，通过项目集汇总到组合').parse(req.body);
+      portfolioId:uuid.nullable(),
+      participatingDepartmentIds:z.array(uuid).max(50)
+        .refine(v=>new Set(v).size===v.length,'参与部门不能重复'),
+      }).strict().refine(x=>!x.programId||!x.portfolioId,
+      '项目属于项目集时，通过项目集汇总到组合')
+      .refine(x=>!x.departmentId||
+        !x.participatingDepartmentIds.includes(x.departmentId),
+        '项目主责部门不能同时列为参与部门').parse(req.body);
     const project=await organizationCommand(tenantId,user,'project.classification_changed',
       {idempotencyKey:v.idempotencyKey,payload:v},async db=>{
       const before=(await db.query<{
