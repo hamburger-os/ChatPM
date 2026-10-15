@@ -166,6 +166,21 @@ try{
   const memberEnrollReplay=await api('/tenants/'+tenantId+'/members',{
     method:'POST',body:memberEnroll});
   assert.equal(memberEnrollReplay.status,200,'Tenant membership enroll command must replay');
+  const repeatedOrgInvite=await api('/tenants/'+tenantId+'/members',{
+    method:'POST',body:{...memberEnroll,idempotencyKey:randomUUID()}});
+  assert.equal(repeatedOrgInvite.status,409,
+    'New member invite command cannot claim to add an existing tenant member');
+  const memberAddAudit=(await db.query(`SELECT count(*)::int AS n
+    FROM organization_audit_entries
+    WHERE tenant_id=$1 AND action='tenant.member_added' AND target_id=$2`,
+    [tenantId,second.data.user.id])).rows[0].n;
+  assert.equal(memberAddAudit,1,'Duplicate member invite cannot add a false audit');
+  const tenantRoleBase='/tenants/'+tenantId+'/members/';
+  const tenantARole=tenantRoleBase+uid,tenantBRole=tenantRoleBase+second.data.user.id;
+  const sameTenantRole=await api(tenantBRole,{method:'PATCH',body:{
+    idempotencyKey:randomUUID(),role:'member'}});
+  assert.equal(sameTenantRole.status,409,
+    'Existing tenant role must not cause a new successful command');
   const memberCannotCreate=await api('/projects',{method:'POST',cookie:cookieB,body:{
     idempotencyKey:randomUUID(),name:'Tenant member no-admin project',tenantId,
     timezone:'Asia/Shanghai'}});
@@ -176,6 +191,45 @@ try{
     method:'POST',cookie:cookieB,body:{
       idempotencyKey:randomUUID(),name:'Forbidden Portfolio'}});
   assert.equal(forbiddenPortfolio.status,403,'Tenant members cannot manage portfolios');
+  const newMemberRole=await api(tenantBRole,{method:'PATCH',cookie:cookieB,
+    body:{idempotencyKey:randomUUID(),role:'admin'}});
+  assert.equal(newMemberRole.status,403,'A tenant member cannot promote themselves');
+  const bPromotion={idempotencyKey:randomUUID(),role:'admin'};
+  assert.equal((await api(tenantBRole,{method:'PATCH',body:bPromotion})).status,200);
+  assert.equal((await api(tenantBRole,{method:'PATCH',body:bPromotion})).status,200,
+    'Admin grant must replay its original command');
+  assert.equal((await api(tenantBRole,{method:'PATCH',body:{
+    idempotencyKey:randomUUID(),role:'admin'}})).status,409,
+    'No-op admin role should be rejected without a new audit');
+  const aSelfDemotion={idempotencyKey:randomUUID(),role:'member'};
+  const demoted=await api(tenantARole,{method:'PATCH',body:aSelfDemotion});
+  assert.equal(demoted.status,200,JSON.stringify(demoted.data));
+  const demotedReplay=await api(tenantARole,{method:'PATCH',body:aSelfDemotion});
+  assert.equal(demotedReplay.status,200,'Demoted admin must replay own completed command');
+  assert.deepEqual(demotedReplay.data,demoted.data,'Replay must return original receipt');
+  assert.equal((await api(tenantARole,{method:'PATCH',body:{
+    ...aSelfDemotion,role:'admin'}})).status,409,
+    'Changed payload with an existing key must be rejected after demotion');
+  assert.equal((await api(tenantARole,{method:'PATCH',body:{
+    idempotencyKey:randomUUID(),role:'admin'}})).status,403,
+    'Former admin cannot issue a new tenant role-changing command');
+  const restoredAdmin=await api(tenantARole,{method:'PATCH',cookie:cookieB,
+    body:{idempotencyKey:randomUUID(),role:'admin'}});
+  assert.equal(restoredAdmin.status,200,'Other admin can restore the original administrator');
+  const restoreMember=await api(tenantBRole,{method:'PATCH',body:{
+    idempotencyKey:randomUUID(),role:'member'}});
+  assert.equal(restoreMember.status,200,'Restore original member role for other tests');
+  const lastAdmin=await api(tenantARole,{method:'PATCH',body:{
+    idempotencyKey:randomUUID(),role:'member'}});
+  assert.equal(lastAdmin.status,409,'Tenant must retain one administrator');
+  const realRoleAudits=(await db.query(`SELECT count(*)::int AS n
+    FROM organization_audit_entries
+    WHERE tenant_id=$1 AND action='tenant.member_role_changed'`,[tenantId])).rows[0].n;
+  assert.equal(realRoleAudits,4,'Only four real tenant role changes should be audited');
+  const roleReceipts=(await db.query(`SELECT count(*)::int AS n
+    FROM tenant_command_receipts WHERE tenant_id=$1
+      AND kind='tenant.member_role_changed'`,[tenantId])).rows[0].n;
+  assert.equal(roleReceipts,4,'Replay and no-op role requests may not add receipts');
   const dep=await api('/tenants/'+tenantId+'/departments',{
     method:'POST',body:{idempotencyKey:randomUUID(),
       name:'Engineering '+suffix,parentId:null}});
@@ -292,11 +346,34 @@ try{
       AND action='project.classification_changed'`,[tenantId])).rows[0].n;
   assert.equal(realClassificationAudits,5,
     'Only five real changes may create classification audit records');
-  const assignDepartment=await api('/tenants/'+tenantId+'/departments/'+
-    dep.data.department.id+'/members',{
-    method:'POST',body:{idempotencyKey:randomUUID(),
-      userId:second.data.user.id,role:'member'}});
+  const deptMemberPath='/tenants/'+tenantId+'/departments/'+
+    dep.data.department.id+'/members';
+  const initialDepartmentRole={idempotencyKey:randomUUID(),
+    userId:second.data.user.id,role:'member'};
+  const assignDepartment=await api(deptMemberPath,{
+    method:'POST',body:initialDepartmentRole});
   assert.equal(assignDepartment.status,200,JSON.stringify(assignDepartment.data));
+  const replayDepartment=await api(deptMemberPath,{
+    method:'POST',body:initialDepartmentRole});
+  assert.equal(replayDepartment.status,200,'Same department command must replay receipt');
+  assert.equal((await api(deptMemberPath,{method:'POST',body:{
+    ...initialDepartmentRole,idempotencyKey:randomUUID()}})).status,409,
+    'Reassigning the same department role is not a new business change');
+  const leadDepartmentRole={...initialDepartmentRole,idempotencyKey:randomUUID(),role:'lead'};
+  const updatedDepartmentRole=await api(deptMemberPath,{
+    method:'POST',body:leadDepartmentRole});
+  assert.equal(updatedDepartmentRole.status,200,
+    'A real department role promotion remains valid');
+  assert.equal((await api(deptMemberPath,{method:'POST',
+    body:leadDepartmentRole})).status,200);
+  assert.equal((await api(deptMemberPath,{method:'POST',body:{
+    ...leadDepartmentRole,idempotencyKey:randomUUID()}})).status,409);
+  const departmentRoleAudits=(await db.query(`SELECT count(*)::int AS n
+    FROM organization_audit_entries
+    WHERE tenant_id=$1 AND action='department.member_assigned' AND target_id=$2`,
+    [tenantId,second.data.user.id])).rows[0].n;
+  assert.equal(departmentRoleAudits,2,
+    'Only initial assignment and genuine role change may create audits');
   const allocationInput={idempotencyKey:randomUUID(),
     projectId:pid,userId:uid,percentage:30,startDate:'2026-10-01',endDate:'2026-10-31'};
   const allocation=await api('/tenants/'+tenantId+'/allocations',{
