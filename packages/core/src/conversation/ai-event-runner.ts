@@ -1,4 +1,4 @@
-import { pool, transaction, audit } from '../db.ts';
+import { pool, transaction, audit, type DbClient } from '../db.ts';
 import { insertMessage } from '../messages.ts';
 import { ConfiguredLLMProvider } from '../ai-provider.ts';
 import { processClarification } from '../clarification.ts';
@@ -8,6 +8,16 @@ import { resolveProjectModel } from '../project-model.ts';
 import { claimEvents, finishEvent, failEvent, type EventRow } from '../outbox.ts';
 
 type AnalysisResult={kind:'extract'|'clarify'|'reply';status:'proposal'|'no_change'|'clarified'|'replied';modelName?:string};
+/** Serialize publication with AI toggle changes. A model response may have
+ * been generated under a now-revoked authorization, but must not be published. */
+async function requireLiveAiGrant(db:DbClient,projectId:string,version:number|undefined){
+  const row=(await db.query<{ai_enabled:boolean;ai_authorization_version:string}>(`
+    SELECT ai_enabled,ai_authorization_version FROM projects
+    WHERE id=$1 FOR SHARE`,[projectId])).rows[0];
+  if(!row?.ai_enabled)throw new Error('AI_AUTHORIZATION_REVOKED');
+  if(!version||Number(row.ai_authorization_version)!==version)
+    throw new Error('AI_AUTHORIZATION_CHANGED');
+}
 async function recordAnalysis(event:EventRow,kind:'extract'|'clarify'|'reply',
   status:'processing'|'proposal'|'no_change'|'clarified'|'replied'|'failed',modelName?:string,errorCode?:string){
   await pool.query(`INSERT INTO ai_analysis_runs(
@@ -36,6 +46,7 @@ async function runAnalysis(event:EventRow):Promise<AnalysisResult|null> {
       Math.max(1200,(Math.max(1200,(settings.contextChars??6500)-500))-500));
     const result=await new ConfiguredLLMProvider(event.project_id).respond(msg.name,context);
     await transaction(async db=>{
+      await requireLiveAiGrant(db,event.project_id,result.authorizationVersion);
       await insertMessage(db,{projectId:event.project_id,authorId:null,kind:'ai',
         content:result.value.reply,nonce:'reply:'+event.id});
       await audit(db,event.project_id,null,'ai.reply_created',event.id,
@@ -58,12 +69,22 @@ async function runAnalysis(event:EventRow):Promise<AnalysisResult|null> {
   const output=await new ConfiguredLLMProvider(event.project_id).analyzeWork(msg.name,context);
   const suggestions=output.value.items;
   const progress=output.value.progress;
-  if(!suggestions.length&&!progress.length)return {kind:'extract',status:'no_change',modelName:output.modelName};
+  if(!suggestions.length&&!progress.length){
+    // No output is published, but do not label a revoked run successful.
+    const grant=await pool.query<{ai_enabled:boolean;ai_authorization_version:string}>(
+      'SELECT ai_enabled,ai_authorization_version FROM projects WHERE id=$1',
+      [event.project_id]);
+    if(!grant.rows[0]?.ai_enabled||
+       Number(grant.rows[0]?.ai_authorization_version)!==output.authorizationVersion)
+      throw new Error('AI_AUTHORIZATION_CHANGED');
+    return {kind:'extract',status:'no_change',modelName:output.modelName};
+  }
   const known=await pool.query(`SELECT id,title FROM tasks
     WHERE project_id=$1 AND status NOT IN ('done','cancelled')`,[event.project_id]);
   const matching=new Map(known.rows.map(r=>[r.id as string,r.title as string]));
 
   const total=await transaction(async db=>{
+    await requireLiveAiGrant(db,event.project_id,output.authorizationVersion);
     let added=0,progressAdded=0;
     const questions:string[]=[];
     const usedTasks=new Set<string>();
