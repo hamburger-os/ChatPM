@@ -16,12 +16,12 @@ function assertWorkerBootstrapBoundary(source){
     assert.match(source,new RegExp('\\b'+runner+'\\s*\\('),
       'Worker must dispatch '+runner+' from the bounded runner modules');
   }
-  assert.match(source,/inFlight\\.has\\(lane\\)/,
+  assert.match(source,/inFlight\.has\(lane\)/,
     'Each lane must have independent single-flight protection');
-  assert.match(source,/dispatch\\('events',/, 'AI lane must dispatch independently');
-  assert.match(source,/dispatch\\('reminders',/, 'Follow-up lane must dispatch independently');
-  assert.match(source,/dispatch\\('reports',/, 'Reporting lane must dispatch independently');
-  assert.match(source,/Promise\\.allSettled\\(\\[\\.\\.\\.inFlight\\.values\\(\\)\\]\\)/,
+  assert.match(source,/dispatch\('events',/, 'AI lane must dispatch independently');
+  assert.match(source,/dispatch\('reminders',/, 'Follow-up lane must dispatch independently');
+  assert.match(source,/dispatch\('reports',/, 'Reporting lane must dispatch independently');
+  assert.match(source,/Promise\.allSettled\(\[\.\.\.inFlight\.values\(\)\]\)/,
     'Shutdown must drain every active lane');
   assert.match(source,/recordWorkerHeartbeat\(succeeded\)/,
     'Operational heartbeat must not be discarded');
