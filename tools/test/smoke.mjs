@@ -648,6 +648,25 @@ try{
   assert.equal(pmAccepted.status,200,JSON.stringify(pmAccepted.data));
   assert.equal(pmAccepted.data.item.status,'accepted');
   assert.equal(pmAccepted.data.item.version,3);
+  const pendingHandoff=await api(pm+'/deliverables',{method:'POST',body:{
+    idempotencyKey:randomUUID(),title:'Handoff checklist',
+    acceptanceCriteria:'New owner must submit',assigneeId:second.data.user.id}});
+  assert.equal(pendingHandoff.status,201,JSON.stringify(pendingHandoff.data));
+  const handoffId=pendingHandoff.data.item.id;
+  const handoffAttempt=await api('/projects/'+pid+'/members/'+second.data.user.id,{
+    method:'PATCH',body:{idempotencyKey:randomUUID(),role:'observer'}});
+  assert.equal(handoffAttempt.status,409,'Unaccepted deliverables must block observer demotion');
+  const reassigned=await api(pm+'/deliverables/'+handoffId+'/reassign',{
+    method:'POST',body:{idempotencyKey:randomUUID(),expectedVersion:1,
+      assigneeId:uid,note:'Team handover'}});
+  assert.equal(reassigned.status,200,JSON.stringify(reassigned.data));
+  assert.equal(reassigned.data.item.assignee_id,uid);
+  assert.equal(reassigned.data.item.version,2);
+  assert.equal(reassigned.data.item.status,'planned');
+  const illegalReassign=await api(pm+'/deliverables/'+handoffId+'/reassign',{
+    method:'POST',body:{idempotencyKey:randomUUID(),expectedVersion:1,
+      assigneeId:second.data.user.id,note:'Stale handoff'}});
+  assert.equal(illegalReassign.status,409,'Stale handoff must fail version check');
   const repeatSubmit=await api(pm+'/deliverables/'+deliverableId+'/submit',{
     method:'POST',cookie:cookieB,
     body:{idempotencyKey:randomUUID(),expectedVersion:3}});
