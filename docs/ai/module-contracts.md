@@ -230,3 +230,5 @@ apps/api/src/server.ts 中成员增删及权限调整、AI/提醒设置、Outbox
 ## ADR-045 · 出站异步事件死信人工恢复命令
 
 `apps/api/src/operations-routes.ts` 暴露项目 owner 读取 Outbox 汇总/死信以及 `POST /projects/:id/outbox/:eventId/retry`，后者请求体必含 UUID `idempotencyKey`。API 通过 `executePmCommand` 对当前组织和项目 `operations.manage` 服务端鉴权，在单事务内恢复原事件、写 Audit/DomainEvent/Outbox/CommandReceipt。命令重放只返回原成功结果，不会重置正在运行的 Worker claim；不同幂等键二次恢复 409。被重新入队是 pending，不等于处理成功或 AI 可以批准候选；历史错误正文不可泄漏给其他角色。
+
+**ADR-045 版本化补充：** 响应 `{ok:true,recoveryRevision}` 是同一原 Outbox 事件历次人工恢复的单调序号，不是 Worker 尝试次数；`domain_events.aggregate_version` 必须等于 `outbox_events.manual_retry_revision`。原命令同 key 重放不改变该值；后续真实重新变 dead 后可产生下一版本的独立恢复事件。

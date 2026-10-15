@@ -55,16 +55,19 @@ export function registerOperationsRoutes(
             AND dead_at IS NOT NULL AND processed_at IS NULL FOR UPDATE
         `,[projectId,eventId])).rows[0];
         if(!previous)fail(409,'事件未隔离或不属于当前项目');
-        const restored=await db.query<{id:string}>(`
+        const restored=await db.query<{id:string;manual_retry_revision:number}>(`
           UPDATE outbox_events
           SET attempts=0,dead_at=NULL,last_error_code=NULL,
-            claimed_at=NULL,claim_token=NULL,next_attempt_at=NOW()
+            claimed_at=NULL,claim_token=NULL,next_attempt_at=NOW(),
+            manual_retry_revision=manual_retry_revision+1
           WHERE project_id=$1 AND id=$2
-            AND dead_at IS NOT NULL AND processed_at IS NULL RETURNING id
+            AND dead_at IS NOT NULL AND processed_at IS NULL
+          RETURNING id,manual_retry_revision
         `,[projectId,eventId]);
         if(!restored.rowCount)fail(409,'该事件已被恢复或处理');
-        return {response:{ok:true},aggregateType:'outbox_events',
-          aggregateId:eventId,aggregateVersion:1,
+        return {response:{ok:true,recoveryRevision:restored.rows[0].manual_retry_revision},
+          aggregateType:'outbox_events',aggregateId:eventId,
+          aggregateVersion:restored.rows[0].manual_retry_revision,
           auditDetails:{previousAttempts:previous.attempts}};
       },
     });

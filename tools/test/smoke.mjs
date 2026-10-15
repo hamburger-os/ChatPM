@@ -820,8 +820,10 @@ try{
   const retryInput={idempotencyKey:randomUUID()};
   const ownerRetry=await api(retryPath,{method:'POST',body:retryInput});
   assert.equal(ownerRetry.status,200);
+  assert.equal(ownerRetry.data.recoveryRevision,1,'First manual recovery is version 1');
   const replayReceipt=await api(retryPath,{method:'POST',body:retryInput});
   assert.equal(replayReceipt.status,200,'Same retry command must replay its durable receipt');
+  assert.equal(replayReceipt.data.recoveryRevision,1,'Replay must not increment recovery revision');
   const unkeyedRetry=await api(retryPath,{method:'POST'});
   assert.equal(unkeyedRetry.status,400,'An unkeyed retry command must be rejected');
   const repeatedRetry=await api(retryPath,{
@@ -839,9 +841,26 @@ try{
     WHERE d.project_id=$1 AND d.aggregate_id=$2
       AND d.kind='outbox.dead_letter_retried.v1'`,[pid,dead.id])).rows[0].n;
   assert.equal(retryOutbox,1,'Recovery must create one durable outbox notice');
-  const queued=await db.query('SELECT attempts,dead_at FROM outbox_events WHERE id=$1',[dead.id]);
+  const queued=await db.query(
+    'SELECT attempts,dead_at,manual_retry_revision FROM outbox_events WHERE id=$1',
+    [dead.id]);
   assert.equal(queued.rows[0].attempts,0);
   assert.equal(queued.rows[0].dead_at,null);
+  assert.equal(queued.rows[0].manual_retry_revision,1);
+  // The same event may legitimately become dead again on a later attempt.
+  // A fresh human recovery is a new aggregate version, never another v1.
+  await db.query(`UPDATE outbox_events SET attempts=8,dead_at=NOW(),
+    last_error_code='MODEL_HTTP_429'
+    WHERE id=$1 AND processed_at IS NULL`,[dead.id]);
+  const secondRecovery=await api(retryPath,{
+    method:'POST',body:{idempotencyKey:randomUUID()}});
+  assert.equal(secondRecovery.status,200);
+  assert.equal(secondRecovery.data.recoveryRevision,2);
+  const recoveryVersions=(await db.query(`SELECT aggregate_version AS version
+    FROM domain_events WHERE project_id=$1 AND aggregate_id=$2
+      AND kind='outbox.dead_letter_retried.v1'
+    ORDER BY aggregate_version`,[pid,dead.id])).rows;
+  assert.deepEqual(recoveryVersions.map(x=>x.version),[1,2]);
 
   // Count after accepting the clarified task, not before it.
   const beforeCount=Number((await db.query(

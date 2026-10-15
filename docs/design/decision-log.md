@@ -251,3 +251,5 @@
 **决定：** 把 owner-only Outbox 汇总/死信查询与手动重试抽离 `operations-routes.ts`；重试 POST 必须由当前 tenant/project owner 以 UUID `idempotencyKey` 执行 `executePmCommand`（`operations.manage`），对指定项目中仍处于 dead 且未 processed 的 Outbox 行加锁后恢复 attempts=0、dead_at=NULL、claim/token 清空、next_attempt_at=NOW。原业务 Outbox 恢复、Audit、DomainEvent 与新事件 Outbox、持久 Receipt 同事务；同 key 原样重试返回原回执，即使 Worker 已重新处理目标事件；新 key 的重复恢复仍返回 409；不同 payload 同 key 返回 409。重试只能针对某项目自身的 dead-letter，不能重新投递其他项目或已处理事件。
 
 **取舍：** 继续由 PostgreSQL Outbox 的现有 `claimEvents`/fencing/retry/backoff 处理实际业务投递，不另加 Redis/Kafka；恢复行为只重设重试状态，不能借恢复接口修改消息、AI 候选或直接完成人工验收。保留服务器原有权限语义与死信详情脱敏要求。此增量不声称所有租户、项目创建、组织治理命令已经统一，也不代表真实多 Worker 故障注入和生产 Egress 已验收。
+
+**ADR-045 补充：** 为 Outbox 原事件增加 `manual_retry_revision`，默认 0；每次真实 dead→pending 的人工恢复在同一受锁 UPDATE 中 +1，DomainEvent aggregateVersion 使用新恢复版本，命令响应携带 recoveryRevision。相同幂等命令重放不再次增版本；下一次经过 Worker 失败重新 dead 后的新命令使用版本 2、3……。独立增加 migration 018，不改写既有发布迁移。

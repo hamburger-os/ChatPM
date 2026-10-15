@@ -151,3 +151,5 @@ CI 新增 `tools/test/task-linkage-smoke.mjs`：PostgreSQL 创建正式任务与
 ## ADR-045 · 死信恢复 /review
 
 检查旧 `server.ts` 不再重复注册 Outbox 三条运维路由；读取仍只允许当前组织和项目的 owner，POST 必须经过事务内的 `operations.manage` 权限锁并要求 UUID `idempotencyKey`。仅允许 dead_at 非空、processed_at 为空且属于当前项目的事件重置尝试/lease/error/backoff；其它事件均 409，不能跨项目恢复。相同键和 payload 200 回放持久 Receipt，不再执行 UPDATE 或产生第二领域事件；新键再次恢复 409；恢复操作自身生成一条 Audit、DomainEvent 和 `domain.changed` Outbox 事件，全部同事务提交。回归验证普通成员 403、无键 400、重试幂等、原 Outbox 退避/领取/认领 token、Worker、报告、Win/Linux/Docker 与 docs-sync。只在最新 PR Head 五项 CI 通过且 Review 无未解决线程后合并。真实环境 Worker 抢占/网络分区与生产恢复签署仍是未完成 P4 范围。
+
+**ADR-045 增量回归：** `018_outbox_manual_retry_revision.sql` 不重写存量版本和消费者租约；首次恢复版本 1，同键重放仍是 1，将事件模拟重新隔离后新的有权命令返回版本 2；领域事件 aggregateVersion 必须按 1、2 顺序递增。没有真实状态变更的命令不能增加 revision 或事件。
