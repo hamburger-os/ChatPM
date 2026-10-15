@@ -457,7 +457,8 @@ try{
   const implementationEvents=(await db.query(`
     SELECT kind,aggregate_version AS version FROM domain_events
     WHERE project_id=$1 AND aggregate_id=$2
-      AND kind LIKE 'pm.change.implementation%'
+      AND kind IN ('pm.change.implementation_started.v1',
+        'pm.change.implementation_reassigned.v1','pm.change.implemented.v1')
     ORDER BY aggregate_version`,[pid,changeId])).rows;
   assert.deepEqual(implementationEvents.map(x=>x.version),[3,4,5,6]);
   assert.equal(implementationEvents.length,4,
