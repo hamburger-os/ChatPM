@@ -20,6 +20,16 @@ type InvitationRow={
   accepted_at:string|null;revoked_at:string|null;
 };
 async function lockInvitation(db:DbClient,token:unknown):Promise<InvitationRow>{
+  // Accept, issue and revoke use the SAME tenant advisory lock ordering.
+  // Without this lock an admin could reissue an invitation while an
+  // acceptance was still joining the member, creating a stale new token.
+  if(typeof token!=='string'||!(/^[0-9a-f]{64}$/i.test(token)))denied();
+  const scoped=await db.query<{tenant_id:string}>(
+    'SELECT tenant_id FROM tenant_invitations WHERE token_sha256=$1',
+    [inviteDigest(token.toLowerCase())]);
+  if(!scoped.rows[0])denied();
+  await db.query('SELECT pg_advisory_xact_lock(hashtextextended($1,0))',
+    ['tenant-governance:'+scoped.rows[0].tenant_id]);
   if(typeof token!=='string'||!(/^[0-9a-f]{64}$/i.test(token)))denied();
   const result=await db.query<InvitationRow>(`SELECT id,tenant_id,email,expires_at,
     accepted_at,revoked_at FROM tenant_invitations WHERE token_sha256=$1 FOR UPDATE`,
