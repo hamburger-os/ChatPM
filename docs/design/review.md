@@ -161,3 +161,7 @@ CI 新增 `tools/test/task-linkage-smoke.mjs`：PostgreSQL 创建正式任务与
 ## ADR-047 · 项目负责人交接 /review
 
 检查数据库迁移 020 未改写旧 SQL：每项目仅有一个 owner 角色（数据库唯一部分索引），独立 ownership_revision 初始 1、每次真正交接 +1，不误用 settings_revision/ai_authorization_version。只能当前 tenant/project 有效 owner 发起，target 必须是当前组织及项目成员且不是自己；原子地将原 owner 降为 manager、新 owner 升为 owner，并更新 project.owner_id。跨角色、新旧 owner 的成员行锁、项目行 FOR UPDATE 与版本检查必须序列化，其他读者不能看到双 owner。强制 UUID idempotencyKey，原 owner 降权后只允许仍有项目 read 授权的人重放自己的原 Receipt；新 key 必须再核验完整 members.manage，禁止借重放授权执行新操作。同 key 不同 payload 409，旧 ownership revision 409；事务中 Audit、DomainEvent/Outbox、Receipt 与正式数据同时成功或回滚。真实 PostgreSQL 回归覆盖首次移交、双向移交、旧 owner 降权、双 owner 23505、事件版本、系统管理账号不越权。合并须最新 HEAD 的五项 CI 全 success 和无未解决审查线程。
+
+## ADR-048 · 租户级项目创建命令 /review
+
+数据库只新增 migration 021，不改既有 001–020 checksum；表 tenant_command_receipts 以 tenant/actor/kind/UUID key 约束，payload_hash 与项目生成结果同事务持久。核验当前组织管理员 tenant_members 的行锁及首次执行/回放权限，注册人跨组织或普通成员都不得创建；创建前 receipt 唯一约束负责并发序列化。成功后的 projects.tenant_id、owner_id、唯一 owner 角色一致，默认 AI 关闭，时区检验不变；同事务写项目级 CommandReceipt、Audit、DomainEvent、Outbox 并与根 receipt 的 key/hash/结果一致。原命令同键重试返回同一个项目，不再创建额外行/Outbox；同键变更名称或时区 409；无键 400；原项目被删除或原用户失去项目成员权限，不得通过旧根回执泄露历史项目资料。前端 UUID 在同一创建意图网络重试时稳定，已成功后清除；新表单意图使用新键。测试在真实 Postgres 同时发起四个相同请求并核对项目、owner、两类 receipt、领域事件、出站事件及 audit 唯一。合并以最新提交五项 CI 全部 success、审查线程全 resolved 为前提；Tenant 级其它写入和实机 V1→V2 迁移不在此次验收范围内。
