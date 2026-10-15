@@ -6,7 +6,7 @@ type Metrics={
   tasks_blocked:number;tasks_overdue:number;risks_open:number;
   planned_percentage_points:number;
 };
-type ProjectPulse=Metrics extends never?never:{
+type ProjectPulse={
   id:string;name:string;department_id:string|null;
   program_id:string|null;effective_portfolio_id:string|null;
   tasks_total:number;tasks_done:number;tasks_cancelled:number;
