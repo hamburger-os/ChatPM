@@ -214,3 +214,7 @@ AI 事件、规则提醒与周期报告 Runner 的应用入口分别归 `package
 ## ADR-041 · 旧 Owner-only 路由的事务授权边界
 
 apps/api/src/server.ts 中成员增删及权限调整、AI/提醒设置、Outbox 重试、人工报告生成/发布复用 identity/project-access.ts 的 lockProjectAccess(db,projectId,actorId)，在修改状态的业务事务内检查**当前** tenant/project 成员身份及对应的 ProjectAction。不得在事务外只读取旧角色并在后续事务提交写入。本次仅统一权限边界，不假装这些接口已经统一拥有幂等 Receipt 或领域事件。
+
+## ADR-042 · 所有模型调用经安全出口
+
+`model-egress.ts` 对系统配置的 Base URL 进行相同的公网 IP/私网拒绝策略，实际 HTTP(S) socket 使用解析后固定地址而非重新 DNS 查询；目录导入 `model-catalog.ts`、`llm-transport.ts` 的 probe/structured、`ConfiguredLLMProvider` 及 live eval 都必须复用默认安全网络发送函数。该路径不接受聊天、候选任务或模型生成文本提供的新 URL；保留显式本地模型例外。响应限制、禁止重定向与脱敏失败码适用于整个入口。依赖注入的 fake fetch 仅用于无真实网络的单元测试；不要用假模拟声称生产 DNS 重绑定已实战验证。
