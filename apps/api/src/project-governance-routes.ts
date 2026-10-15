@@ -99,6 +99,16 @@ export function registerProjectGovernanceRoutes(
               AND status NOT IN ('done','cancelled') LIMIT 1`,
             [projectId,target]);
           if(active.rowCount)fail(409,'该人员仍有未完成任务，请先移交任务');
+          const deliverables=await db.query(`SELECT 1 FROM project_deliverables
+            WHERE project_id=$1 AND assignee_id=$2 AND status<>'accepted' LIMIT 1`,
+            [projectId,target]);
+          if(deliverables.rowCount)
+            fail(409,'该人员仍有待处理交付物，请先移交或完成验收');
+          const allocations=await db.query(`SELECT 1 FROM resource_allocations
+            WHERE project_id=$1 AND user_id=$2 AND cancelled_at IS NULL
+              AND end_date>=CURRENT_DATE LIMIT 1`,[projectId,target]);
+          if(allocations.rowCount)
+            fail(409,'该人员仍有有效资源投入，请由组织管理员先取消分配');
           const risk=await db.query(`SELECT 1 FROM risks WHERE project_id=$1
             AND owner_id=$2 AND status<>'resolved' LIMIT 1`,[projectId,target]);
           if(risk.rowCount)fail(409,'该人员仍负责未关闭风险，请先移交风险');
@@ -138,6 +148,16 @@ export function registerProjectGovernanceRoutes(
           WHERE project_id=$1 AND assignee_id=$2
             AND status NOT IN ('done','cancelled') LIMIT 1`,[projectId,target]);
         if(active.rowCount)fail(409,'该成员仍有未完成任务，请先重新指派或取消任务');
+        const deliverables=await db.query(`SELECT 1 FROM project_deliverables
+          WHERE project_id=$1 AND assignee_id=$2 AND status<>'accepted' LIMIT 1`,
+          [projectId,target]);
+        if(deliverables.rowCount)
+          fail(409,'该成员仍有待处理交付物，请先移交或完成验收');
+        const allocations=await db.query(`SELECT 1 FROM resource_allocations
+          WHERE project_id=$1 AND user_id=$2 AND cancelled_at IS NULL
+            AND end_date>=CURRENT_DATE LIMIT 1`,[projectId,target]);
+        if(allocations.rowCount)
+          fail(409,'该人员仍有有效资源投入，请由组织管理员先取消分配');
         const risk=await db.query(`SELECT 1 FROM risks
           WHERE project_id=$1 AND owner_id=$2 AND status<>'resolved' LIMIT 1`,
           [projectId,target]);
