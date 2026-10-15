@@ -222,3 +222,7 @@ apps/api/src/server.ts 中成员增删及权限调整、AI/提醒设置、Outbox
 ## ADR-043 · 报告正式命令与 AI 事实边界
 
 用户人工周/月报生成 `POST /projects/:id/reports` 要求 `{idempotencyKey,kind}`，发布 `POST /projects/:id/reports/:reportId/publish` 要求 `{idempotencyKey,expectedRevision}`；当前 tenant/project owner 身份由 `executePmCommand` 的 `report.manage` 权限在事务中验证，重试返回已完成命令回执。Report revision 表示草稿实际更新和发布的状态版本，发布使用乐观版本校验。已发布 Report 永不因新生成或 AI 建议被覆盖；内容仍是当前项目数据库统计快照，不能宣称周内每次变化均有来源或 AI 编写的事实已经人工确认。
+
+## ADR-044 · Project Governance 与 AI 项目开关
+
+项目人员 `POST /projects/:id/members`、`PATCH/DELETE /projects/:id/members/:memberId` 与设置 `PATCH /projects/:id/settings` 都要求 UUID `idempotencyKey`，通过 `executePmCommand` 以当前 tenant/project 的 owner 权限执行；其他角色即使是全局模型管理员也不能越权管理项目。设置 PATCH 同时要求 `expectedRevision`，基于 `projects.settings_revision` 严格乐观检查；与 `projects.ai_authorization_version` 的外发授权变更触发器独立运行。AI 不能从聊天自启模型、修改默认供应商或绕过人工审批。人员写入必须检查目标有效 tenant 身份、行锁、角色与未完成任务；命令的 receipt/event/audit 必须与业务更改同事务。

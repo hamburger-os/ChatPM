@@ -50,3 +50,7 @@ Worker 是独立部署的调度进程，而非所有领域业务的所有者。�
 ## ADR-042 · 统一 ModelEgress 出口
 
 模型配置源自系统管理员，然而“管理员配置”不等于允许服务自动读取内部网络服务。ModelEgress 在目录发现、连接探针和正式推理三个调用面统一施行地址安全策略：解析公网 DNS 的 A/AAAA 全集，任何地址为私网/保留地址则 fail closed；将验证通过的 IP 固定到 Node HTTP(S) socket 的 lookup；禁用重定向和连接复用，保留目标域名证书验证并限制请求超时/响应大小。只有明确配置的本地端点允许 HTTP/私网 DNS，避免破坏本机 Ollama 和容器 host.docker.internal 用法。第三方响应只用于数据处理，不信任其指令或可执行 URL。网络层出站控制、代理环境、实际厂商 TLS 与大规模请求均在正式部署前另行验收。
+
+## ADR-044 · ProjectGovernance 命令边界
+
+旧项目人员和设置写入从 `server.ts` 抽离到项目治理路由，遵守既有模块化单体：认证主体→当前组织与项目 owner 行锁→权限/目标人员与任务不变量→业务 SQL→Audit/DomainEvent/Outbox/CommandReceipt 的单 PostgreSQL 事务。人员移除管理者或观察者与普通成员一样受未完成任务和 owner 不可移除约束；设置单独增加 `settings_revision` 实现 UI 乐观锁（原 AI 授权开关版本 `ai_authorization_version` 仍由旧触发器维护，二者不混用）。所有客户端命令重试需保留相同 UUID，变更意图生成新 UUID。暂不为它引入独立权限服务器、微服务或兼容无 key 写法。

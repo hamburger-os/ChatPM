@@ -233,3 +233,13 @@
 **决定：** 把人工生成和审核发布报告迁入单独 `report-routes.ts`，基于 `executePmCommand` 的事务内项目/组织 owner 授权、UUID `idempotencyKey`、DomainEvent/Outbox/Audit/Receipt；新增报告 `revision`，草稿每次实际重生成递增，发布要求当前 `expectedRevision` 并原子递增 revision、持久化 published_at/published_by。已发布报告内容不可覆盖；同 key 同 payload 重试只重放原报告，同 key 不同 payload 409，不同 key 重复发布 409。人工重新请求已发布周期报告仅返回现有发布快照，不修改内容/时间，并且作为重新请求（而非新生成）留下 Audit 和 receipt。
 
 **范围：** 手工和 Worker `generateReport` 继续共用现有 Snapshot/周期算法；Worker 定时生成首份报告保持单次/并发安全，旧已发布记录无可验证发布时间不补造 `published_at`。新增一份不重写旧 migration 的 016 增量迁移。不会把当前统计快照误当成历史每日事实，本批也不实现逐条证据引用、AI 总结质量验收、报告附件或完整企业级留存。
+
+## ADR-044 · 项目人员管理与项目设置正式命令（2026-10-15）
+
+**问题：** 项目成员邀请/调角色/移除与 AI/提醒项目设置尚留在 API bootstrap，虽已在事务内核验当前 tenant+project owner，但缺少幂等回执、DomainEvent 和 Outbox；设置没有独立的乐观版本，两个浏览器修改会静默相互覆盖；前端缺少项目人员移除入口。
+
+**决定：** 抽取 `project-governance-routes.ts`，对邀请、角色更新、成员移除与项目设置的写入统一使用 `executePmCommand`，由 `members.manage`/`settings.manage` 校验当前 owner 并锁当前组织和项目角色；所有写入强制客户端 UUID `idempotencyKey`，回执、领域事件、Outbox、Audit 与正式业务写入在同一事务。为 projects 添加 `settings_revision` 增量迁移（017），设置修改必须提供 `expectedRevision` 并在事务内以匹配版本的 SQL 更新，避免丢失另一管理员的修改。已提交的相同命令重试返回原回执，不重复更新；同 key 不同 payload 返回 409。
+
+**人员不变量：** 受邀人必须是当前 tenant 成员（`FOR SHARE`），目标项目角色修改/移除在 `FOR UPDATE` 锁下检查；不能改变或移除项目 owner；从项目移除 manager/member/observer 均允许，但任何未完成任务先移交或取消，observer 不能保留未完成任务。已存在成员的第二个邀请命令及未发生实际角色变化的第二个命令应返回 409，而不是生成虚假的“添加/变更”事件。
+
+**AI 安全：** 只更改项目 `ai_enabled` 开关与工作提醒时段；模型、提供商与 API Key 继续只能由系统总管理员配置，执行启用前必须有可用配置。模型权限版本触发器保持有效，关闭 AI 不会自动批准任何候选。**取舍：** 这批不迁移系统管理员配置与 Tenant Governance 的所有写入、不宣称运营端 Outbox 死信重试已经统一命令或全部 P2 完成。
