@@ -277,3 +277,15 @@ Change approval enforces separation of duties: project owners and managers may a
 Organization admins can cancel a resource allocation from the Organization → Resources view. The original allocation and audit remain available, and cancelled plans no longer consume capacity. Project members with unfinished deliverables or active resource allocations cannot be removed or downgraded to observer until the owner or manager reassigns the deliverable using its versioned handoff command, and the organization admin cancels or reconciles the allocation. Observers cannot own new formal deliverables.
 
 AI analysis, reminders and reporting run in independent worker lanes. A revoked AI grant blocks publication of stale results, but cannot retract data already sent to an external model. Login and registration are account-scoped behind the shared Next.js proxy; public deployments still require trusted edge abuse controls. Real multi-user browser, Windows/Linux deployment and security acceptance tests remain necessary.
+
+## 2026-10-15 周报/月报真实变化与任务证据（实验性）
+
+项目「汇报」页面现在区分生成时的**任务总体快照**与本周/本月的**真实任务变更**。后者统计项目时区内任务新增、完成、重新打开、阻塞以及期限调整，并列出最近 100 条来源记录；本期全部变更数量不会因为明细上限而截断。每一条任务来源可以打开只读的历史事件 API，成员也能在「正式任务」下点击「查看任务历史」浏览分页记录。
+
+历史从新的数据库变更追踪迁移生效后开始，不会凭空生成此前发生过的任务状态变化。AI 候选提议不视作正式任务完成，已发布报告不能再修改。本次能力不包含历史基线、项目集汇总、完整风险/变更周期分析或生产安全验收。
+
+## 2026-10-15 Traceable task changes in weekly/monthly reports (experimental)
+
+Reports now distinguish the **current task snapshot** from **actual task changes within the project's local week or month**. The change section counts created, completed, reopened and blocked tasks, as well as due-date adjustments. Up to 100 recent history events are shown with read-only evidence links, while full event counts are retained. Members can also browse a task's paginated history from its task card.
+
+Events are recorded only after the new database migration takes effect; earlier events are never fabricated. AI suggestions are not treated as accepted work, and published reports remain immutable. Project baseline reconstruction, cross-project portfolio summaries, historical risk/issue changes and production deployment certification are not included.
