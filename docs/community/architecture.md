@@ -97,3 +97,9 @@ English: Direct task creation and edits now use server-authorized idempotent com
 中文：成员增删和角色调整、项目设置、死信重试、报告生成与发布都在数据库写入事务内重新检查**当前**项目及组织成员资格。角色在操作开始后被撤销也不能导致未获授权的业务提交；其他项目的权限或系统管理员身份不能越权访问本项目。此项修复权限竞态，尚不等于这些操作已经全部具有命令级重试回执。
 
 English: Project membership edits, settings, dead-letter retries and report generation/publication recheck current project and organization membership inside the write transaction, with row locks against concurrent revocation. Being a system administrator does not bypass project authorization. This corrects the role-revocation race, but does not imply every legacy operation now has a command receipt.
+
+### AI 模型请求的网络隔离 / Model outbound network safety
+
+中文：系统总管理员配置的模型供应商可以是公网 HTTPS 服务，也可以是明确的本机或 Docker 宿主机地址。为了避免模型密钥或项目聊天被送往意外的内网服务，目录查询、连接测试和 AI 推理统一检查 DNS 的所有返回地址，并在连接时使用已经验证的 IP，不跟随重定向；私有与保留网络默认拒绝，只有指定的本地模型主机例外。此安全改进不代表生产网络防火墙、厂商兼容性或渗透测试已经通过。
+
+English: System-administrator model connections may target public HTTPS providers or explicitly selected local/Docker-host models. Catalog discovery, connectivity checks and model inference now validate all DNS answers and pin the validated IP for the actual connection, refusing redirects and private/reserved networks by default except the designated local hostnames. This is defense in depth, not a claim that production egress firewalls, provider compatibility or penetration tests have been accepted.
