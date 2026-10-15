@@ -10,6 +10,7 @@ const schema = z.object({
   PGPASSWORD: z.string().optional(),
   PGDATABASE: z.string().min(1).optional(),
   SESSION_SECRET: z.string().min(32),
+  REGISTRATION_MODE:z.enum(['open','bootstrap','closed']).optional(),
   WEB_ORIGIN: z.string().url().default('http://localhost:3000'),
   API_PORT: z.coerce.number().int().min(1).max(65535).default(3001),
   API_HOST: z.string().min(1).default('127.0.0.1'),
@@ -34,4 +35,7 @@ if (!parsed.success) {
   throw new Error('Invalid ChatPM configuration: ' +
     parsed.error.issues.map(i => i.path.join('.') + ': ' + i.message).join('; '));
 }
-export const serverConfig = parsed.data;
+export const serverConfig = {...parsed.data,
+  REGISTRATION_MODE:parsed.data.REGISTRATION_MODE??
+    (parsed.data.NODE_ENV==='production'?'bootstrap':'open'),
+};
