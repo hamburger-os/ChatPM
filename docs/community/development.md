@@ -301,3 +301,9 @@ Events are recorded only after the new database migration takes effect; earlier 
 Production defaults to `REGISTRATION_MODE=bootstrap`: only the first account may be registered into a new database, after which public self-signup is disabled. Set `closed` to disable all public registration or explicitly set `open` to allow anonymous accounts and new organizations. Docker and native production deployments use the same policy; restart the application after changing its environment.
 
 Email invitations and acceptance workflows are not available yet. Do not keep unrestricted `open` registration enabled on a public deployment without trusted edge controls and an operational approval process. The browser hides the signup option when unavailable, while the transaction-scoped server check remains authoritative.
+
+## 2026-10-15 首账户防抢注安全补强 / Protected initial enrollment
+
+部署脚本在服务器的私有 `.env` 文件生成 `BOOTSTRAP_TOKEN`（64 位十六进制随机值），它与 `SESSION_SECRET`、`MODEL_ENCRYPTION_KEY`、数据库密码互相独立。首次通过 Web 注册管理员时，**部署操作员本人**从服务器 `.env` 读取密钥，在初始化表单填写。绝不在聊天、问题报告、Git 仓库、公开页面或共享截图中发送该密钥。错误密钥、缺少密钥、或已有首账户时注册都会拒绝。部署时应先保持默认 loopback 监听，完成可信初始化再开放 HTTPS 公网；完成后推荐将 `REGISTRATION_MODE=closed` 并重启 API。普通新成员仍需正式的管理员邀请功能（待完成）；不要为了日常入职长期开放 `REGISTRATION_MODE=open`。
+
+The installer creates a private 64-hex-character `BOOTSTRAP_TOKEN` in the server's `.env`. Only the trusted operator may use it to create the initial account, while the application is still bound to localhost. Do not paste it into chats or commit it. Once the first account exists, that token cannot register another user; switch to `REGISTRATION_MODE=closed` after setup. The invitation-based enrollment workflow is still pending and must not be replaced by long-lived public `open` registration.

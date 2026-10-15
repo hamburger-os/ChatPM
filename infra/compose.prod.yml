@@ -52,6 +52,7 @@ services:
       <<: *app-env
       API_HOST: 0.0.0.0
       API_PORT: 3001
+      BOOTSTRAP_TOKEN: ${BOOTSTRAP_TOKEN:-}
     healthcheck:
       test: ["CMD","node","-e","fetch('http://127.0.0.1:3001/health').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"]
       interval: 15s
