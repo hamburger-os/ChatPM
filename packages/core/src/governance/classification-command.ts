@@ -30,6 +30,18 @@ type CurrentClassification={
 export async function changeProjectClassification(
   tenantId:string,actorId:string,projectId:string,input:ClassificationInput,
 ){
+  // The core command owns business invariants even if a future non-HTTP
+  // caller bypasses Zod's input-shape validation.
+  if(!Number.isSafeInteger(input.expectedRevision)||input.expectedRevision<1)
+    deny(400,'项目归属版本无效');
+  if(input.programId!==null&&input.portfolioId!==null)
+    deny(400,'项目只能通过项目集或直接归属于组合');
+  if(input.participatingDepartmentIds.length>50||
+     new Set(input.participatingDepartmentIds).size!==input.participatingDepartmentIds.length)
+    deny(400,'参与部门重复或超出上限');
+  if(input.departmentId!==null&&
+     input.participatingDepartmentIds.includes(input.departmentId))
+    deny(400,'主责部门不能同时列为参与部门');
   const value=input;
   return organizationCommand(tenantId,actorId,'project.classification_changed',
     {idempotencyKey:input.idempotencyKey,payload:input},async db=>{
