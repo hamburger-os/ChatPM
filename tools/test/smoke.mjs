@@ -636,12 +636,25 @@ try{
   const selfApprove=await api(pm+'/changes/'+change.data.item.id+'/decide',{
     method:'POST',cookie:cookieB,
     body:{idempotencyKey:randomUUID(),expectedVersion:1,decision:'approve'}});
-  assert.equal(selfApprove.status,403,'Only the project owner may approve baseline changes');
+  assert.equal(selfApprove.status,403,'Change author cannot approve their own request');
   const approved=await api(pm+'/changes/'+change.data.item.id+'/decide',{
     method:'POST',body:{idempotencyKey:randomUUID(),expectedVersion:1,
       decision:'approve'}});
   assert.equal(approved.status,200,JSON.stringify(approved.data));
   assert.equal(approved.data.item.status,'approved');
+  // A change authored by the owner must not become permanently unapprovable:
+  // an independent manager may approve it, while author self-review remains forbidden.
+  const ownerChange=await api(pm+'/changes',{method:'POST',body:{
+    idempotencyKey:randomUUID(),title:'Owner requested change',
+    rationale:'Cross-team dependency',impact:'Update project baseline'}});
+  assert.equal(ownerChange.status,201,JSON.stringify(ownerChange.data));
+  const ownerSelf=await api(pm+'/changes/'+ownerChange.data.item.id+'/decide',{
+    method:'POST',body:{idempotencyKey:randomUUID(),expectedVersion:1,decision:'approve'}});
+  assert.equal(ownerSelf.status,403,'Owner cannot self-approve');
+  const managerIndependent=await api(pm+'/changes/'+ownerChange.data.item.id+'/decide',{
+    method:'POST',cookie:cookieB,
+    body:{idempotencyKey:randomUUID(),expectedVersion:1,decision:'approve'}});
+  assert.equal(managerIndependent.status,200,'Independent manager should approve owner request');
   const changeId=change.data.item.id;
   const workPath=pm+'/changes/'+changeId+'/implementation';
   const directComplete=await api(workPath,{method:'POST',body:{
