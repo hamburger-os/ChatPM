@@ -102,3 +102,7 @@
 ## ADR-044 · 项目成员与设置正式命令
 
 新增 `017_project_settings_revision.sql` 单独版本化项目设置（不与 AI 开关授权版本混用）；项目人员邀请、调角色、移除与 AI/工作时间设置已从 API bootstrap 迁移到 `project-governance-routes.ts`，强制 UUID `idempotencyKey`；当前 tenant/project owner 的 `members.manage`/`settings.manage` 权限、组织受邀人资格、目标行锁及未完成任务移交约束在写事务内验证。项目设置使用 `expectedRevision` 乐观更新，不能静默覆盖其他管理员调整；业务数据、Audit/DomainEvent/Outbox/Receipt 同事务。新增 UI 成员移除操作（manager/member/observer，owner 不可移除）。AI 的模型、API Key 仍仅平台总管理员维护。本次仅迁移四条旧写入，项目创建、租户治理和死信重试等其他接口仍有正式命令未统一；开发态 CI 不等于完整 V2/P4 生产验收。
+
+## ADR-045 · Outbox 人工死信恢复命令
+
+项目 owner 查询 Outbox 摘要/死信和人工重试现由 `apps/api/src/operations-routes.ts` 管理；`POST /projects/:id/outbox/:eventId/retry` 强制 UUID `idempotencyKey` 并调用 `executePmCommand`，只可恢复本项目尚未完成且 `dead_at` 非空的死信。目标行锁、当前 tenant/project owner 授权、恢复尝试次数/claim 状态、审计、DomainEvent、Outbox 和 CommandReceipt 同事务；成功的同键重试返回原回执，不会再次修改 Worker 状态，新键二次恢复返回 409。API Smoke 覆盖权限拒绝、无键拒绝、重放、重复恢复和事件数。恢复只意味着重新入队，不保证 Worker 随后处理成功；项目创建、Tenant 治理与真实多副本故障注入仍需后续验收。
