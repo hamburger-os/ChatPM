@@ -12,6 +12,7 @@ const schema = z.object({
   PGDATABASE: z.string().min(1).optional(),
   SESSION_SECRET: z.string().min(32),
   REGISTRATION_MODE:z.enum(['open','bootstrap','closed']).optional(),
+  BOOTSTRAP_TOKEN:z.string().regex(/^[a-fA-F0-9]{64}$/).optional(),
   WEB_ORIGIN: z.string().url().default('http://localhost:3000'),
   API_PORT: z.coerce.number().int().min(1).max(65535).default(3001),
   API_HOST: z.string().min(1).default('127.0.0.1'),
