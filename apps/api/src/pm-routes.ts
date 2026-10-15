@@ -95,7 +95,7 @@ export function registerPmRoutes(app:FastifyInstance,
           const active=await db.query(`SELECT 1 FROM project_members pm
             JOIN projects p ON p.id=pm.project_id
             JOIN tenant_members tm ON tm.tenant_id=p.tenant_id AND tm.user_id=pm.user_id
-            WHERE pm.project_id=$1 AND pm.user_id=$2 FOR SHARE OF pm,tm`,
+            WHERE pm.project_id=$1 AND pm.user_id=$2 AND pm.role<>'observer' FOR SHARE OF pm,tm`,
             [projectId,assignee]);
           if(!active.rowCount)fail(400,'负责人必须是当前项目和组织成员');
         }
