@@ -205,3 +205,11 @@ Next.js 同源代理下，API 看到的 IP 是公共代理地址。登录/注册
 Worker 的 AI、提醒和周期报告改为三个独立 single-flight lane；并发队列仍受共同数据库池限制，尚不属于生产级负载隔离。模型响应发布前需在业务事务内持有项目授权行锁并核验 AI 授权版本，包含正常回复、候选进展和澄清结果；撤权无法收回已经发送的第三方请求。
 
 交付物负责人不得是 observer；成员移除/降为 observer 前必须清理未完成交付物和仍有效的项目资源投入。资源分配使用取消时间/执行人保留历史；组织管理员通过幂等命令取消，容量计算只统计未取消记录。此处没有实现交付物重新指派/资源调优，更完整的转岗向导、PMP 项目集收益、历史周/月报、完整领域路由分离、真实模型和 Win11 验收仍需独立工作项，不得把本次增量称为全部交付。
+
+## ADR-057 · 生产环境默认关闭自由注册（2026-10-15）
+
+旧版 `POST /auth/register` 对任何匿名请求创建新 User 和 Tenant/Admin，在公网部署时会导致未授权组织创建与资源滥用。当前生产配置引入明确的 `REGISTRATION_MODE=open|bootstrap|closed`：未显式配置时 `NODE_ENV=production` 默认 `bootstrap`，开发态默认 `open`。Docker Compose 固定传递 `REGISTRATION_MODE`，缺省 bootstrap；生产 operator 可以明确选择 `closed` 或短时 `open`。
+
+bootstrap 只允许创建全库首位用户；创建检查在同一个数据库事务内获取固定 advisory lock 并重新查询 users，避免两个同时匿名请求都创建租户管理员。closed 禁用注册，open 是部署操作员显式授权的自由注册；全部三种模式下其余登录、会话与项目权限不变化。只读 `GET /auth/registration-policy` 只暴露 allowed 布尔值，前端关闭无效注册入口，真正权限校验仍在 POST 的事务中进行。Docker CI 为验证多用户显式 opt-in open，不是生产安全默认值。
+
+**未完成：** 尚缺安全邀请/接受和管理员审核、全局速率防护、可信代理/源地址追踪、公众域名安全评测。生产临时开放自由注册应仅在有严格入口控制时进行，切换之后必须重新重启 API/容器才生效。不能把 bootstrap-only 当作完整企业身份治理或 SaaS 注册策略。
