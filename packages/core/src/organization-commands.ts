@@ -23,6 +23,7 @@ export async function organizationCommand<T>(
   tenantId:string,actorId:string,action:string,
   command:TenantCommandRequest,
   mutate:(db:DbClient)=>Promise<OrganizationMutation<T>>,
+  options:{replayAccess?:'member'}={},
 ):Promise<T>{
   return transaction(async db=>{
     await db.query('SELECT pg_advisory_xact_lock(hashtextextended($1, 0))',
@@ -30,7 +31,8 @@ export async function organizationCommand<T>(
     const {rows}=await db.query<{role:string}>(
       'SELECT role FROM tenant_members WHERE tenant_id=$1 AND user_id=$2 FOR UPDATE',
       [tenantId,actorId]);
-    if(rows[0]?.role!=='admin')deny(403,'没有该组织的管理权限');
+    if(!rows[0]||(rows[0].role!=='admin'&&!options.replayAccess))
+      deny(403,'没有该组织的管理权限');
 
     const hash=createHash('sha256').update(JSON.stringify(command.payload)).digest('hex');
     const inserted=await db.query<{id:string}>(`
@@ -48,6 +50,9 @@ export async function organizationCommand<T>(
       return old.rows[0].result;
     }
 
+    // Only a previously completed role-change receipt may be read after
+    // demotion. A new command always requires the current admin grant.
+    if(rows[0].role!=='admin')deny(403,'没有该组织的管理权限');
     const change=await mutate(db);
     await db.query(`
       INSERT INTO organization_audit_entries(tenant_id,actor_id,action,target_id,metadata)
