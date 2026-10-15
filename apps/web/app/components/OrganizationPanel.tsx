@@ -14,7 +14,7 @@ async function api<T>(path:string,options?:RequestInit):Promise<T>{
   if(!response.ok)throw new Error(data.error||'操作失败');
   return data as T;
 }
-export default function OrganizationPanel({tenantId}:{tenantId:string}){
+export default function OrganizationPanel({tenantId,currentUserId}:{tenantId:string;currentUserId:string}){
   const [data,setData]=useState<Structure>(empty);
   const [members,setMembers]=useState<Member[]>([]);
   const [allocations,setAllocations]=useState<Allocation[]>([]);
@@ -53,9 +53,12 @@ export default function OrganizationPanel({tenantId}:{tenantId:string}){
     setData(s);setMembers(m.members);setAllocations(a.allocations);
   }
   useEffect(()=>{void reload().catch(e=>setNotice(e.message));},[tenantId]);
-  async function run(fn:()=>Promise<void>){
+  async function run(fn:()=>Promise<void|boolean>){
     setBusy(true);setNotice('');
-    try{await fn();await reload();}
+    try{
+      const shouldReload=await fn();
+      if(shouldReload!==false)await reload();
+    }
     catch(e){setNotice(e instanceof Error?e.message:'操作失败');}
     finally{setBusy(false);}
   }
@@ -98,9 +101,23 @@ export default function OrganizationPanel({tenantId}:{tenantId:string}){
     <h3>组织人员（{members.length}）</h3>
     {members.map(m=><div className="member" key={m.id}>
       <strong>{m.display_name}</strong><small>{m.email}</small>
-      <select aria-label={'组织角色：'+m.display_name} value={m.role} disabled={busy} onChange={e=>void run(async()=>{
-        await write(base+'/members/'+m.id,'PATCH',{role:e.target.value});
-      })}><option value="admin">组织管理员</option><option value="member">成员</option></select>
+      <select aria-label={'组织角色：'+m.display_name} value={m.role} disabled={busy} onChange={e=>{
+        const nextRole=e.currentTarget.value;
+        const selfDemotion=m.id===currentUserId&&m.role==='admin'&&nextRole==='member';
+        if(selfDemotion&&!window.confirm('确定将自己的组织管理员角色降为普通成员？需要其他组织管理员重新授权才能恢复管理权限。')){
+          e.currentTarget.value=m.role;
+          return;
+        }
+        void run(async()=>{
+          await write(base+'/members/'+m.id,'PATCH',{role:nextRole});
+          if(selfDemotion){
+            // The commit revoked organization admin access. A privileged
+            // reload here would misleadingly report 403 for a successful write.
+            window.location.reload();
+            return false;
+          }
+        });
+      }}><option value="admin">组织管理员</option><option value="member">成员</option></select>
     </div>)}
     <form className="row-form" onSubmit={e=>{e.preventDefault();void run(async()=>{
       await write(base+'/members','POST',{email});setEmail('');

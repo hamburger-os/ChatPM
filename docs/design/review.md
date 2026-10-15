@@ -187,3 +187,7 @@ CI 新增 `tools/test/task-linkage-smoke.mjs`：PostgreSQL 创建正式任务与
 ## ADR-053 · 项目组合/项目集/部门分类的版本冲突 /review
 
 核验组织结构列表返回 classification_revision；归属写入强制 UUID idempotencyKey 与 expectedRevision。只能当前 tenant admin 操作本组织项目（组织互斥 advisory + 当前管理员行锁）；项目 FOR UPDATE 后检验版本匹配，再校验待归属不是完全相同的状态，否则明确 409，不能写虚假 OrganizationAudit。实际变更 revision+1，仍必须满足只设置 Program 或直接 Portfolio 的业务约束与同 tenant 复合 FK。两个并发管理员不同 key、相同 expectedRevision 时仅一人成功；成功 UUID/key/payload 重放 200 且不再改版本，已成功的 key 改 payload 409，新 key 携带旧版本 409；跨租户项目 404，丢失组织管理员身份 403。界面显示当前归属版本，过期保存需要让用户刷新并重新选择，不静默覆盖。新 023 SQL 不改写既有 001–022 checksum，API/PostgreSQL smoke 检查版本 1/2/3/4、旧版本、独立修改、重复请求与无审计脏数据。合并须最新 SHA Product/Docs/Security/Native/Docker 五项 CI 全绿且无 unresolved threads。
+
+## ADR-054 · 组织治理无操作/降权回放 /review
+
+检查 organizationCommand 默认仍持 tenant-governance advisory 互斥锁与当前 admin 角色行锁；只有 tenant.member_role_changed 选择 replayAccess='member'，旧 admin 降为 member 后可凭相同 actor/tenant/kind/key/hash 取得其已完成命令回执，不能使用新 key 发起任何组织角色更改。不同 payload 同 key 409，已撤销 tenant 成员权不能读取回执。重复成员邀请、同角色修改、部门角色相同重新指派的新命令均 409 且没有新审计/receipt；同一 key 原操作可以重放。至少一位 tenant admin 不变量未削弱。Web 保留同意图 UUID 重试。真实 Postgres smoke 覆盖普通成员拒绝、同角色无操作、双管理员自降权后的精确回放、部门角色无操作、回执与审计计数及现有资源容量/项目创建回归；最新 SHA 的五项 CI 全通过、无未解决 review thread 后合并。

@@ -272,7 +272,7 @@ export default function Home(){
       </section>
       {showDetails&&<WorkspaceDetails key={selected||'empty'} project={current} user={user} messages={messages}/>}
     </>:<section className="workspace-main" aria-label="管理工作区">
-      {view==='organization'&&tenantId&&<OrganizationPanel tenantId={tenantId}/>}
+      {view==='organization'&&tenantId&&<OrganizationPanel tenantId={tenantId} currentUserId={user.id}/>}
       {view==='organization'&&!tenantId&&<div className="empty">你尚未管理任何组织。</div>}
       {view==='system'&&user.is_system_admin&&<AdminModelPanel/>}
       {view==='account'&&<section className="account-settings">

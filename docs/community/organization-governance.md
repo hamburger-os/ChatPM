@@ -73,6 +73,12 @@ npm run admin:grant -- --email=admin@example.com --confirm
 
 项目可归属一个主部门、一个项目集或直接一个项目组合。组织管理员在「项目结构归属」修改项目时，保存会带上当前显示的版本号：如果别的管理员已经先修改了同一项目，过期的保存请求将被拒绝，不会静默覆盖。选择「刷新所选项目归属」可取回服务器最新的部门、项目集、项目组合和版本，再由人重新确认。成功的网络重试不会重复修改归属。
 
+### 人员重复操作与管理员自降权
+
+项目组和组织人员的角色应体现真实发生的变更。组织管理员对已经加入组织的人员再次使用**新的操作命令**发起邀请、再次设置其已有的组织角色，或对部门人员重复设置原有身份，系统将提示冲突，不会追加一条并未发生的“成功变更”审计。网络重试**原来那次已完成的操作**则会复用原 UUID 回执，不重复添加成员或更改角色。
+
+若组织已有另一位管理员，当前管理员可在明确确认后将自己降为普通成员；成功后工作台重新载入权限。响应丢失时仍可重试**自己原来那次已完成的降权命令**，但降权后不能凭新的命令键修改组织人员。组织不能移除最后一名管理员。AI 模型、项目管理角色与系统总管理员资格均不会因此被自动授予。
+
 ## English
 
 ### Organization and project structure
@@ -132,4 +138,10 @@ A tenant administrator may plan a person's contributions to several projects, bu
 ### Project classification version and concurrent administrators
 
 A project may belong to a primary department, to a program, or directly to a portfolio. When a tenant administrator edits its classification, the submission includes the version they reviewed. If another administrator has already changed the project, the stale save is rejected rather than silently overwriting the new classification. **Refresh selected project classification** loads the current department, program, portfolio and revision for explicit review. Replaying the original completed command does not alter the classification again.
+
+### Duplicate membership commands and administrator self-demotion
+
+Organization membership and role audit records should describe genuine changes. A **new** invitation for an already enrolled tenant member, a role change to the person's existing tenant role, or an unchanged department assignment is rejected rather than recorded as a successful change. Retrying the **original completed command** with the same UUID safely replays its receipt without creating another audit entry.
+
+If another tenant administrator remains, an administrator can explicitly confirm their own demotion to an ordinary member. The workspace refreshes the user's permissions after success. A lost response can be recovered by replaying only that same already-completed demotion command while the issuer remains a tenant member; a new privileged command is denied. The last administrator cannot be demoted. AI model actions and system administrator permissions remain separate from tenant governance.
 
