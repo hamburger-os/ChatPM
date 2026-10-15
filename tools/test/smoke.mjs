@@ -440,6 +440,22 @@ try{
   const allocation=await api('/tenants/'+tenantId+'/allocations',{
     method:'POST',body:allocationInput});
   assert.equal(allocation.status,201);
+  const pulsePath='/tenants/'+tenantId+'/governance-pulse?on=2026-10-16';
+  const pulse=await api(pulsePath);
+  assert.equal(pulse.status,200,JSON.stringify(pulse.data));
+  assert.equal(pulse.data.as_of_date,'2026-10-16');
+  assert.equal(pulse.data.projects.filter(p=>p.id===pid).length,1,
+    'Each project appears once in canonical organization snapshot');
+  assert.equal(pulse.data.portfolios.find(x=>x.id===portfolio.data.portfolio.id)?.project_count,1,
+    'Program-owned project counts exactly once in the effective portfolio');
+  assert.equal(pulse.data.programs.find(x=>x.id===program.data.program.id)?.project_count,1);
+  assert.equal(pulse.data.totals.planned_percentage_points,30);
+  assert.equal((await api(pulsePath,{cookie:cookieB})).status,403,
+    'Tenant members cannot read portfolio staff and resource details');
+  assert.equal((await api('/tenants/'+randomUUID()+'/governance-pulse?on=2026-10-16')).status,403,
+    'Cross-tenant portfolio read must be rejected');
+  assert.equal((await api('/tenants/'+tenantId+'/governance-pulse?on=2026-02-30')).status,400,
+    'Invalid dates must not become silent adjacent-day snapshots');
   const repeatAllocation=await api('/tenants/'+tenantId+'/allocations',{
     method:'POST',body:allocationInput});
   assert.equal(repeatAllocation.status,201);
