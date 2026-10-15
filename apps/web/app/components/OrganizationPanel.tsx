@@ -1,5 +1,6 @@
 'use client';
 import { useEffect,useRef,useState,type FormEvent } from 'react';
+import GovernancePulse from './GovernancePulse';
 type Item={id:string;name:string;description?:string;parent_id?:string|null;portfolio_id?:string|null};
 type Project=Item&{department_id:string|null;program_id:string|null;
   portfolio_id:string|null;classification_revision:number;
@@ -25,7 +26,7 @@ export default function OrganizationPanel({tenantId,currentUserId}:{tenantId:str
   const [inviteCode,setInviteCode]=useState('');
   const [allocations,setAllocations]=useState<Allocation[]>([]);
   const [kind,setKind]=useState<'departments'|'portfolios'|'programs'>('departments');
-  const [tab,setTab]=useState<'people'|'structure'|'resources'>('people');
+  const [tab,setTab]=useState<'people'|'structure'|'resources'|'pulse'>('people');
   const [name,setName]=useState('');
   const [portfolio,setPortfolio]=useState('');
   const [projectId,setProjectId]=useState('');
@@ -103,11 +104,12 @@ export default function OrganizationPanel({tenantId,currentUserId}:{tenantId:str
       <p className="hint">部门管理人员与资源；项目集协调关联项目；项目组合管理战略与投入。成员加入部门不等于获得项目聊天权限。</p>
     </div></header>
     <nav className="management-tabs" aria-label="组织管理分类">
-      {(['people','structure','resources'] as const).map(t=><button key={t} type="button"
+      {(['people','structure','resources','pulse'] as const).map(t=><button key={t} type="button"
         className={tab===t?'active':''} onClick={()=>setTab(t)}>
-        {({people:'组织人员',structure:'部门与项目结构',resources:'资源投入'})[t]}
+        {({people:'组织人员',structure:'部门与项目结构',resources:'资源投入',pulse:'跨项目概览'})[t]}
       </button>)}
     </nav>
+    {tab==='pulse'&&<GovernancePulse tenantId={tenantId}/>}
     {tab==='people'&&<div className="stack organization-section">
     <h3>组织人员（{members.length}）</h3>
     {members.map(m=><div className="member" key={m.id}>
