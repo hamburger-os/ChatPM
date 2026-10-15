@@ -122,3 +122,7 @@
 ## ADR-049 · 变更批准后的实施、责任移交与独立复核
 
 新增 migration 022_change_implementation.sql，批准的 ChangeRequest 可由有权项目经理/owner 在指定当前组织项目成员后开始实施（approved→implementing），实施中可通过 reassign 变更执行责任人、重置证据有效时间并形成新版本；实际完成经另一名有权 owner/manager 使用实施者在本项目于本次开始实施之后发表的原始 user 消息作为证据复核（implementing→implemented）。新项目复合 FK 的 project_change_implementation_history 记录状态、版本、人类说明、实施/复核 actor 与证据 UUID；每个真实实施/移交/核验与 Audit/DomainEvent/Outbox/CommandReceipt 同事务，要求 UUID idempotencyKey 和 expectedVersion。实施中责任人被移出项目或降为观察者前必须先重新指派。Web PM 登记簿提供启动、移交、实施证据选择、复核与分页历史。真正的项目范围、里程碑、成本基线仍**不会**因这个状态自动变更；继续属于 #48 的完整计划变更实施工作。真实模型评测、生产升级演练亦不在此次验收范围。
+
+## ADR-050 · PostgreSQL Docker 隔离恢复验证
+
+Docker 部署 Smoke 原先仅验证 pg_dump custom-format 文件头和 pg_restore --list；本轮替换为真实隔离库恢复测试。CI 先验证 Docker Web/API Origin/Cookie、Worker heartbeat/Outbox，然后停止 web/api/worker，只保留测试数据库；脚本只能在 CI=true 与 CHATPM_CI_RESTORE_DRILL=1 同时成立时执行。使用现有 Docker backup.mjs 生成私有归档，随机创建 chatpm_restore_drill_* 临时数据库，以 pg_restore --exit-on-error 还原全部 schema 与数据，逐张 public 表比对行数、排序内容摘要以及 schema_migrations 与真实用户数据，必须完全一致。演练结束清理隔离 DB 和临时文件，不对原 chatpm 库进行恢复/drop。纯单元测试覆盖缺表、行丢失、内容篡改、空源、重复指纹和未授权启动；Docker Workflow 验证真实恢复。**局限：** 这是 Docker CI 少量样本；离机加密备份、PITR、真实存量 V1→V2 ETL 与 Win11/Linux 原生、企业数据库规模恢复仍未验收，Issue #51 保持开放。

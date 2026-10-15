@@ -121,3 +121,9 @@ English: Project owners can inspect their project's Outbox backlog and dead lett
 中文：组织管理员可新建项目；项目名称与时区经验证，同一次按钮点击在网络超时后重试会沿用原 UUID，而不是额外新建项目。后台先在租户范围保留命令回执，随后原子保存项目及唯一项目负责人，并记录审计、正式领域事件和 Outbox 通知。非该组织的管理员或仅有普通组织成员权限的人员不能新建该组织项目。项目创建时 AI 默认关闭，模型供应商与密钥仍由系统管理员维护。
 
 English: A tenant administrator can create a project with validated name and time zone. Retrying an interrupted request with its original UUID returns the same project rather than creating a duplicate. A tenant-scoped receipt reserves the intent before a project ID exists; the project, unique owner, audit, formal domain event and outbox are saved atomically. Non-admin tenant members and unrelated users cannot create projects in the tenant. AI starts disabled; global model providers and secrets remain system-administrator-only.
+
+### 数据库恢复演练 / Database restore rehearsal
+
+中文：除了生成备份，Docker 集成测试还会停止 Web、API 和 Worker，在独立、随机命名的 PostgreSQL 测试数据库中实际恢复备份，并逐表检查数据条数和内容指纹是否与源数据库完全一致；不覆盖原数据库。出错即阻止合并。备份只在私有临时目录存放，演练结束删除测试库和归档。该测试不替代企业生产环境的离机加密、PITR、灾难恢复与 Windows/Linux 实机演练。
+
+English: The Docker integration workflow stops application writers and restores a real PostgreSQL backup into a fresh, randomly named, isolated database. It compares all public table row counts and deterministic content fingerprints with the unchanged source. Mismatches fail CI; the private backup and isolated database are cleaned up. This verifies a small CI dataset, not off-site encrypted retention, point-in-time recovery, a production RTO, or real Windows/Linux disaster recovery.

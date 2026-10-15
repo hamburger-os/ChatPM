@@ -179,3 +179,43 @@ test('stale state is cleared only after the old owner is no longer running',asyn
     assert.equal(existsSync(join(dir,'.chatpm-run.json')),false);
   }finally{rmSync(dir,{recursive:true,force:true});}
 });
+
+
+import {parseFingerprints,verifyFingerprints} from './restore-drill.mjs';
+
+const fingerprintTestRows=[
+  'public.schema_migrations|23|'+'a'.repeat(32),
+  'public.users|2|'+'b'.repeat(32),
+  'public.project_members|4|'+'c'.repeat(32),
+].join('\n');
+
+test('restored PostgreSQL data must agree table by table with all source fingerprints',()=>{
+  assert.deepEqual(parseFingerprints(fingerprintTestRows).get('public.users'),
+    {count:2,hash:'b'.repeat(32)});
+  assert.deepEqual(verifyFingerprints(fingerprintTestRows,fingerprintTestRows),
+    {tables:3,rows:29});
+  assert.throws(()=>verifyFingerprints(fingerprintTestRows,
+    fingerprintTestRows.replace('public.users|2|','public.users|1|')),
+    /public.users/,'Row loss must be detected');
+  assert.throws(()=>verifyFingerprints(fingerprintTestRows,
+    fingerprintTestRows.replace('b'.repeat(32),'d'.repeat(32))),
+    /public.users/,'Same row count but changed content must be detected');
+  assert.throws(()=>verifyFingerprints(fingerprintTestRows,
+    fingerprintTestRows.replace(/^public.project_members.*\n?/m,'')),
+    /public.project_members/,'Missing tables must be detected');
+  assert.throws(()=>verifyFingerprints(fingerprintTestRows,
+    fingerprintTestRows.replace('public.users|2|','public.users|0|')),
+    /public.users/,'Even a self-consistent but unseeded source must be rejected');
+  assert.throws(()=>parseFingerprints(fingerprintTestRows+'\n'+fingerprintTestRows),
+    /duplicated/,'Repeated names invalidate the verification record');
+  assert.throws(()=>parseFingerprints('public.users|secret-password|abcdef'),
+    /Invalid/,'Malformed or leaked plaintext must not be accepted');
+});
+
+test('isolated recovery executable refuses operation unless explicitly CI-authorized',()=>{
+  const script=readFileSync('tools/test/restore-drill.mjs','utf8');
+  assert.match(script,/CI!=='true'/);
+  assert.match(script,/CHATPM_CI_RESTORE_DRILL!=='1'/);
+  assert.match(script,/prefix='chatpm_restore_drill_'/);
+  assert.match(script,/Stop Web\/API\/Worker writers/);
+});
