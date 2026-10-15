@@ -25,6 +25,8 @@ export default function WorkspaceDetails({project,user,messages}:{
   const updateTaskIntents=useRef(new Map<string,string>());
   const reviewIntents=useRef(new Map<string,string>());
   const reportIntents=useRef(new Map<string,string>());
+  const governanceIntents=useRef(new Map<string,string>());
+  const [settingsRevision,setSettingsRevision]=useState(1);
   const [settings,setSettings]=useState({aiEnabled:false,workStart:null as number|null,
     workEnd:null as number|null,cooldownHours:null as number|null});
   const id=project?.id;
@@ -46,6 +48,7 @@ export default function WorkspaceDetails({project,user,messages}:{
     if(!id||!project)return;
     let active=true;
     setTab('tasks');
+    setSettingsRevision(project.settings_revision);
     setSettings({aiEnabled:project.ai_enabled,workStart:project.work_start,
       workEnd:project.work_end,cooldownHours:project.cooldown_hours});
     let inFlight=false;
@@ -111,6 +114,19 @@ export default function WorkspaceDetails({project,user,messages}:{
   function decide(p:Proposal,decision:'accepted'|'rejected',
     assigneeId:string|null=null,dueDate?:string|null){
     reviewCommand('/proposals/'+p.id+'/decision',decision,{assigneeId,dueDate});
+  }
+  function governanceCommand(path:string,method:'POST'|'PATCH'|'DELETE',
+    data:Record<string,unknown>={},onSuccess?:(result:{settingsRevision?:number})=>void){
+    const signature=JSON.stringify([id,path,method,data]);
+    const idempotencyKey=governanceIntents.current.get(signature)??crypto.randomUUID();
+    governanceIntents.current.set(signature,idempotencyKey);
+    void act(async()=>{
+      const result=await request<{settingsRevision?:number}>(base+path,{
+        method,body:json({idempotencyKey,...data}),
+      });
+      governanceIntents.current.delete(signature);
+      onSuccess?.(result);
+    });
   }
   function reportCommand(path:string,details:Record<string,unknown>){
     const intent=JSON.stringify([id,path,details]);
@@ -201,15 +217,23 @@ export default function WorkspaceDetails({project,user,messages}:{
       <h3>项目成员</h3>
       {people.map(x=><div className="member" key={x.id}>
         <strong>{x.display_name}</strong><small>{x.email}</small>
-        {owner&&x.role!=='owner'?<select aria-label={'角色：'+x.display_name}
-          disabled={busy} value={x.role} onChange={e=>void act(async()=>{
-          await request(base+'/members/'+x.id,{method:'PATCH',body:json({role:e.target.value})});
-        })}><option value="manager">项目管理者</option><option value="member">项目成员</option>
-          <option value="observer">观察者</option></select>:<small>{x.role}</small>}
+        {owner&&x.role!=='owner'?<div className="actions">
+          <select aria-label={'角色：'+x.display_name}
+            disabled={busy} value={x.role} onChange={e=>
+              governanceCommand('/members/'+x.id,'PATCH',{role:e.target.value})}>
+            <option value="manager">项目管理者</option>
+            <option value="member">项目成员</option>
+            <option value="observer">观察者</option>
+          </select>
+          <button className="secondary" disabled={busy} onClick={()=>{
+            if(window.confirm('确定将 '+x.display_name+' 移出当前项目？未完成任务需先移交。'))
+              governanceCommand('/members/'+x.id,'DELETE');
+          }}>移除</button>
+        </div>:<small>{x.role}</small>}
       </div>)}
-      {owner&&<form className="row-form" onSubmit={e=>{e.preventDefault();void act(async()=>{
-        await request(base+'/members',{method:'POST',body:json({email})});setEmail('');
-      });}}>
+      {owner&&<form className="row-form" onSubmit={e=>{e.preventDefault();
+        governanceCommand('/members','POST',{email},()=>setEmail(''));
+      }}>
         <input type="email" placeholder="添加组织内已注册成员" required value={email} onChange={e=>setEmail(e.target.value)}/>
         <button disabled={busy}>加入</button>
       </form>}
@@ -227,9 +251,11 @@ export default function WorkspaceDetails({project,user,messages}:{
             <input type="number" value={settings[field]??''} onChange={e=>setSettings({...settings,
               [field]:e.target.value===''?null:Number(e.target.value)})}/></label>)}
         </div>}
-        <button disabled={busy} onClick={()=>void act(async()=>{
-          await request(base+'/settings',{method:'PATCH',body:json(settings)});
-        })}>保存设置</button>
+        <small>当前设置版本：v{settingsRevision}</small>
+        <button disabled={busy} onClick={()=>
+          governanceCommand('/settings','PATCH',{...settings,expectedRevision:settingsRevision},
+            result=>{if(result.settingsRevision)setSettingsRevision(result.settingsRevision);})
+        }>保存设置</button>
       </div>}
     </>}
     {notice&&<p role="alert" className="notice">{notice}</p>}
