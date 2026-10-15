@@ -58,3 +58,7 @@ Worker 是独立部署的调度进程，而非所有领域业务的所有者。�
 ## ADR-046 · Risk Register Command 的边界
 
 Risk 是未来不确定性（不同于已发生 Issue）。项目内 AI 提议风险由真实人员批准后建立仅 open 的记录；对风险 `PATCH /projects/:id/risks/:riskId/assessment` 更新概率、影响、责任人及应对计划，`POST /projects/:id/risks/:riskId/transition` 执行 open→mitigating→resolved 或 resolved→open，每次在项目权限锁和 Risk FOR UPDATE 锁下比较 expectedVersion。每次状态或评估更新同时插入不可更改的 risk_register_changes、CommandReceipt、Audit、DomainEvent 和 Outbox；历史查询按版本分页且需本项目有效成员身份。跨项目 Risk/历史组合 FK 拒绝，不用可变项目成员 FK 锁定历史责任人。报表未解决风险包含 open+mitigating。不存在旧无键兼容写路由，也不允许聊天模型代签批准。
+
+## ADR-047 · Owner Transfer 的角色变更与命令重放
+
+Project.owner_id 是正式负责人身份；project_members 同项目只能一个 owner（partial unique index）。owner 交接事务内先降低旧角色后提升新角色，并在同事务更新 Project.owner_id 与 ownership_revision，外部事务看不到角色更新过程的中间阶段。executePmCommand 仅为 owner 转移允许 replayAction:'read'：对于已有 Receipt，只有仍有项目/组织有效成员访问权的原 actor 能取回原结果；新 key 仍必须严格核验 members.manage。系统管理员身份不绕过项目角色；转让事件 aggregateVersion 使用 ownership_revision。真实 PostgreSQL API 集成测试核验权限、幂等、旧版本与唯一 owner 数据库约束。

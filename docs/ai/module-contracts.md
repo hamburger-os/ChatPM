@@ -236,3 +236,7 @@ apps/api/src/server.ts 中成员增删及权限调整、AI/提醒设置、Outbox
 ## ADR-046 · AI 风险建议与正式风险应对的边界
 
 AI 可以在项目对话中提供有来源的 `risk` 候选；它不能直接创建已经评估/正在应对/已解决的正式 Risk。审核候选后产生 open 风险，likelihood/impact/ownerId/responsePlan 仍需人类项目 owner/manager 评估；他们通过幂等项目命令携带 expectedVersion 正式修改，状态必须 open→mitigating→resolved 或 resolved→open（重新开展评估），每次附人类说明并写不可变历史。完成任务、AI 猜测或聊天表态都不能自动变成风险关闭证据。提醒与报表需要将 mitigating 仍视为未解决风险，避免模型建议造成虚假绿色报告。
+
+## ADR-047 · 项目负责人移交不属于模型自治权限
+
+owner 转移仅能由当前 owner 主动触发 POST /projects/:id/ownership-transfer，须提交 UUID idempotencyKey、当前 ownership_revision 的 expectedRevision，并指定有效租户/项目成员为目标，旧 owner 原子地降为 manager。原 owner 可在仍有项目成员权限时重放原始命令，但不能以新 key 再转移。AI、普通项目成员和纯系统总管理员身份不能代签负责人转让，也不会修改全局供应商、模型密钥或自动批准任务。
