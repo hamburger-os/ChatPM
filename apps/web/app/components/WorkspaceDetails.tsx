@@ -1,9 +1,10 @@
 'use client';
-import { useEffect, useRef, useState, type FormEvent } from 'react';
+import { useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react';
 import type { Message,Person, Progress, Project, Proposal, Report, Risk, Task, User } from './client';
 import { json, request } from './client';
 import PmRegisterPanel from './PmRegisterPanel';
 import RiskRegisterItem from './RiskRegisterItem';
+import TaskHistoryPanel from './TaskHistoryPanel';
 
 type Tab='tasks'|'governance'|'proposals'|'reports'|'settings';
 export default function WorkspaceDetails({project,user,messages}:{
@@ -21,6 +22,7 @@ export default function WorkspaceDetails({project,user,messages}:{
   const [due,setDue]=useState('');
   const [email,setEmail]=useState('');
   const [nextOwnerId,setNextOwnerId]=useState('');
+  const [historyTaskId,setHistoryTaskId]=useState<string|null>(null);
   const [notice,setNotice]=useState('');
   const [busy,setBusy]=useState(false);
   const createTaskIntent=useRef<string|null>(null);
@@ -56,6 +58,7 @@ export default function WorkspaceDetails({project,user,messages}:{
     if(!id||!project)return;
     let active=true;
     setTab('tasks');
+    setHistoryTaskId(null);
     setNextOwnerId('');
     setSettingsRevision(project.settings_revision);
     const loadedSettings={aiEnabled:project.ai_enabled,workStart:project.work_start,
@@ -206,6 +209,13 @@ export default function WorkspaceDetails({project,user,messages}:{
               if(e.target.value!==(task.due_date||''))patchTask(task,{dueDate:e.target.value||null});
             }}/></label>
         </div>}
+        <button className="secondary" type="button"
+          onClick={()=>setHistoryTaskId(old=>old===task.id?null:task.id)}>
+          {historyTaskId===task.id?'收起任务历史':'查看任务历史'}
+        </button>
+        {historyTaskId===task.id&&
+          <TaskHistoryPanel key={task.id+':'+task.version}
+            projectId={project.id} taskId={task.id}/>}
       </article>)}
       <h3>当前风险 ({risks.length})</h3>
       {risks.map(x=><RiskRegisterItem key={x.id+':'+x.version}
@@ -234,7 +244,7 @@ export default function WorkspaceDetails({project,user,messages}:{
       {reports.map(x=><details className="item" key={x.id}>
         <summary><strong>{x.kind==='week'?'周报':'月报'} · {x.period_key}</strong>
           <small> · v{x.revision} · {x.state==='published'?'已发布':'草稿'}</small></summary>
-        <pre>{x.content}</pre>
+        <ReportContent content={x.content} projectId={project.id}/>
         {owner&&x.state==='draft'&&<button disabled={busy} onClick={()=>
           reportCommand('/reports/'+x.id+'/publish',
             {expectedRevision:x.revision})}>审核并发布</button>}
@@ -315,6 +325,23 @@ export default function WorkspaceDetails({project,user,messages}:{
     {notice&&<p role="alert" className="notice">{notice}</p>}
     </div>
   </aside>;
+}
+/** Only validated UUID evidence markers become links. All other report text
+ * is rendered as text, never trusted HTML or raw model Markdown. */
+function ReportContent({content,projectId}:{content:string;projectId:string}){
+  const pattern=/（任务 ID ([0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12})，历史事件 ID ([0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12})）/g;
+  const parts:ReactNode[]=[];
+  let cursor=0;
+  for(const match of content.matchAll(pattern)){
+    const start=match.index??0;
+    parts.push(content.slice(cursor,start));
+    parts.push(<a key={start} target="_blank" rel="noopener noreferrer"
+      href={'/api/projects/'+projectId+'/tasks/'+match[1]+'/history/'+match[2]}>
+      {match[0]}（查看来源）</a>);
+    cursor=start+match[0].length;
+  }
+  parts.push(content.slice(cursor));
+  return <pre>{parts}</pre>;
 }
 function ProposalItem({proposal:p,people,manager,busy,onDecide}:{
   proposal:Proposal;people:Person[];manager:boolean;busy:boolean;
