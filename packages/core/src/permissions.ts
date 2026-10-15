@@ -10,7 +10,7 @@ const grants:Record<ProjectRole,ReadonlySet<ProjectAction>>={
     'proposal.approve','report.manage','members.manage','settings.manage','operations.manage',
     'pm.plan','pm.submit','pm.accept','pm.approve']),
   manager:new Set(['read','message.write','task.create','task.plan','task.status',
-    'proposal.approve','pm.plan','pm.submit','pm.accept']),
+    'proposal.approve','pm.plan','pm.submit','pm.accept','pm.approve']),
   member:new Set(['read','message.write','task.status','pm.submit']),
   observer:new Set(['read']),
 };
