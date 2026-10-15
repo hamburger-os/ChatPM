@@ -259,6 +259,136 @@ export function registerPmRoutes(app:FastifyInstance,
     });
   });
 
+  // An approved ChangeRequest is not an implemented baseline change.
+  // Only a human execution owner may author post-start message evidence,
+  // verified by a different active project owner/manager.
+  const implementationSchema=z.discriminatedUnion('decision',[
+    versioned.extend({decision:z.literal('start'),ownerId:uuid,
+      note:z.string().trim().min(1).max(2000)}),
+    versioned.extend({decision:z.literal('reassign'),ownerId:uuid,
+      note:z.string().trim().min(1).max(2000)}),
+    versioned.extend({decision:z.literal('complete'),evidenceMessageId:uuid,
+      note:z.string().trim().min(1).max(2000)}),
+  ]);
+  app.post('/projects/:projectId/pm/changes/:itemId/implementation',async req=>{
+    const projectId=context(req),user=await authenticated(req);
+    const id=uuid.parse((req.params as {itemId:string}).itemId);
+    const input=implementationSchema.parse(req.body);
+    return executePmCommand({
+      projectId,actorId:user,idempotencyKey:input.idempotencyKey,
+      action:input.decision==='complete'?'pm.accept':'pm.plan',
+      kind:input.decision==='start'?'pm.change.implementation_started.v1':
+        input.decision==='reassign'?'pm.change.implementation_reassigned.v1':
+          'pm.change.implemented.v1',
+      payload:{id,...input},
+      mutate:async db=>{
+        const before=(await db.query<{
+          version:number;status:string;implementation_owner_id:string|null;
+          implementation_started_at:Date|null;
+        }>(`SELECT version,status,implementation_owner_id,implementation_started_at
+          FROM project_change_requests
+          WHERE project_id=$1 AND id=$2 FOR UPDATE`,[projectId,id])).rows[0];
+        if(!before)fail(404,'变更申请不存在');
+        if(before.version!==input.expectedVersion)fail(409,'变更申请版本冲突');
+        let changed:Record<string,unknown>;
+        let evidenceId:string|null=null;
+        if(input.decision==='start'||input.decision==='reassign'){
+          if(input.decision==='start'&&before.status!=='approved')
+            fail(409,'只有已批准变更可以启动实施');
+          if(input.decision==='reassign'){
+            if(before.status!=='implementing')
+              fail(409,'只有实施中的变更可以重新分配责任人');
+            if(before.implementation_owner_id===input.ownerId)
+              fail(409,'实施责任人尚未发生变化');
+          }
+          const active=await db.query(`
+            SELECT 1 FROM project_members pm
+            JOIN projects p ON p.id=pm.project_id
+            JOIN tenant_members tm ON tm.tenant_id=p.tenant_id AND tm.user_id=pm.user_id
+            WHERE pm.project_id=$1 AND pm.user_id=$2 AND pm.role<>'observer'
+            FOR SHARE OF pm,tm
+          `,[projectId,input.ownerId]);
+          if(!active.rowCount)fail(400,'实施责任人必须是当前项目和组织的有效成员');
+          changed=(await db.query(`
+            UPDATE project_change_requests SET status='implementing',
+              implementation_owner_id=$3,implementation_started_at=NOW(),
+              version=version+1
+            WHERE project_id=$1 AND id=$2 RETURNING *
+          `,[projectId,id,input.ownerId])).rows[0];
+        }else{
+          if(before.status!=='implementing')fail(409,'只有实施中的变更可以确认完成');
+          if(!before.implementation_owner_id||!before.implementation_started_at)
+            fail(409,'变更缺少实施责任人或开始时间');
+          if(before.implementation_owner_id===user)
+            fail(403,'实施责任人不能自我核验变更完成');
+          const stillActive=await db.query(`
+            SELECT 1 FROM project_members pm
+            JOIN projects p ON p.id=pm.project_id
+            JOIN tenant_members tm ON tm.tenant_id=p.tenant_id AND tm.user_id=pm.user_id
+            WHERE pm.project_id=$1 AND pm.user_id=$2 AND pm.role<>'observer'
+            FOR SHARE OF pm,tm
+          `,[projectId,before.implementation_owner_id]);
+          if(!stillActive.rowCount)
+            fail(409,'实施责任人已失去项目资格，请重新指派');
+          const evidence=await db.query(`
+            SELECT 1 FROM messages
+            WHERE project_id=$1 AND id=$2 AND kind='user'
+              AND author_id=$3 AND created_at>=$4
+            FOR SHARE
+          `,[projectId,input.evidenceMessageId,before.implementation_owner_id,
+            before.implementation_started_at]);
+          if(!evidence.rowCount)fail(409,'实施证据必须是负责人开始执行后发布的项目原始消息');
+          evidenceId=input.evidenceMessageId;
+          changed=(await db.query(`
+            UPDATE project_change_requests SET status='implemented',
+              implementation_evidence_message_id=$3,
+              implemented_by=$4,implemented_at=NOW(),version=version+1
+            WHERE project_id=$1 AND id=$2 RETURNING *
+          `,[projectId,id,evidenceId,user])).rows[0];
+        }
+        await db.query(`
+          INSERT INTO project_change_implementation_history(
+            project_id,change_id,change_version,action,from_status,
+            to_status,note,actor_id,evidence_message_id)
+          VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9)
+        `,[projectId,id,changed.version,input.decision,before.status,
+          changed.status,input.note,user,evidenceId]);
+        return {response:{item:changed},aggregateType:'changes',
+          aggregateId:id,aggregateVersion:Number(changed.version),
+          auditDetails:{decision:input.decision,evidenceMessageId:evidenceId}};
+      },
+    });
+  });
+
+  app.get('/projects/:projectId/pm/changes/:itemId/implementation/history',
+    async req=>{
+      const projectId=context(req),user=await authenticated(req);
+      const id=uuid.parse((req.params as {itemId:string}).itemId);
+      const page=z.object({beforeVersion:z.coerce.number().int().positive().optional()})
+        .parse(req.query);
+      const scoped=await pool.query(`
+        SELECT 1 FROM project_change_requests c
+        JOIN projects p ON p.id=c.project_id
+        JOIN project_members pm ON pm.project_id=p.id AND pm.user_id=$3
+        JOIN tenant_members tm ON tm.tenant_id=p.tenant_id AND tm.user_id=$3
+        WHERE c.project_id=$1 AND c.id=$2
+      `,[projectId,id,user]);
+      if(!scoped.rowCount)fail(404,'变更申请不存在或无权限');
+      const {rows}=await pool.query<{
+        id:string;change_version:number;from_status:string;to_status:string;
+        action:string;note:string;actor_id:string;
+        evidence_message_id:string|null;occurred_at:Date;
+      }>(`SELECT id,change_version,from_status,to_status,action,note,
+          actor_id,evidence_message_id,occurred_at
+        FROM project_change_implementation_history
+        WHERE project_id=$1 AND change_id=$2
+          AND change_version<COALESCE($3::int,2147483647)
+        ORDER BY change_version DESC LIMIT 51
+      `,[projectId,id,page.beforeVersion??null]);
+      return {history:rows.slice(0,50),
+        nextBeforeVersion:rows.length>50?rows[49].change_version:null};
+    });
+
   const dependencySchema=z.object({
     idempotencyKey:uuid,dependentTaskId:uuid,prerequisiteTaskId:uuid,
   }).refine(x=>x.dependentTaskId!==x.prerequisiteTaskId,'任务不能依赖自身');

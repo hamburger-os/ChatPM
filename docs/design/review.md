@@ -165,3 +165,9 @@ CI 新增 `tools/test/task-linkage-smoke.mjs`：PostgreSQL 创建正式任务与
 ## ADR-048 · 租户级项目创建命令 /review
 
 数据库只新增 migration 021，不改既有 001–020 checksum；表 tenant_command_receipts 以 tenant/actor/kind/UUID key 约束，payload_hash 与项目生成结果同事务持久。核验当前组织管理员 tenant_members 的行锁及首次执行/回放权限，注册人跨组织或普通成员都不得创建；创建前 receipt 唯一约束负责并发序列化。成功后的 projects.tenant_id、owner_id、唯一 owner 角色一致，默认 AI 关闭，时区检验不变；同事务写项目级 CommandReceipt、Audit、DomainEvent、Outbox 并与根 receipt 的 key/hash/结果一致。原命令同键重试返回同一个项目，不再创建额外行/Outbox；同键变更名称或时区 409；无键 400；原项目被删除或原用户失去项目成员权限，不得通过旧根回执泄露历史项目资料。前端 UUID 在同一创建意图网络重试时稳定，已成功后清除；新表单意图使用新键。测试在真实 Postgres 同时发起四个相同请求并核对项目、owner、两类 receipt、领域事件、出站事件及 audit 唯一。合并以最新提交五项 CI 全部 success、审查线程全 resolved 为前提；Tenant 级其它写入和实机 V1→V2 迁移不在此次验收范围内。
+
+## ADR-049 · 变更实施与证据审查 /review
+
+检查 022 仅新增迁移，不改写发布过的 SQL；旧 pending、approved、rejected 状态和审批人/时间保持不变。新表约束 project_id/change_id 复合外键与 project_id/message_id 复合外键、每次真实 change_version 唯一、append-only 人工 history；approved→implementing 的 start 要求有效租户与项目中非 observer 负责人及非空说明，只有 implementing 可 reassign（新负责人不能与旧相同），重指派须重置证据时间并继续保持 implementing；只有 implementing 可 complete，须由非执行人的 owner/manager 独立复核且证据来自本项目负责人于本次实施开始后发表的 kind=user 消息。AI 消息、其他项目消息、实施前旧消息、撤权后的负责人均不得获批准。所有命令有 UUID key、expectedVersion，原键回放不新增历史/审计/Outbox，错 payload/旧版本 409；写状态、actor/time、history、DomainEvent、Outbox 与 Receipt 同事务。移除或降为 observer 前先移交实施中职责。API smoke 覆盖旧状态禁止跳转、无效负责人、owner/manager 区分、自证拒绝、旧证据过期、错误作者、真实消息、重放、重新指派与历史版本/事件 3–6，后续消息去重测试仍按 nonce 精确验证。最后以 PR 最新 Head 产品、文档、安全、Win/Linux 原生构建和 Docker 冒烟五项 CI success + 零未解决 review 线程才可合并。历史计划基线实施、成本收益验收、长期多 Worker/真实 LLM 仍未验收。
+
+**ADR-049 Smoke 限流回归：** 完整 API Smoke 超过默认每用户 180 次/分钟限制时，测试 HTTP 客户端仅在真实服务器返回带有速率限制头与 Retry-After 的 429 后按提示有限重试；不修改生产限流参数，不对其它 429 状态无条件重试。因流量规模引发的 429 不能用于跳过正式权限、状态与证据断言。

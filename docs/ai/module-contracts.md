@@ -244,3 +244,9 @@ owner 转移仅能由当前 owner 主动触发 POST /projects/:id/ownership-tran
 ## ADR-048 · 租户项目创建与 AI 管理边界
 
 POST /projects 请求体必须有 UUID idempotencyKey、tenantId、name、timezone。只允许当前租户管理员创建，创建后本人为唯一 project owner、ai_enabled=false。若同一租户同一 actor 对同一 key 重发相同请求，必须得到同一个 project.id，不能生成额外 Project、DomainEvent、Outbox 或 AI 初始化操作；同 key 不同规范化 payload 报 409。项目尚不存在前使用 tenant_command_receipts 持久化并发幂等，创建后同事务留下正式 project command_receipts 与 domain_events。普通组织成员、单纯系统模型管理员、AI 对话不能调用后台命令自建项目或配置模型 API Key。
+
+## ADR-049 · AI 不能将变更批准冒充已实施
+
+ChangeRequest 的 approved 只表示人工批准，不能等同实施完成。POST /projects/:projectId/pm/changes/:itemId/implementation 的 start 阶段需 PM 经理、当前有效执行人及文本说明；complete 阶段需不同于执行人的 PM 经理/owner 按 pm.accept 复核，引用同项目真实 human user 消息的 evidenceMessageId，消息作者必须为实施责任人且创建于该实施启动之后。命令带 expectedVersion 和 UUID idempotencyKey，原消息 UUID、人工说明、批准/执行/复核人均有事务审计；AI-generated 消息不成为正式实施证据，完成声明不会自动影响任务与计划基线。
+
+**ADR-049 责任变更补充：** 实施中的 reassign 命令要求有效新 ownerId 与人工说明，仍经 pm.plan 项目权限、UUID 幂等与预期版本保护；原有消息证据在交接后不再满足实施时间条件。成员撤权/降为观察者前须先移交未完成的变更实施职责。complete 仍需实施者当前具组织和项目有效资格，不可用 AI、已撤权人员或旧 owner 的消息自动完成验收。

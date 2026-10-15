@@ -56,6 +56,10 @@ npm run admin:grant -- --email=admin@example.com --confirm
 
 项目负责人可以从已加入本项目、同时仍是组织成员的人员中选择接任者，经明确确认后转让 owner 身份；原负责人自动变为项目管理者。系统会同时更新项目正式负责人、角色和审计历史，并确保同一项目只能有一个 owner。交接要求最新版本，过期浏览器不能覆盖已发生的转交；网络超时后使用同一命令重试可以取得原结果，即使原 owner 已降级。交接后工作台自动刷新角色；系统 AI 模型供应商和密钥仍仅由系统总管理员配置。
 
+### 变更批准后还要实施与核验
+
+项目 owner 批准变更申请，不代表其范围、时间或责任变更已经落地。项目 owner/manager 需指定有效实施人启动实施；中途可重新指派责任人，旧负责人的聊天记录不会成为新负责人的完成证据。最终需由非实施人的项目 owner/manager 引用本项目实施人在本次实施开始之后发布的原始消息，并填写核验说明，才能把状态记为“已复核实施”。所有操作都有不可变版本历史与幂等回执；人员退出项目前必须先交接尚在实施的变更。工作台不会自动修改项目计划基线。
+
 ## English
 
 ### Organization and project structure
@@ -102,4 +106,7 @@ Risks are prospective uncertainties, distinct from already-occurred issues. AI m
 ### Project owner transfer
 
 A current project owner can explicitly transfer ownership to an active member of both the project and tenant. The previous owner becomes a project manager, and the database prevents multiple simultaneous owner roles. The transfer is version-checked, transactionally audited and idempotent: the former owner may replay the same completed receipt while still a project member, but cannot issue another transfer. The workspace refreshes role permissions after success. Global AI providers and credentials remain system-administrator-only.
+### Approved changes still need implementation and verification
+
+Approval of a ChangeRequest does not mean a scope, schedule or responsibility change has been applied. Project owners/managers designate an active implementer, may reassign the work (resetting the eligible evidence window), and must independently verify completion using a human message posted by the current implementer in the same project after implementation began. A person cannot verify their own implementation. Each action has a durable command receipt and versioned immutable history; active implementation duties must be reassigned before removing or demoting a member. This workflow does not automatically rewrite project baselines.
 

@@ -283,3 +283,15 @@
 **访问安全：** 只有原 actor 当前仍是租户 admin 且仍有项目成员权限才能读取旧创建结果；已删除项目不返回幽灵项目。项目创建沿用既有名称、时区校验与默认关闭 AI，不能通过新流程修改全局模型配置或绕过租户治理。Web 为同一次创建意图保留 UUID，在发生网络失败时用相同请求重试；修改表单意图则使用新 key。不提供无幂等键的兼容路径。
 
 **边界：** 这是组织级命令可靠性基础，为未来组织治理命令提供回执表，但本次只迁移项目创建，不宣称所有 Tenant/Program/Portfolio 创建已经命令化。真实存量库迁移、冷备恢复、旧部署升级及多副本长压测仍属于 #51 发布验收。
+
+## ADR-049 · 已批准变更与实际实施/复核分离（2026-10-15）
+
+**问题：** ChangeRequest 只有 pending→approved/rejected，审批通过不代表新计划真实落地，却缺少实施责任人、后续执行状态、项目聊天原始证据、复核人和不可变实施历史。这会让 AI 或工作台误把“批准”呈现为“完成”。
+
+**决定：** 增量迁移 022 为变更增加 approved→implementing→implemented 的独立生命周期，rejected 保持终止状态。项目 owner/manager 按 pm.plan 从已批准变更启动实施，明确当前组织/项目的非 observer 实施责任人，并填写说明；只有负责人真实发出的本项目 user 消息才能作为实施证据，且时间不早于实际启动时间。项目 owner/manager 按 pm.accept 复核“已实施”，需不同于执行责任人、消息证据 UUID 和人类核验说明。所有状态操作要求 UUID idempotencyKey 与 expectedVersion，经 executePmCommand 在事务内锁当前项目身份与变更行，记录实施/完成时间、责任人/复核人、project-scoped 原始消息引用、append-only project_change_implementation_history、Audit/DomainEvent/Outbox/Receipt。UI 显示实施责任、证据来源及分页历史。
+
+**约束：** 不能在 pending 未批准、rejected 拒绝或已 implemented 的申请上直接开始实施/再次完成；不可跳过实施阶段，不能用 AI 消息或另一个项目消息作证明，不能让执行人批准自己的完成声明。同一次成功命令重放仅返回 Receipt，不能重复状态历史；不同 key 的旧版本 409。旧 approved/rejected 历史保持原状态，不补造实施记录、证据、actor 或时间。原变更审批的申请人与批准人分离规则不变。
+
+**取舍：** implemented 仅表示已按人类证据完成实施并复核，不自动改变既有里程碑、范围基线或历史任务计划；审批的后续计划影响仍需单独的受控基线变更命令。模型不得因为聊天中的完成声明自动修改正式变更。真实多团队工作流、计划 baseline 应用和实体变更对账仍是 #48/#50 的未完成验收。
+
+**ADR-049 补充 · 责任移交：** 变更实施中允许有授权的 owner/manager 以 reassign 命令重新指派当前有效负责人员；实施状态仍保持 implementing，版本 +1、历史 action=reassign，并将 implementation_started_at 更新到这次交接时间，使旧负责人先前的消息不再满足本次证据窗口。成员在 status=implementing 且仍被指派时不能降为 observer 或移出项目，必须先办理正式重新指派。被撤销组织或项目资格的实施负责人亦不能被拿来完成验证。这是防止“旧聊天证据复用”和孤立实施事项的必需约束。

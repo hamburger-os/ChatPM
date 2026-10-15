@@ -118,3 +118,7 @@
 ## ADR-048 · 项目创建正式事务命令
 
 项目列表与新建路由从 api/server.ts 分离到 project-routes.ts；创建前使用 021_tenant_command_receipts.sql 的租户级 receipt 占位，锁住当前 tenant admin 身份，避免尚无项目 ID 时错误复用 project-scoped 命令。成功命令在同一事务内生成 Project、唯一 owner 项目成员、项目级 CommandReceipt、Audit、DomainEvent 和 Outbox，并将真实项目 ID 与结果写回 tenant receipt。相同 tenant/actor/kind/key/payload 的并发请求与网络重试一律返回同一个 ID，不重复业务事件；同键不同 payload 409、无 key 400、普通租户成员 403。原创建者失去对该项目的当前成员访问权不得继续读回执。Web 同一次创建意图重用原 UUID，意图变更使用新键。真实 Postgres API smoke 包含 4 路同时创建同一个项目、旧请求重放、不同内容冲突和 owner、receipt、domain event、outbox、audit 精确条数校验。尚有 Tenant/Department/Portfolio/Program 等组织领域的旧写入需要后续命令迁移；生产升级演练没有由 CI 代替。
+
+## ADR-049 · 变更批准后的实施、责任移交与独立复核
+
+新增 migration 022_change_implementation.sql，批准的 ChangeRequest 可由有权项目经理/owner 在指定当前组织项目成员后开始实施（approved→implementing），实施中可通过 reassign 变更执行责任人、重置证据有效时间并形成新版本；实际完成经另一名有权 owner/manager 使用实施者在本项目于本次开始实施之后发表的原始 user 消息作为证据复核（implementing→implemented）。新项目复合 FK 的 project_change_implementation_history 记录状态、版本、人类说明、实施/复核 actor 与证据 UUID；每个真实实施/移交/核验与 Audit/DomainEvent/Outbox/CommandReceipt 同事务，要求 UUID idempotencyKey 和 expectedVersion。实施中责任人被移出项目或降为观察者前必须先重新指派。Web PM 登记簿提供启动、移交、实施证据选择、复核与分页历史。真正的项目范围、里程碑、成本基线仍**不会**因这个状态自动变更；继续属于 #48 的完整计划变更实施工作。真实模型评测、生产升级演练亦不在此次验收范围。
