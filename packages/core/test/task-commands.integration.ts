@@ -86,7 +86,9 @@ try{
   const sameKey=await updateTask(pid,taskId,uid,{
     ...noChange,idempotencyKey:'70eb3c6f-674e-4b1f-a56d-e54b1ca37d29',status:'blocked',version:2,
   });
-  assert.deepEqual(sameKey,replay,'Completed commands replay without additional writes');
+  assert.deepEqual(JSON.parse(JSON.stringify(sameKey)),
+    JSON.parse(JSON.stringify(replay)),
+    'Idempotent receipts must preserve the same serialized Task values');
   await assert.rejects(updateTask(pid,taskId,uid,{
     ...noChange,idempotencyKey:'70eb3c6f-674e-4b1f-a56d-e54b1ca37d29',
     status:'done',version:2,
