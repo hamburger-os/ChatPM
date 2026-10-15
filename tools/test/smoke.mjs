@@ -368,17 +368,19 @@ try{
 
   const concurrentClassification=await Promise.all([
     api(classificationPath,{method:'PATCH',body:{idempotencyKey:randomUUID(),
-      expectedRevision:4,departmentId:null,programId:null,portfolioId:null}}),
+      expectedRevision:4,departmentId:null,programId:null,portfolioId:null,
+       participatingDepartmentIds:[]}}),
     api(classificationPath,{method:'PATCH',body:{idempotencyKey:randomUUID(),
       expectedRevision:4,departmentId:dep.data.department.id,
-      programId:null,portfolioId:portfolio.data.portfolio.id}}),
+      programId:null,portfolioId:portfolio.data.portfolio.id,
+       participatingDepartmentIds:[collaboratorDepartmentId]}}),
   ]);
   assert.deepEqual(concurrentClassification.map(x=>x.status).sort(),[200,409],
     'Two independent old snapshots cannot overwrite one another');
   const restoredClassification=await api(classificationPath,{method:'PATCH',body:{
     idempotencyKey:randomUUID(),expectedRevision:5,
     departmentId:dep.data.department.id,programId:program.data.program.id,
-    portfolioId:null}});
+    portfolioId:null,participatingDepartmentIds:[collaboratorDepartmentId]}});
   assert.equal(restoredClassification.status,200);
   assert.equal(restoredClassification.data.project.classification_revision,6);
   const participationOnly=await api(classificationPath,{method:'PATCH',body:{
