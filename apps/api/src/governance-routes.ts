@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { pool } from '../../../packages/core/src/db.ts';
 import { organizationCommand } from '../../../packages/core/src/organization-commands.ts';
 import { recordResourceAllocation } from '../../../packages/core/src/resource-allocation.ts';
+import { getGovernancePulse } from '../../../packages/core/src/governance/pulse.ts';
 import { requireTenant } from '../../../packages/core/src/permissions.ts';
 
 const uuid=z.string().uuid();
@@ -18,6 +19,19 @@ export function registerGovernanceRoutes(app:FastifyInstance,
     await requireTenant(user,tenantId,admin);
     return {tenantId,user};
   };
+  // Tenant-admin only. 'on' selects the planned allocation/deadline date;
+  // current task and risk states remain a present-time snapshot, not a replay.
+  app.get('/tenants/:tenantId/governance-pulse',async req=>{
+    const tenantId=uuid.parse((req.params as {tenantId:string}).tenantId);
+    const actorId=await authenticated(req);
+    const query=z.object({on:z.string().regex(/^\\d{4}-\\d{2}-\\d{2}$/).optional()})
+      .strict().parse(req.query);
+    const on=query.on??new Date().toISOString().slice(0,10);
+    if(Number.isNaN(Date.parse(on+'T00:00:00Z'))||
+       new Date(on+'T00:00:00Z').toISOString().slice(0,10)!==on)
+      deny(400,'请选择有效的日期');
+    return getGovernancePulse(tenantId,actorId,on);
+  });
   // Department, program and portfolio are separate organizational dimensions.
   app.get('/tenants/:tenantId/structure',async req=>{
     const {tenantId}=await scope(req);
