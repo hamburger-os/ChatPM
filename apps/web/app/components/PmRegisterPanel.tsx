@@ -2,6 +2,7 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react';
 import type { Message,Person, Project, Task, User } from './client';
 import EvidencePanel from './EvidencePanel';
+import ChangeImplementationPanel from './ChangeImplementationPanel';
 import { json, request } from './client';
 
 type Kind='goals'|'milestones'|'deliverables'|'issues'|'decisions'|'changes';
@@ -30,6 +31,7 @@ const statusText:Record<string,string>={
   planned:'计划中',submitted:'待验收',accepted:'已验收',
   returned:'已退回',open:'处理中',resolved:'已解决',
   pending:'待审批',approved:'已批准',rejected:'已拒绝',
+  implementing:'实施中',implemented:'已复核实施',
 };
 
 export default function PmRegisterPanel({project,user,people,tasks,messages}:{
@@ -266,6 +268,12 @@ export default function PmRegisterPanel({project,user,people,tasks,messages}:{
               '/changes/'+item.id+'/decide',
               {expectedVersion:item.version,decision:'reject'})}>拒绝</button>
           </div>}
+        {k==='changes'&&item.version&&
+          ['approved','implementing','implemented'].includes(item.status??'')&&
+          <ChangeImplementationPanel key={item.id+':'+item.version}
+            projectId={project.id} item={item} people={people}
+            messages={messages} actorId={user.id}
+            canManage={canPlan} busy={busy} onCommand={transition}/>}
       </article>)}
     </section>)}
     <section className="pm-category">
