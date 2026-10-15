@@ -32,6 +32,11 @@ export default function WorkspaceDetails({project,user,messages}:{
   const [settingsRevision,setSettingsRevision]=useState(1);
   const [settings,setSettings]=useState({aiEnabled:false,workStart:null as number|null,
     workEnd:null as number|null,cooldownHours:null as number|null});
+  const [savedSettings,setSavedSettings]=useState(settings);
+  const settingsDirty=settings.aiEnabled!==savedSettings.aiEnabled||
+    settings.workStart!==savedSettings.workStart||
+    settings.workEnd!==savedSettings.workEnd||
+    settings.cooldownHours!==savedSettings.cooldownHours;
   const id=project?.id;
   const owner=project?.role==='owner',manager=owner||project?.role==='manager';
   async function reload(pid:string){
@@ -53,8 +58,10 @@ export default function WorkspaceDetails({project,user,messages}:{
     setTab('tasks');
     setNextOwnerId('');
     setSettingsRevision(project.settings_revision);
-    setSettings({aiEnabled:project.ai_enabled,workStart:project.work_start,
-      workEnd:project.work_end,cooldownHours:project.cooldown_hours});
+    const loadedSettings={aiEnabled:project.ai_enabled,workStart:project.work_start,
+      workEnd:project.work_end,cooldownHours:project.cooldown_hours};
+    setSettings(loadedSettings);
+    setSavedSettings(loadedSettings);
     let inFlight=false;
     const update=async()=>{
       if(!active||document.hidden||inFlight)return;
@@ -294,9 +301,14 @@ export default function WorkspaceDetails({project,user,messages}:{
               [field]:e.target.value===''?null:Number(e.target.value)})}/></label>)}
         </div>}
         <small>当前设置版本：v{settingsRevision}</small>
-        <button disabled={busy} onClick={()=>
+        <button disabled={busy||!settingsDirty} onClick={()=>
           governanceCommand('/settings','PATCH',{...settings,expectedRevision:settingsRevision},
-            result=>{if(result.settingsRevision)setSettingsRevision(result.settingsRevision);})
+            result=>{
+              if(result.settingsRevision){
+                setSettingsRevision(result.settingsRevision);
+                setSavedSettings({...settings});
+              }
+            })
         }>保存设置</button>
       </div>}
     </>}
