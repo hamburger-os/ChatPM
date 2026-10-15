@@ -16,6 +16,7 @@ x-app: &app
     WEB_ORIGIN: ${WEB_ORIGIN:-http://localhost:3000}
     DB_POOL_MAX: ${DB_POOL_MAX:-10}
     REGISTRATION_MODE: ${REGISTRATION_MODE:-bootstrap}
+    BOOTSTRAP_TOKEN: ${BOOTSTRAP_TOKEN:-}
   depends_on:
     migrate:
       condition: service_completed_successfully
