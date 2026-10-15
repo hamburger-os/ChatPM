@@ -323,3 +323,11 @@ Tenant admins can issue a seven-day, email-bound invitation under Organization �
 ## 2026-10-15 Cross-department project participation (experimental)
 
 A project may have one owning department and several participating departments. Tenant admins edit them together with program/portfolio classification under one optimistic revision, while department membership alone never gives project read/write permissions. Program benefit realization, portfolio strategic prioritization and full shared-resource optimization are not included.
+
+## 2026-10-16 项目集与项目组合正式事实概览（实验性）
+
+组织管理员在「组织管理 → 跨项目概览」查看全部项目任务完成/取消/阻塞、逾期、未解决风险，以及项目集与项目组合的去重汇总。选择日期可检查该日到期与资源计划。项目集和项目组合的区别保留：项目集协调共同交付，项目组合代表战略投资；没有加入项目集/组合的项目独立显示。按人员汇总当天跨项目计划投入，达到 80% 显示接近容量，超过 100% 标记超配。**这是计划而不是实际工时。** 不提供历史任意日期的真实任务状态回放，也不自动决策资源调配、确定组合优先级或计算收益。
+
+## 2026-10-16 Program and portfolio factual pulse (experimental)
+
+Tenant administrators have a cross-project overview of current task/risk states and planned allocation for a chosen calendar date. Each project belongs to at most one effective portfolio, either through a program or directly; program descendants are not double-counted. The selected date applies only to overdue checks and active resource commitments, **not historical task-state replay**. Portfolio strategic scoring, program benefits realization, actual timesheets and cross-project critical-path forecasting remain future work.

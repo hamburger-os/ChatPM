@@ -61,6 +61,8 @@ jobs:
         run: node --import tsx packages/core/test/ai-authorization.integration.ts
       - name: One-time organization invitation integration
         run: node --import tsx packages/core/test/invitations.integration.ts
+      - name: Real portfolio and program pulse integration
+        run: node --import tsx packages/core/test/governance-pulse.integration.ts
       - name: Organization governance transaction integration
         run: node --import tsx packages/core/test/organization.integration.ts
       - name: Project access revocation integration
