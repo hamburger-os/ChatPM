@@ -17,6 +17,7 @@ import helmet from '@fastify/helmet';
 import rateLimit from '@fastify/rate-limit';
 import { z, ZodError } from 'zod';
 import { pool, transaction, audit } from '../../../packages/core/src/db.ts';
+import { lockProjectAccess } from '../../../packages/core/src/identity/project-access.ts';
 import { createSession, hashPassword, readSession, revokeSession, verifyPassword } from '../../../packages/core/src/security.ts';
 import { isValidTimezone } from '../../../packages/core/src/policy.ts';
 import { syncFollowup } from '../../../packages/core/src/followup.ts';
@@ -191,13 +192,15 @@ app.get('/projects/:id/members',async req=>{
 app.post('/projects/:id/members',async req=>{
   const projectId=uuid.parse((req.params as {id:string}).id);
   const userId=await authenticated(req);
-  const m=await member(userId,projectId);owner(m);
   const {email}=z.object({email:z.string().email().transform(v=>v.toLowerCase())}).parse(req.body);
   return transaction(async db=>{
+    const access=await lockProjectAccess(db,projectId,userId);
+    assertProject(access.role,'members.manage');
     const person=(await db.query('SELECT id FROM users WHERE email=$1',[email])).rows[0];
     if (!person) fail(404,'该邮箱尚未注册');
     const existing=await db.query(
-      'SELECT 1 FROM tenant_members WHERE tenant_id=$1 AND user_id=$2',[m.tenant_id,person.id]);
+      'SELECT 1 FROM tenant_members WHERE tenant_id=$1 AND user_id=$2 FOR SHARE',
+      [access.tenantId,person.id]);
     if(!existing.rowCount)fail(403,'请先由组织管理员将人员加入该组织');
     await db.query(
       `INSERT INTO project_members(project_id,user_id,role) VALUES($1,$2,'member')
@@ -210,9 +213,10 @@ app.patch('/projects/:id/members/:memberId',async req=>{
   const {id,memberId}=req.params as {id:string;memberId:string};
   const projectId=uuid.parse(id),target=uuid.parse(memberId);
   const actor=await authenticated(req);
-  owner(await member(actor,projectId));
   const {role}=z.object({role:z.enum(['manager','member','observer'])}).parse(req.body);
   return transaction(async db=>{
+    const access=await lockProjectAccess(db,projectId,actor);
+    assertProject(access.role,'members.manage');
     const existing=await db.query(`SELECT role FROM project_members
       WHERE project_id=$1 AND user_id=$2 FOR UPDATE`,[projectId,target]);
     if(!existing.rowCount || existing.rows[0].role==='owner')fail(403,'不能修改项目负责人的角色');
@@ -231,9 +235,10 @@ app.delete('/projects/:id/members/:memberId',async req=>{
   const {id,memberId}=req.params as {id:string;memberId:string};
   const projectId=uuid.parse(id),target=uuid.parse(memberId);
   const actor=await authenticated(req);
-  owner(await member(actor,projectId));
   if(actor===target) fail(400,'不能通过此接口移除项目负责人');
   return transaction(async db=>{
+    const access=await lockProjectAccess(db,projectId,actor);
+    assertProject(access.role,'members.manage');
     // Serialize revocation with task creation/assignment using the member row lock.
     const found=await db.query(`SELECT 1 FROM project_members
       WHERE project_id=$1 AND user_id=$2 AND role='member' FOR UPDATE`,
@@ -252,7 +257,6 @@ app.delete('/projects/:id/members/:memberId',async req=>{
 app.patch('/projects/:id/settings',async req=>{
   const projectId=uuid.parse((req.params as {id:string}).id);
   const userId=await authenticated(req);
-  owner(await member(userId,projectId));
   const v=z.object({aiEnabled:z.boolean(),workStart:z.number().int().min(0).max(23).nullable(),
     workEnd:z.number().int().min(1).max(24).nullable(),
     cooldownHours:z.number().int().min(1).max(168).nullable()}).parse(req.body);
@@ -264,6 +268,8 @@ app.patch('/projects/:id/settings',async req=>{
     catch { fail(400,'服务器尚未正确配置 AI 模型'); }
   }
   return transaction(async db=>{
+    const access=await lockProjectAccess(db,projectId,userId);
+    assertProject(access.role,'settings.manage');
     await db.query(
       `UPDATE projects SET ai_enabled=$1,work_start=$2,work_end=$3,cooldown_hours=$4 WHERE id=$5`,
       [v.aiEnabled,v.workStart,v.workEnd,v.cooldownHours,projectId]);
@@ -381,8 +387,9 @@ app.post('/projects/:id/outbox/:eventId/retry',async req=>{
   const {id,eventId}=req.params as {id:string,eventId:string};
   const projectId=uuid.parse(id),event=uuid.parse(eventId);
   const userId=await authenticated(req);
-  owner(await member(userId,projectId));
   return transaction(async db=>{
+    const access=await lockProjectAccess(db,projectId,userId);
+    assertProject(access.role,'operations.manage');
     const {rows}=await db.query(
       `UPDATE outbox_events SET attempts=0,dead_at=NULL,last_error_code=NULL,
        claimed_at=NULL,claim_token=NULL,next_attempt_at=NOW()
@@ -406,9 +413,10 @@ app.get('/projects/:id/reports',async req=>{
 app.post('/projects/:id/reports',async req=>{
   const projectId=uuid.parse((req.params as {id:string}).id);
   const userId=await authenticated(req);
-  owner(await member(userId,projectId));
   const {kind}=z.object({kind:z.enum(['week','month'])}).parse(req.body);
   return transaction(async db=>{
+    const access=await lockProjectAccess(db,projectId,userId);
+    assertProject(access.role,'report.manage');
     const report=await generateReport(db,projectId,kind,userId);
     await audit(db,projectId,userId,'report.generated',report.id,{kind});
     return {report};
@@ -418,8 +426,9 @@ app.post('/projects/:id/reports/:reportId/publish',async req=>{
   const {id,reportId}=req.params as {id:string,reportId:string};
   const projectId=uuid.parse(id),report=uuid.parse(reportId);
   const userId=await authenticated(req);
-  owner(await member(userId,projectId));
   return transaction(async db=>{
+    const access=await lockProjectAccess(db,projectId,userId);
+    assertProject(access.role,'report.manage');
     const x=await db.query(
       `UPDATE reports SET state='published' WHERE id=$1 AND project_id=$2 RETURNING id`,
       [report,projectId]);
