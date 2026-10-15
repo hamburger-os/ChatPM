@@ -21,6 +21,9 @@ export type PmCommand<T> = {
   idempotencyKey:string;
   kind:string;
   action:ProjectAction;
+  // Only role-changing commands may opt in. Still require current project read
+  // access to replay a completed receipt after the issuer loses write rights.
+  replayAction?:ProjectAction;
   payload:unknown;
   mutate:(db:DbClient,role:ProjectRole)=>Promise<PmMutation<T>>;
 };
@@ -29,7 +32,7 @@ export type PmCommand<T> = {
 export async function executePmCommand<T>(command:PmCommand<T>):Promise<T> {
   return transaction(async db=>{
     const member=await lockProjectAccess(db,command.projectId,command.actorId);
-    assertProject(member.role,command.action);
+    assertProject(member.role,command.replayAction??command.action);
     const hash=createHash('sha256').update(JSON.stringify(command.payload)).digest('hex');
     const inserted=await db.query<{id:string}>(`
       INSERT INTO command_receipts(tenant_id,project_id,actor_id,kind,
@@ -47,6 +50,9 @@ export async function executePmCommand<T>(command:PmCommand<T>):Promise<T> {
       if(!old.rows[0]||old.rows[0].payload_hash!==hash)deny(409,'幂等键已经用于其他命令');
       return old.rows[0].result;
     }
+    // A new command must meet its full write grant even if an old receipt
+    // could be replayed with lesser permissions.
+    if(command.replayAction)assertProject(member.role,command.action);
     const created=await command.mutate(db,member.role);
     await audit(db,command.projectId,command.actorId,command.kind,
       created.aggregateId,{version:created.aggregateVersion,
