@@ -355,3 +355,11 @@ The organization structure read API now uses one transactional core query servic
 ## 2026-10-16 Core project classification command boundary (experimental)
 
 Project classification updates now flow through one core command service instead of inline HTTP route SQL. Tenant admin authorization, command receipts, revision fencing, tenant foreign keys and audit remain transactional, with business invariants rechecked in core. This covers only the project-classification write path; other API and Worker refactors are still open.
+
+## 2026-10-16 Outbox AI 结果租约隔离（实验性）
+
+AI Worker 现在只能在仍持有有效事件租约时，把模型回复、待审批候选、澄清和分析运行状态写入数据库；租约超过五分钟或已被其他 Worker 重新领取后，旧 Worker 的迟到结果会被拒绝。事件一次领取一条，避免某条慢模型请求让同一批后续事件还没处理就超时。规则提醒和周期报告仍使用独立工作通道。新的 PostgreSQL 集成和架构测试验证令牌核验与数据库行锁，但不构成真实多实例压测、网络故障注入或模型服务隔离验收。
+
+## 2026-10-16 Fenced AI outbox publication (experimental)
+
+A Worker may publish AI replies, proposals, clarifications and analysis states only while its outbox claim is current. The same transaction locks the event claim through commit, preventing a reassigned or expired Worker from overwriting results. Claims are acquired one at a time before use. Real multi-instance load and failure-injection certification remain pending; fencing cannot recall data already sent to the external model.
