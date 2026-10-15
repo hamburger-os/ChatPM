@@ -125,3 +125,7 @@
 - 组织结构路由只做 UUID 输入与身份解析，查询表的所有权在 `core/governance/structure-query.ts`；禁止在 HTTP route 中恢复重复的 `pool.query` 和事后 tenant role 判断。
 - 读事务必须先验证当前 TenantMember 并锁定行，再以同一事务快照读取部门、项目集、组合和项目归属；普通成员只可看明确授予 ProjectMember 的项目分类，读期间持有对应 membership SHARE 锁。
 - 组织人员关系不等价于项目成员权限；管理员可作组织治理查看并不因此可以访问所有项目消息。真实 PostgreSQL 测试覆盖跨租户拒绝、项目撤权、组织撤权。此改动不能当作其他 API/Worker 领域读写收敛已经完成。
+
+## ADR-064 · 项目结构命令唯一写入口
+
+项目的主责/参与部门、Program/Portfolio 分类必须通过 Core `changeProjectClassification` 完成，并复用组织级事务幂等、权限和审计机制。所有候选调用（HTTP、Worker 或未来自动化）都不得绕过命令服务直接 `UPDATE projects` 或 `DELETE/INSERT project_departments`；既有主责/参与互斥、不可重复、版本乐观锁、跨租户复合外键为一致的业务不变量。正式分类和治理资料不能因模型聊天建议而自动改变。此约束仅覆盖分类命令，其它 API 路由迁移仍需独立实施与验证。

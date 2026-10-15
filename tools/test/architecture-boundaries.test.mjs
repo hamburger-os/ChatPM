@@ -50,3 +50,18 @@ test('tenant structure read model keeps SQL and authz out of HTTP route',()=>{
   assert.match(service,/FOR SHARE/,'Authorization must lock current membership');
   assert.match(service,/JOIN project_members pm/,'Non-admin project visibility is explicit');
 });
+
+test('project classification commands cannot bypass core tenant governance handler',()=>{
+  const route=readFileSync(new URL('../../apps/api/src/governance-routes.ts',import.meta.url),'utf8');
+  const command=readFileSync(new URL('../../packages/core/src/governance/classification-command.ts',import.meta.url),'utf8');
+  const start=route.indexOf("app.patch('/tenants/:tenantId/projects/:projectId/classification'");
+  const end=route.indexOf("app.get('/tenants/:tenantId/members'",start);
+  assert.ok(start>=0&&end>start);
+  const block=route.slice(start,end);
+  assert.match(block,/changeProjectClassification\(tenantId,user,projectId,v\)/);
+  assert.doesNotMatch(block,/db\.query|pool\.query|UPDATE projects|DELETE FROM project_departments/,
+    'Classification HTTP route must not directly mutate domain tables');
+  assert.match(command,/organizationCommand\(tenantId,actorId,'project\.classification_changed'/);
+  assert.match(command,/classification_revision=classification_revision\+1/);
+  assert.match(command,/DELETE FROM project_departments/);
+});

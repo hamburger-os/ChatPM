@@ -186,3 +186,11 @@ Docker 部署 Smoke 原先仅验证 pg_dump custom-format 文件头和 pg_restor
 同一事务保证结构读取和项目分类关系版本来自统一快照，当前组织/项目授权行锁保证撤权与响应读取不会相互错位。这里针对的是**组织结构读模型**，没有扩大系统管理员或项目成员的跨项目数据权限。新增真实 PostgreSQL 集成覆盖组织管理员、普通成员、跨租户、项目撤权和组织撤权，以及静态边界测试阻止路由回退为直接领域 SQL。
 
 仍需继续 Issue #49：其他领域路由的读/写分离、全域 Command/DomainEvent/Outbox 一致性、多实例 Worker fencing、生产性能及崩溃恢复测试均未在本 PR 完成。
+
+## ADR-064 · 项目归属正式命令的 Core 所有权（2026-10-16）
+
+将 `PATCH /tenants/:tenantId/projects/:projectId/classification` 中的 SQL/业务状态变化整体迁入 `packages/core/src/governance/classification-command.ts`。HTTP 路由只进行 UUID、Zod 请求数据验证与登录身份授权，调用同一个 `changeProjectClassification`，不再直接持有 `projects` 与 `project_departments` 的写 SQL。Core 继续使用唯一 `organizationCommand`：获取 Tenant Advisory 事务锁、当前 Admin 授权、actor+tenant+kind+key 的稳定幂等回执、实际变更审计。分类版本、主责部门、参与部门列表、项目集/直接项目组合归属由同一事务原子更新；历史版本、新 key 同值、幂等键冲突、跨 Tenant 无效部门与普通成员越权都安全失败。Core 自身还承担项目集/直接组合二选一、主责部门不得重复作为参与部门、参与部门重复或超数量的业务规则，不能只依赖 UI 输入约束。
+
+新增真实 PostgreSQL 集成直接调用 Core 命令，验证回放/不同 payload、版本冲突、跨租户 FK 回滚、角色越权、仅真实修改产生审计；此前 API Smoke 的完整项目分类和并发版本回归继续运行。静态架构测试确保该 HTTP 命令不会退回到路由层直接写业务表。
+
+这是 Issue #49 的一个完整归属命令迁移增量，不代表 `server.ts`、其余组织路由、Task/Risk/PM 全领域命令、Worker 多实例 fencing、死信和生产性能验收已经完成。
