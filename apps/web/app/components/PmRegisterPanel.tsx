@@ -59,7 +59,7 @@ export default function PmRegisterPanel({project,user,people,tasks,messages}:{
   const keyRef=useRef<string|null>(null);
   const base='/projects/'+project.id+'/pm';
   const canPlan=project.role==='owner'||project.role==='manager';
-  const owner=project.role==='owner';
+  const canApproveChange=canPlan;
 
   async function refresh(){
     const [register,links]=await Promise.all([
@@ -260,7 +260,7 @@ export default function PmRegisterPanel({project,user,people,tasks,messages}:{
                 {expectedVersion:item.version,decision:'return'})}>退回</button>
             </>}
           </div>}
-        {k==='changes'&&owner&&item.version&&item.status==='pending'&&
+        {k==='changes'&&canApproveChange&&item.version&&item.status==='pending'&&
           item.created_by!==user.id&&<div className="actions pm-actions">
             <button disabled={busy} onClick={()=>transition('/changes/'+item.id+'/decide',
               {expectedVersion:item.version,decision:'approve'})}>批准变更</button>
