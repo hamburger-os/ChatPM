@@ -129,3 +129,10 @@
 ## ADR-064 · 项目结构命令唯一写入口
 
 项目的主责/参与部门、Program/Portfolio 分类必须通过 Core `changeProjectClassification` 完成，并复用组织级事务幂等、权限和审计机制。所有候选调用（HTTP、Worker 或未来自动化）都不得绕过命令服务直接 `UPDATE projects` 或 `DELETE/INSERT project_departments`；既有主责/参与互斥、不可重复、版本乐观锁、跨租户复合外键为一致的业务不变量。正式分类和治理资料不能因模型聊天建议而自动改变。此约束仅覆盖分类命令，其它 API 路由迁移仍需独立实施与验证。
+
+## ADR-065 · AI 结果必须持有效 Outbox 租约提交
+
+- 任何来自 Worker 的 AI 正式可见写入（消息、建议、进展线索、澄清、运行状态）必须先在**同一 PostgreSQL 事务**调用 `assertEventClaim(db,event)`，并持有匹配事件 id/project/token 的 FOR UPDATE 行锁直到副作用 COMMIT。过期、已重新领取、已处理或死信 token 一律拒绝，不能借当前项目 AI 开启状态绕过。
+- 完整 AI 授权版本检查与 Outbox 令牌检查缺一不可；失去 Outbox 租约的 Worker 不得写运行结果、失败状态、重新排队或死信。第三方模型已收到的 Prompt 不能因 Worker 取消而撤回，实际隐私防护仍在发送前执行。
+- Worker 不得提前领取大量长时间模型调用的事件，必须 just-in-time 单条 claim，并保留已经实现的独立 AI/提醒/报告 lane。
+- 真实数据库锁/租约测试和静态入口测试不能替代多实例 Worker 同时运行、网络分区、模型长尾延迟和真实关停/重启故障演练。
