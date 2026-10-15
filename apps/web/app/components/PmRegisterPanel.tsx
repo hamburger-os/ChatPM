@@ -52,6 +52,8 @@ export default function PmRegisterPanel({project,user,people,tasks,messages}:{
   const [prerequisite,setPrerequisite]=useState('');
   const [notice,setNotice]=useState('');
   const [issueNotes,setIssueNotes]=useState<Record<string,string>>({});
+  const [handoffTo,setHandoffTo]=useState<Record<string,string>>({});
+  const [handoffReason,setHandoffReason]=useState<Record<string,string>>({});
   const [issueHistory,setIssueHistory]=useState<Record<string,IssueHistoryPage>>({});
   // Reuse a command key when the same user action is retried after a network error.
   const commandKeys=useRef(new Map<string,string>());
@@ -246,6 +248,24 @@ export default function PmRegisterPanel({project,user,people,tasks,messages}:{
               </button>}
           </div>}
         </>}
+        {k==='deliverables'&&canPlan&&item.version&&item.status!=='accepted'&&
+          <div className="actions pm-actions">
+            <select aria-label={'新交付物负责人：'+item.title}
+              value={handoffTo[item.id]??''} disabled={busy}
+              onChange={e=>setHandoffTo(prev=>({...prev,[item.id]:e.target.value}))}>
+              <option value="">选择交接人员</option>
+              {visiblePeople.filter(p=>p.id!==item.assignee_id).map(p=>
+                <option key={p.id} value={p.id}>{p.display_name}</option>)}
+            </select>
+            <input aria-label={'交接说明：'+item.title} value={handoffReason[item.id]??''}
+              placeholder="交接原因" disabled={busy}
+              onChange={e=>setHandoffReason(prev=>({...prev,[item.id]:e.target.value}))}/>
+            <button type="button" className="secondary"
+              disabled={busy||!handoffTo[item.id]||!handoffReason[item.id]?.trim()}
+              onClick={()=>transition('/deliverables/'+item.id+'/reassign',{
+                expectedVersion:item.version,assigneeId:handoffTo[item.id],
+                note:handoffReason[item.id]})}>交接负责人</button>
+          </div>}
         {k==='deliverables'&&item.version&&
           <div className="actions pm-actions">
             {item.assignee_id===user.id&&['planned','returned'].includes(item.status||'')&&
