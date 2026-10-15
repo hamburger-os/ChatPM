@@ -25,7 +25,7 @@ try{
   assert.notEqual(stored.token_sha256,issued.code,'Plaintext invite must never reach DB');
   await assert.rejects(acceptTenantInvitationNew({
     token:'0'.repeat(64),email:targetEmail,displayName:'Invited',
-    passwordHash:'unused',
+    password:'Strong-password-12345',
   }),/邀请码无效/);
   await assert.rejects(acceptTenantInvitationNew({
     token:issued.code!,email:'other-'+suffix+'@example.test',displayName:'Wrong',
