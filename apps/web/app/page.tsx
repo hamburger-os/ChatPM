@@ -21,6 +21,7 @@ export default function Home(){
   const [auth,setAuth]=useState<'checking'|'ready'|'anonymous'|'error'>('checking');
   const [retry,setRetry]=useState(0);
   const [register,setRegister]=useState(false);
+  const [canRegister,setCanRegister]=useState(false);
   const [email,setEmail]=useState(''),[password,setPassword]=useState(''),[displayName,setDisplayName]=useState('');
   const [projects,setProjects]=useState<Project[]>([]);
   const [tenants,setTenants]=useState<Tenant[]>([]);
@@ -74,6 +75,17 @@ export default function Home(){
     });
     return ()=>{active=false;};
   },[retry,loadProjects,loadTenants]);
+  useEffect(()=>{
+    if(auth!=='anonymous')return;
+    let active=true;
+    void request<{allowed:boolean}>('/auth/registration-policy')
+      .then(result=>{
+        if(!active)return;
+        setCanRegister(result.allowed);
+        if(!result.allowed)setRegister(false);
+      }).catch(()=>{if(active){setCanRegister(false);setRegister(false);}});
+    return ()=>{active=false;};
+  },[auth]);
   useEffect(()=>{
     if(!selected||view!=='projects')return;
     let active=true;cursor.current=0;setMessages([]);
@@ -176,9 +188,10 @@ export default function Home(){
         <label>密码<input type="password" autoComplete={register?'new-password':'current-password'} required minLength={register?10:1}
           value={password} onChange={e=>setPassword(e.target.value)}/></label>
         <button disabled={working}>{register?'注册并创建组织':'登录'}</button>
-      </form><button className="text-button" onClick={()=>setRegister(!register)}>
+      </form>
+      {canRegister?<button className="text-button" onClick={()=>setRegister(!register)}>
         {register?'已有账号？登录':'没有账号？创建组织'}
-      </button>
+      </button>:<p className="hint">当前服务器未开放新账号注册；如需加入项目，请联系部署管理员。</p>}
       <details className="login-help"><summary>系统管理员如何登录？</summary>
         <p>系统管理员使用同一邮箱和密码登录。首次部署时须由服务器操作员先为已注册账号授权；登录后在最左侧进入「系统管理」。组织管理员或项目负责人不自动具有系统管理权限。</p>
       </details>
