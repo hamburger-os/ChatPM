@@ -448,6 +448,22 @@ try{
     percentage:100,startDate:'2026-11-15',endDate:'2026-11-20'}});
   assert.equal(independentPerson.status,201,
     'One person at 100% does not reduce another employee capacity');
+  const allocationRemovalAttempt=await api('/projects/'+secondPid+'/members/'+
+    second.data.user.id,{method:'DELETE',body:{idempotencyKey:randomUUID()}});
+  assert.equal(allocationRemovalAttempt.status,409,
+    'Active resource allocations must be released before removing the project member');
+  const cancellationPath=allocationPath+'/'+independentPerson.data.allocation.id+'/cancel';
+  const cancelPayload={idempotencyKey:randomUUID()};
+  const cancelled=await api(cancellationPath,{method:'POST',body:cancelPayload});
+  assert.equal(cancelled.status,200,JSON.stringify(cancelled.data));
+  assert.equal((await api(cancellationPath,{method:'POST',body:cancelPayload})).status,200,
+    'Cancellation receipt must be safely replayable');
+  assert.equal((await api(cancellationPath,{method:'POST',
+    body:{idempotencyKey:randomUUID()}})).status,409,
+    'Already cancelled allocation must reject a new cancellation command');
+  assert.equal((await api('/projects/'+secondPid+'/members/'+second.data.user.id,
+    {method:'DELETE',body:{idempotencyKey:randomUUID()}})).status,200,
+    'Cancelled resource plan permits project removal when no other responsibility remains');
   const recordedPlans=(await db.query(`SELECT count(*)::int AS n
     FROM resource_allocations WHERE tenant_id=$1 AND user_id=$2`,
     [tenantId,uid])).rows[0].n;
@@ -591,6 +607,16 @@ try{
     FROM audit_entries WHERE project_id=$1 AND action='pm.issue.transitioned.v1'
       AND target_id=$2`,[pid,issueId])).rows[0].count,2);
 
+  // Observers cannot be given work requiring a formal submission.
+  await db.query("UPDATE project_members SET role='observer' WHERE project_id=$1 AND user_id=$2",
+    [pid,second.data.user.id]);
+  const forbiddenAssignment=await api(pm+'/deliverables',{method:'POST',body:{
+    idempotencyKey:randomUUID(),title:'Ineligible observer deliverable',
+    acceptanceCriteria:'Must not be assigned',assigneeId:second.data.user.id}});
+  assert.equal(forbiddenAssignment.status,400,
+    'Observers cannot own deliverables they are not permitted to submit');
+  await db.query("UPDATE project_members SET role='member' WHERE project_id=$1 AND user_id=$2",
+    [pid,second.data.user.id]);
   const decision=await api(pm+'/decisions',{method:'POST',body:{
     idempotencyKey:randomUUID(),title:'Use staged rollout',rationale:'Risk reduction'}});
   assert.equal(decision.status,201,JSON.stringify(decision.data));
