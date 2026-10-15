@@ -263,3 +263,13 @@
 **统计：** 正在应对的 mitigating 仍是未解决的风险，周/月报的 `open_risks` 源统计应使用 `status<>'resolved'`，不得因为切换状态隐瞒风险。**权限与 AI 边界：** 只有项目 owner/manager 有权正式评估和流转；普通成员/观察者仅阅读，AI 仍只能提出带来源的候选，owner/manager 接受后进入 open 未评估状态，不能自动推进为 resolved。系统管理员权限不替代项目经理角色。已记录的旧风险保持其已有 open/resolved 状态与缺失评估，不凭空补造风险概率、负责人或历史事件。
 
 **范围限制：** 本切片不等于项目级资源平衡、完整成本风险量化、基于历史证据的自动评分或生产环境实际迁移验收；依然需要 P1/P3/P4 门禁。
+
+## ADR-047 · 单项目唯一负责人和原子交接（2026-10-15）
+
+**问题：** 项目 owner 当前不能通过正式管理流程转让，projects.owner_id 和 project_members.role='owner' 也缺少唯一负责人数据库约束。直接把前 owner 降为 manager 会丢掉当前发起者的 members.manage；如果交接成功后 HTTP 响应丢失，现有 executePmCommand 会拒绝他的原命令重放，可能使人员误以为交接失败。
+
+**决定：** 增量 migration 020 为 projects 增加专属 ownership_revision，并在 project_members 上创建每项目仅唯一 owner 的 partial unique index。新 POST /projects/:id/ownership-transfer 要求 {idempotencyKey,expectedRevision,targetUserId}；只能当前项目与租户有效 owner 通过 members.manage 发起。事务内锁 projects 当前 owner/版本和目标成员/租户记录，先将原 owner 变为 manager，再将目标角色变为 owner，最后更新 projects.owner_id 并使 ownership_revision +1；对外始终同一事务提交，Project 始终保留一个负责人。目标必须已有项目及组织成员资格；不得自我移交。
+
+**幂等与权限：** executePmCommand 对 owner 转移专用的 replayAction:'read' 使重试者仍是同一项目有效成员时可取回自己已提交的 Receipt，但第一次执行仍必须在事务内验证 members.manage。这确保降为 manager 的原 owner 能安全获取同一操作结果，而不能发起新的转让；失去项目成员身份则不得再读取回执。
+
+**审计与界面：** Owner 移交与角色变更、project.owner_id/revision、Audit/DomainEvent/Outbox/Receipt 同事务，双向移交版本单调递增；Web 由 owner 选择项目成员并确认转让，交接成功刷新工作台权限视图。不得由 AI 代签，也不改全局模型管理员权限。完整组织治理、生产迁移演练仍另行验收。

@@ -52,6 +52,10 @@ npm run admin:grant -- --email=admin@example.com --confirm
 
 风险描述尚未发生但可能影响项目目标的事项，与已实际发生的「问题」分开登记。AI 可以建议风险，项目负责人或管理者必须人工审核后才形成正式开放风险。项目负责人/管理者评估发生可能性与影响（各 1–5）、指定项目内有效责任人并填写应对计划，才能把风险推进为「应对中」，之后可记录解决说明并关闭；情况变化时可重新打开。每次评估和状态变更可查历史，普通成员只能查看。正在应对的风险仍列入未解决风险报告；移除或降级负责人前必须移交未关闭风险。
 
+### 项目负责人交接
+
+项目负责人可以从已加入本项目、同时仍是组织成员的人员中选择接任者，经明确确认后转让 owner 身份；原负责人自动变为项目管理者。系统会同时更新项目正式负责人、角色和审计历史，并确保同一项目只能有一个 owner。交接要求最新版本，过期浏览器不能覆盖已发生的转交；网络超时后使用同一命令重试可以取得原结果，即使原 owner 已降级。交接后工作台自动刷新角色；系统 AI 模型供应商和密钥仍仅由系统总管理员配置。
+
 ## English
 
 ### Organization and project structure
@@ -95,4 +99,7 @@ Project owners can add registered members already authorized in the tenant, chan
 ### Human-owned risk assessments and response lifecycle
 
 Risks are prospective uncertainties, distinct from already-occurred issues. AI may propose a risk, but a project owner or manager must approve it before it becomes an open, unassessed official risk. Owners/managers score likelihood and impact (1–5 each), assign an active project owner for the response and record a response plan before transitioning to mitigating; resolution requires a human note and the risk can later be reopened. All assessments and transitions have auditable history; ordinary members may read but not manage them. Mitigating risks remain in unresolved-risk reports. Unresolved risk ownership must be reassigned before removing or demoting the owner to observer.
+### Project owner transfer
+
+A current project owner can explicitly transfer ownership to an active member of both the project and tenant. The previous owner becomes a project manager, and the database prevents multiple simultaneous owner roles. The transfer is version-checked, transactionally audited and idempotent: the former owner may replay the same completed receipt while still a project member, but cannot issue another transfer. The workspace refreshes role permissions after success. Global AI providers and credentials remain system-administrator-only.
 

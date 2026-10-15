@@ -157,3 +157,7 @@ CI 新增 `tools/test/task-linkage-smoke.mjs`：PostgreSQL 创建正式任务与
 ## ADR-046 · 风险命令与历史的 /review
 
 检查风险不等同 Issue：accepted AI Risk 初始 open/v1，无人类概率/计划/责任人且模型不能直接改变状态。风险评估需要 active tenant/project 非 observer owner、likelihood/impact 1–5、非空 responsePlan 与人类说明；动作仅 owner/manager 的 pm.plan 且需 UUID idempotencyKey 与 expectedVersion。open→mitigating 必须已有有效人类评估，mitigating→resolved 和 resolved→open 必须带说明，不能 open→resolved 跳状态；已关闭风险不得直接覆写评估。每次真实操作增加 version 和不可修改、跨项目复合 FK 的 risk_register_changes 历史，Audit/DomainEvent/Outbox/Receipt 同事务；原 key 请求回放不产生第二个历史，新 key 旧版本 409。普通成员操作 403、历史查询项目隔离，manager/member/observer 降权/移除遇未解决风险负责人必须先交接。报表 open+mitigating 都是未解决风险。验证新 019 迁移、API Smoke、TS/前端、Windows/Linux/Docker 以及静态扫描，最新 PR Head 五项 CI 与零未解决审查线程后方可合并。完整定量风险建模、迁移演练和生产安全仍未验收。
+
+## ADR-047 · 项目负责人交接 /review
+
+检查数据库迁移 020 未改写旧 SQL：每项目仅有一个 owner 角色（数据库唯一部分索引），独立 ownership_revision 初始 1、每次真正交接 +1，不误用 settings_revision/ai_authorization_version。只能当前 tenant/project 有效 owner 发起，target 必须是当前组织及项目成员且不是自己；原子地将原 owner 降为 manager、新 owner 升为 owner，并更新 project.owner_id。跨角色、新旧 owner 的成员行锁、项目行 FOR UPDATE 与版本检查必须序列化，其他读者不能看到双 owner。强制 UUID idempotencyKey，原 owner 降权后只允许仍有项目 read 授权的人重放自己的原 Receipt；新 key 必须再核验完整 members.manage，禁止借重放授权执行新操作。同 key 不同 payload 409，旧 ownership revision 409；事务中 Audit、DomainEvent/Outbox、Receipt 与正式数据同时成功或回滚。真实 PostgreSQL 回归覆盖首次移交、双向移交、旧 owner 降权、双 owner 23505、事件版本、系统管理账号不越权。合并须最新 HEAD 的五项 CI 全 success 和无未解决审查线程。

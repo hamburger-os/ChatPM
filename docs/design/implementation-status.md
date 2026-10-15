@@ -110,3 +110,7 @@
 ## ADR-046 · 风险登记簿与人工应对状态
 
 新增 `019_risk_register_lifecycle.sql`（不改历史迁移）为 Risk 增加 1–5 发生可能性/影响评估、当前负责人的历史性用户引用、应对计划、version 和不可变 `risk_register_changes` 记录；正式风险从 open 经 mitigating 才能到 resolved，resolved 重新打开需说明。AI 生成的 risk 候选只有经人工接受才进入未评估 open，模型不能自行关闭风险。项目 owner/manager 对评估与流转提交 UUID idempotencyKey + expectedVersion，当前 tenant/project 权限锁、风险行锁、成员责任验证、Audit/DomainEvent/Outbox/Receipt 与历史行同事务。Web 项目任务页增加风险评估、状态操作与历史查看，非管理员仅浏览。人员被降为 observer 或移出项目前要先移交未解决风险。周/月报把 mitigating 与 open 都列入未解决风险。真实 Postgres/API smoke 验证越权、未评估不能应对、重试/冲突、状态闭环、事件/历史版本与报告统计。仍不等于完整 RAID、量化预算/资源容量或真实模型质量、迁移恢复和生产验收。
+
+## ADR-047 · 原子项目负责人交接与唯一 owner
+
+新增 migration 020，为 Project 增加 ownership_revision，数据库对每项目 project_members 中 owner 设部分唯一索引，防止双负责人。当前 owner 可选择仍是有效组织及项目成员的接任人，服务端原子修改旧 owner→manager、接任人→owner 和 projects.owner_id，并提交 Audit/DomainEvent/Outbox/CommandReceipt；请求须含 UUID idempotencyKey、expectedRevision 与 targetUserId。重复的原移交命令在旧 owner 降为 manager 后，若他仍有项目只读权限，可以安全重放原回执；新命令仍需当前 owner 完整权限。Web 需用户确认并刷新角色视图，不能从 AI 聊天自动转让。PostgreSQL smoke 验证双向转交、旧版本冲突、原命令重放、新命令越权、唯一 owner 约束和事件版本 [2,3]。完整企业用户离职策略、Tenant Owner 转让、实机迁移/回滚仍需单独验收。

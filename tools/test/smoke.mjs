@@ -1032,6 +1032,84 @@ try{
   assert.equal(reportEvents.find(x=>x.kind==='report.generation_requested.v1')?.n,3);
   assert.equal(reportEvents.find(x=>x.kind==='report.published.v1')?.n,1);
 
+  // Ownership must be atomically unique and transferable without losing
+  // a retry receipt when the previous owner becomes a manager.
+  const transferPath='/projects/'+pid+'/ownership-transfer';
+  const transferDenied=await api(transferPath,{method:'POST',cookie:cookieB,
+    body:{idempotencyKey:randomUUID(),expectedRevision:1,targetUserId:uid}});
+  assert.equal(transferDenied.status,403,'A project member cannot claim owner authority');
+  const selfTransfer=await api(transferPath,{method:'POST',body:{
+    idempotencyKey:randomUUID(),expectedRevision:1,targetUserId:uid}});
+  assert.equal(selfTransfer.status,400);
+  const unknownSuccessor=await api(transferPath,{method:'POST',body:{
+    idempotencyKey:randomUUID(),expectedRevision:1,targetUserId:randomUUID()}});
+  assert.equal(unknownSuccessor.status,400,'Successor must be a current tenant/project member');
+  const transferInput={idempotencyKey:randomUUID(),expectedRevision:1,
+    targetUserId:second.data.user.id};
+  const transferred=await api(transferPath,{method:'POST',body:transferInput});
+  assert.equal(transferred.status,200,JSON.stringify(transferred.data));
+  assert.equal(transferred.data.ownerId,second.data.user.id);
+  assert.equal(transferred.data.previousOwnerId,uid);
+  assert.equal(transferred.data.ownershipRevision,2);
+  const transferredProject=await db.query(
+    'SELECT owner_id,ownership_revision FROM projects WHERE id=$1',[pid]);
+  assert.equal(transferredProject.rows[0].owner_id,second.data.user.id);
+  assert.equal(transferredProject.rows[0].ownership_revision,2);
+  const firstOwners=await db.query(
+    "SELECT user_id,role FROM project_members WHERE project_id=$1 AND role='owner'",
+    [pid]);
+  assert.deepEqual(firstOwners.rows.map(x=>x.user_id),[second.data.user.id]);
+  const afterTransferRoles=await api('/projects');
+  assert.equal(afterTransferRoles.data.projects.find(p=>p.id===pid).role,'manager');
+  const bProjects=await api('/projects',{cookie:cookieB});
+  assert.equal(bProjects.data.projects.find(p=>p.id===pid).role,'owner');
+  const originalTransferRetry=await api(transferPath,{method:'POST',body:transferInput});
+  assert.equal(originalTransferRetry.status,200,
+    'A former owner can replay their exact successful command while still a project member');
+  assert.equal(originalTransferRetry.data.ownershipRevision,2);
+  const transferKeyConflict=await api(transferPath,{method:'POST',body:{
+    ...transferInput,targetUserId:uid}});
+  assert.equal(transferKeyConflict.status,409,'A command key cannot mean another successor');
+  const formerOwnerNewTransfer=await api(transferPath,{method:'POST',body:{
+    idempotencyKey:randomUUID(),expectedRevision:2,targetUserId:uid}});
+  assert.equal(formerOwnerNewTransfer.status,403,
+    'Former owner cannot issue a NEW project transfer command');
+  const staleOwnerTransfer=await api(transferPath,{method:'POST',cookie:cookieB,
+    body:{idempotencyKey:randomUUID(),expectedRevision:1,targetUserId:uid}});
+  assert.equal(staleOwnerTransfer.status,409,'Transfer must reject old ownership revision');
+  const returnInput={idempotencyKey:randomUUID(),expectedRevision:2,targetUserId:uid};
+  const returned=await api(transferPath,{
+    method:'POST',cookie:cookieB,body:returnInput});
+  assert.equal(returned.status,200,JSON.stringify(returned.data));
+  assert.equal(returned.data.ownershipRevision,3);
+  assert.equal(returned.data.ownerId,uid);
+  const returnReplay=await api(transferPath,{
+    method:'POST',cookie:cookieB,body:returnInput});
+  assert.equal(returnReplay.status,200,'Demoted second owner may replay their previous receipt');
+  assert.equal(returnReplay.data.ownershipRevision,3);
+  const finalOwners=await db.query(
+    "SELECT user_id FROM project_members WHERE project_id=$1 AND role='owner'",
+    [pid]);
+  assert.deepEqual(finalOwners.rows.map(x=>x.user_id),[uid]);
+  const ownerEvents=(await db.query(`SELECT aggregate_version AS version
+    FROM domain_events WHERE project_id=$1 AND aggregate_id=$1
+      AND kind='project.ownership_transferred.v1' ORDER BY aggregate_version`,
+    [pid])).rows;
+  assert.deepEqual(ownerEvents.map(x=>x.version),[2,3]);
+  const ownerAudits=(await db.query(`SELECT count(*)::int AS n
+    FROM audit_entries WHERE project_id=$1
+      AND action='project.ownership_transferred.v1'`,[pid])).rows[0].n;
+  assert.equal(ownerAudits,2);
+  await assert.rejects(db.query(`
+    UPDATE project_members SET role='owner' WHERE project_id=$1 AND user_id=$2
+    `,[pid,second.data.user.id]),
+    (error)=>error?.code==='23505',
+    'Database unique partial index must prevent a second project owner');
+  const demotedAfterReturn=await api(memberPath,{method:'PATCH',body:{
+    idempotencyKey:randomUUID(),role:'member'}});
+  assert.equal(demotedAfterReturn.status,200,
+    'Former owner may be assigned a regular role after transfer');
+
   const removeDenied=await api('/projects/'+pid+'/members/'+second.data.user.id,{
     method:'DELETE',cookie:cookieB,body:{idempotencyKey:randomUUID()}});
   assert.equal(removeDenied.status,403);

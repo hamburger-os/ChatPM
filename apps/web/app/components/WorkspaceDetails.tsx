@@ -20,6 +20,7 @@ export default function WorkspaceDetails({project,user,messages}:{
   const [assignee,setAssignee]=useState('');
   const [due,setDue]=useState('');
   const [email,setEmail]=useState('');
+  const [nextOwnerId,setNextOwnerId]=useState('');
   const [notice,setNotice]=useState('');
   const [busy,setBusy]=useState(false);
   const createTaskIntent=useRef<string|null>(null);
@@ -50,6 +51,7 @@ export default function WorkspaceDetails({project,user,messages}:{
     if(!id||!project)return;
     let active=true;
     setTab('tasks');
+    setNextOwnerId('');
     setSettingsRevision(project.settings_revision);
     setSettings({aiEnabled:project.ai_enabled,workStart:project.work_start,
       workEnd:project.work_end,cooldownHours:project.cooldown_hours});
@@ -255,6 +257,28 @@ export default function WorkspaceDetails({project,user,messages}:{
         <input type="email" placeholder="添加组织内已注册成员" required value={email} onChange={e=>setEmail(e.target.value)}/>
         <button disabled={busy}>加入</button>
       </form>}
+      {owner&&<div className="stack">
+        <h3>正式项目负责人移交</h3>
+        <p className="hint">移交后新负责人拥有项目管理权限，当前负责人自动变为项目管理者。
+          此操作不会改变系统 AI 模型与密钥配置。</p>
+        <label>接任负责人
+          <select value={nextOwnerId} disabled={busy}
+            onChange={e=>setNextOwnerId(e.target.value)}>
+            <option value="">请选择已加入项目的成员</option>
+            {people.filter(x=>x.role!=='owner').map(x=>
+              <option value={x.id} key={x.id}>{x.display_name}（{x.role}）</option>)}
+          </select>
+        </label>
+        <small>负责人版本：v{project.ownership_revision}</small>
+        <button disabled={busy||!nextOwnerId} onClick={()=>{
+          const candidate=people.find(x=>x.id===nextOwnerId);
+          if(candidate&&window.confirm('确定将项目负责人移交给 '+candidate.display_name+
+            '？你将变为项目管理者。'))
+            governanceCommand('/ownership-transfer','POST',
+              {targetUserId:nextOwnerId,expectedRevision:project.ownership_revision},
+              ()=>window.location.reload());
+        }}>确认移交项目负责人</button>
+      </div>}
       {owner&&<div className="stack">
         <h3>AI 助手</h3>
         <label className="check"><input type="checkbox" checked={settings.aiEnabled}

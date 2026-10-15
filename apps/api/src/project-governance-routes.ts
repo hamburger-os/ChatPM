@@ -13,6 +13,10 @@ const invitation=commandKey.extend({
 const roleUpdate=commandKey.extend({
   role:z.enum(['manager','member','observer']),
 });
+const transferInput=commandKey.extend({
+  expectedRevision:z.number().int().positive(),
+  targetUserId:uuid,
+});
 const settingsInput=commandKey.extend({
   expectedRevision:z.number().int().positive(),
   aiEnabled:z.boolean(),
@@ -139,6 +143,63 @@ export function registerProjectGovernanceRoutes(
         return {response:{ok:true},aggregateType:'project_members',
           aggregateId:target,aggregateVersion:1,
           auditDetails:{previousRole:member.role}};
+      },
+    });
+  });
+  app.post('/projects/:id/ownership-transfer',async req=>{
+    const projectId=uuid.parse((req.params as {id:string}).id);
+    const actor=await authenticated(req);
+    const input=transferInput.parse(req.body);
+    return executePmCommand({
+      projectId,actorId:actor,idempotencyKey:input.idempotencyKey,
+      kind:'project.ownership_transferred.v1',action:'members.manage',
+      // After success the previous owner becomes manager, and may only
+      // replay his own completed receipt, never issue a new owner command.
+      replayAction:'read',payload:input,
+      mutate:async db=>{
+        if(input.targetUserId===actor)
+          fail(400,'项目负责人不能移交给自己');
+        const project=(await db.query<{
+          owner_id:string;ownership_revision:number;
+        }>(`SELECT owner_id,ownership_revision FROM projects
+          WHERE id=$1 FOR UPDATE`,[projectId])).rows[0];
+        if(!project)fail(404,'项目不存在');
+        if(project.owner_id!==actor)fail(403,'只有当前项目负责人可以转让项目');
+        if(project.ownership_revision!==input.expectedRevision)
+          fail(409,'项目负责人版本已更新，请刷新后再移交');
+        const target=(await db.query<{role:string}>(`
+          SELECT pm.role FROM project_members pm
+          JOIN projects p ON p.id=pm.project_id
+          JOIN tenant_members tm ON tm.tenant_id=p.tenant_id AND tm.user_id=pm.user_id
+          WHERE pm.project_id=$1 AND pm.user_id=$2
+          FOR SHARE OF pm,tm
+        `,[projectId,input.targetUserId])).rows[0];
+        if(!target)fail(400,'新负责人必须是当前组织与项目成员');
+        if(target.role==='owner')fail(409,'该人员已经是项目负责人');
+        const previous=await db.query(`
+          UPDATE project_members SET role='manager'
+          WHERE project_id=$1 AND user_id=$2 AND role='owner' RETURNING user_id
+        `,[projectId,actor]);
+        if(!previous.rowCount)fail(409,'项目负责人已变化');
+        const promoted=await db.query(`
+          UPDATE project_members SET role='owner'
+          WHERE project_id=$1 AND user_id=$2 RETURNING user_id
+        `,[projectId,input.targetUserId]);
+        if(!promoted.rowCount)fail(409,'新负责人已经离开项目');
+        const updated=await db.query<{ownership_revision:number}>(`
+          UPDATE projects SET owner_id=$2,
+            ownership_revision=ownership_revision+1
+          WHERE id=$1 AND owner_id=$3 AND ownership_revision=$4
+          RETURNING ownership_revision
+        `,[projectId,input.targetUserId,actor,input.expectedRevision]);
+        if(!updated.rowCount)fail(409,'项目负责人已被其他人变更');
+        const revision=updated.rows[0].ownership_revision;
+        return {response:{ok:true,projectId,previousOwnerId:actor,
+          ownerId:input.targetUserId,ownershipRevision:revision},
+          aggregateType:'projects',aggregateId:projectId,
+          aggregateVersion:revision,
+          auditDetails:{previousOwnerId:actor,ownerId:input.targetUserId,
+            previousTargetRole:target.role}};
       },
     });
   });

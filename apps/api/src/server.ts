@@ -146,7 +146,7 @@ app.get('/tenants',async req=>{
 app.get('/projects',async req=>{
   const userId=await authenticated(req);
   const {rows}=await pool.query(
-    `SELECT p.id,p.name,p.timezone,p.ai_enabled,p.work_start,p.work_end,p.cooldown_hours,p.settings_revision,pm.role
+    `SELECT p.id,p.name,p.timezone,p.ai_enabled,p.work_start,p.work_end,p.cooldown_hours,p.settings_revision,p.owner_id,p.ownership_revision,pm.role
      FROM projects p JOIN project_members pm ON pm.project_id=p.id
      JOIN tenant_members tm ON tm.tenant_id=p.tenant_id AND tm.user_id=pm.user_id
      WHERE pm.user_id=$1 ORDER BY p.created_at DESC`,[userId]);
@@ -163,7 +163,7 @@ app.post('/projects',async(req,reply)=>{
       [input.tenantId,userId])).rows[0];
     if(!ten) fail(403,'没有创建项目权限');
     const row=(await db.query(
-      'INSERT INTO projects(tenant_id,name,owner_id,timezone) VALUES($1,$2,$3,$4) RETURNING id,tenant_id,name,timezone,ai_enabled,work_start,work_end,cooldown_hours,settings_revision',
+      'INSERT INTO projects(tenant_id,name,owner_id,timezone) VALUES($1,$2,$3,$4) RETURNING id,tenant_id,name,timezone,ai_enabled,work_start,work_end,cooldown_hours,settings_revision,owner_id,ownership_revision',
       [ten.tenant_id,input.name,userId,input.timezone])).rows[0];
     await db.query('INSERT INTO project_members(project_id,user_id,role) VALUES($1,$2,$3)',
       [row.id,userId,'owner']);
@@ -177,7 +177,7 @@ app.get('/projects/:id',async req=>{
   const userId=await authenticated(req);
   await member(userId,projectId);
   const {rows}=await pool.query(
-    `SELECT id,name,timezone,ai_enabled,work_start,work_end,cooldown_hours,settings_revision FROM projects WHERE id=$1`,
+    `SELECT id,name,timezone,ai_enabled,work_start,work_end,cooldown_hours,settings_revision,owner_id,ownership_revision FROM projects WHERE id=$1`,
     [projectId]);
   return {project:rows[0]};
 });

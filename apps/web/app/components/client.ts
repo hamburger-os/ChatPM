@@ -3,7 +3,7 @@ export type Tenant={id:string,name:string,role:'admin'|'member'};
 export type Role='owner'|'manager'|'member'|'observer';
 export type Project={id:string,name:string,role:Role,ai_enabled:boolean,
   timezone:string,work_start:number|null,work_end:number|null,cooldown_hours:number|null,
-  settings_revision:number};
+  settings_revision:number,owner_id:string,ownership_revision:number};
 export type Person={id:string,display_name:string,email:string,role:Role};
 export type Message={id:string,seq:number,kind:string,content:string,author:string|null,
   author_id?:string|null,created_at:string,client_nonce?:string};
