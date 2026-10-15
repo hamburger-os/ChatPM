@@ -65,6 +65,10 @@ npm run admin:grant -- --email=admin@example.com --confirm
 
 部门、项目集、项目组合创建，以及组织成员管理、项目归属和人员资源投入的所有保存操作现在具备持久幂等回执。相同操作在网络超时后可以原样重试，不会额外生成一条项目组合、资源分配或审计记录。普通组织成员不能因此获得管理员操作权限；已经撤销管理员权限的人员也不能通过旧命令恢复管理权。更改表单内容会产生新的操作键。组织项目集与项目组合不同于项目，组织命令记录在租户级，不冒用某个项目的领域事件。
 
+### 跨项目投入比例与容量检查
+
+组织管理员在资源投入计划里为同一人员登记多个项目时，系统按日期汇总所有项目的百分比；同一天总和不得超过 100%，否则拒绝保存。开始日、结束日均计入占用。例如 10 月 1–31 日已投入 30%，在 10 月 10–20 日另登记 70% 可以通过，再多 1% 就不能通过；11 月 1 日则可重新安排 100%。网络超时重试同一操作不会重复登记。该比例仅代表规划中的资源容量，不是实际工时记录。
+
 ## English
 
 ### Organization and project structure
@@ -118,4 +122,7 @@ Approval of a ChangeRequest does not mean a scope, schedule or responsibility ch
 ### Safe retries for organization management
 
 Creation of departments, programs and portfolios, membership/role edits, project classification and resource allocation now require durable tenant-scoped idempotency keys. Retrying the same submission after a lost HTTP response returns the original result without creating another portfolio, allocation or audit entry. Only active tenant administrators can issue these operations; a revoked administrator cannot regain access by replaying an old command. Editing an intent creates a new key. Organization actions do not masquerade as project-scoped DomainEvents.
+### Cross-project allocation capacity
+
+A tenant administrator may plan a person's contributions to several projects, but the sum for that person on any given date must not exceed 100%. Both start and end dates count. For example, an existing 30% allocation for October 1–31 may coexist with another 70% for October 10–20, but an extra 1% on an overlapping day will be rejected; the person can be allocated 100% starting November 1. Retrying the same saved command never creates a duplicate. Percentages represent planned capacity rather than actual timesheets.
 

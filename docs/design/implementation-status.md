@@ -130,3 +130,7 @@ Docker 部署 Smoke 原先仅验证 pg_dump custom-format 文件头和 pg_restor
 ## ADR-051 · 组织治理写操作的持久幂等回执
 
 已将组织管理 8 个写 API（部门/组合/项目集创建、项目归属、组织成员加入与角色、部门人员、资源投入）统一要求 UUID idempotencyKey，并更新组织前端同一操作网络重试沿用该 key；原先 tenant 互斥锁与当前管理员行级授权不变。OrganizationCommand 使用现有 021_tenant_command_receipts.sql 租户命令表，以当前 tenant/actor/action/key/payload_sha256 保证操作与 OrganizationAudit/Receipt 同一事务；相同 key+payload 返回原结果，不重复组织业务记录/审计；同 key 不同 payload 409，无 key 400，非 admin 403。真实 PostgreSQL Organization Integration 和 API Smoke 覆盖回执、业务失败回滚、审计失败回滚、撤权和 4 路并发 portfolio 创建、资源投入重放、组织成员邀请重放。没有引入虚构的 projectId 或 Tenant Outbox；组织层 DomainEvent/Outbox、项目分类乐观锁与资源累计投入限制仍是后续治理工作，不能宣称全部 V2 完成。
+
+## ADR-052 · 跨项目资源容量守卫
+
+跨项目资源投入目前在 resource-allocation.ts 领域服务计算当前组织内同一人员在拟登记日期闭区间所有项目的每日累计峰值。实现不展开日序列：只检查申请开始日以及区间内已有投入的开始日；计划分配为固定正百分比，最大值只可能出现在这些变化边界。新资源必须经当前组织管理员 organizationCommand 事务、tenant-level advisory 锁、项目和人员组织成员资格 FOR SHARE 验证后，才允许插入；现有峰值+新比例超过 100% 返回 409，事务回滚，不产生虚假资源、组织审计或新回执。普通成员、跨租户/跨项目对象不能写资源，同一命令重试复用原 receipt。项目组、项目集、项目组合分类不隔离同一人的容量。Web 明确提示日期包含两端以及累计比例规则，PostgreSQL Smoke 包含 30+70 合法、溢出1%冲突、10月31日边界、次日100%不相交、2个60%不同 key 并发仅1成功、另一人员独立100%和准确 Audit 行数。当前只管通过此资源创建路径的计划登记，数据库既有超过100%的历史记录不会改写；未来编辑、批量导入与其它写入口需要继承同一约束；真实部门资源计划、实际工时与生产恢复尚未验收。

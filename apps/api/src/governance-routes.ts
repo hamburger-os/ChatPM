@@ -2,6 +2,7 @@ import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import { pool } from '../../../packages/core/src/db.ts';
 import { organizationCommand } from '../../../packages/core/src/organization-commands.ts';
+import { recordResourceAllocation } from '../../../packages/core/src/resource-allocation.ts';
 import { requireTenant } from '../../../packages/core/src/permissions.ts';
 
 const uuid=z.string().uuid();
@@ -158,14 +159,11 @@ export function registerGovernanceRoutes(app:FastifyInstance,
       .refine(x=>x.startDate<=x.endDate,'结束日期不得早于开始日期').parse(req.body);
     const allocation=await organizationCommand(tenantId,user,'allocation.recorded',
       {idempotencyKey:v.idempotencyKey,payload:v},async db=>{
-      const {rows}=await db.query(`INSERT INTO resource_allocations
-        (tenant_id,project_id,user_id,percentage,start_date,end_date)
-        SELECT p.tenant_id,p.id,pm.user_id,$4,$5,$6
-        FROM projects p JOIN project_members pm ON pm.project_id=p.id AND pm.user_id=$3
-        WHERE p.tenant_id=$1 AND p.id=$2 RETURNING id`,
-        [tenantId,v.projectId,v.userId,v.percentage,v.startDate,v.endDate]);
-      if(!rows.length)deny(400,'资源只能分配给本组织内已加入该项目的成员');
-      return {value:{id:rows[0].id as string},targetId:rows[0].id as string,
+      const allocation=await recordResourceAllocation(db,{
+        tenantId,projectId:v.projectId,userId:v.userId,percentage:v.percentage,
+        startDate:v.startDate,endDate:v.endDate,
+      });
+      return {value:allocation,targetId:allocation.id,
         metadata:{projectId:v.projectId,userId:v.userId,percentage:v.percentage,
           startDate:v.startDate,endDate:v.endDate}};
     });

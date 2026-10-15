@@ -137,6 +137,8 @@ export default function OrganizationPanel({tenantId}:{tenantId:string}){
     </div>}
     {tab==='resources'&&<div className="stack organization-section">
     <h3>跨项目资源投入计划</h3>
+    <p className="hint">同一人员在所有项目中的任意一天投入比例之和不能超过 100%。
+      日期包含开始日和结束日；如果已有安排冲突，请调整日期或比例。</p>
     <form className="stack" onSubmit={e=>{e.preventDefault();void run(async()=>{
       await write(base+'/allocations','POST',{
         projectId,userId:assignee,percentage,startDate,endDate});

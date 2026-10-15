@@ -311,3 +311,13 @@
 **决定：** 复用迁移 021 的 tenant_command_receipts，而不是给组织创建伪造 projectId。组织命令服务 organisationCommand 改为强制 {idempotencyKey,payload} 参数，在现有租户互斥 advisory transaction lock 和 tenant_members FOR UPDATE 的当前管理员验证后，按 (tenantId,actorId,action,key) 原子插入 receipt，SHA256(JSON.stringify(payload)) 判断 key 是否复用给其他输入；成功写入业务状态与 OrganizationAudit 后存储原 result；同 actor/tenant/action/key/payload 的重放只返回旧值，不再次写入或审计；同 key 不同 payload HTTP 409。未提供 UUID key HTTP 400，旧无 key 写路径不再允许。原始成员被撤权后不能用回执绕过组织管理员身份验证；项目 owner 无法代替 tenant admin。所有 8 条治理命令与客户端统一迁移：部门、组合、项目集创建，项目分类，组织成员加入/调角、部门人员、资源投入。
 
 **事实边界：** 部门、组合、项目集不依附单个项目，因此使用租户级持久回执及原有组织级审计，不能冒充项目级 DomainEvent/Outbox。下一阶段若加入独立 tenant domain event + outbox，必须有真正的消费/投递定义；本次不引入空 broker，不宣称 P2 整体完成。项目分类仍是 last-write-wins，此批只保证每个重试意图只执行一次，乐观版本与资源总容量约束属于后续治理。
+
+## ADR-052 · 跨项目资源日容量不超过 100%（2026-10-15）
+
+**问题：** 组织管理员可为同一人员的多项目、多段重叠日期登记百分比投入，已有范围校验只限制单条记录为 1–100%，不保证同一人同一天总投入不超过 100%。项目集、项目组合和部门的资源视图因此可能显示看似合法但无法执行的工作计划。网络重复提交已由 ADR-051 的 tenant receipt 去重，但不同 key 的并发登记仍必须校验累计容量。
+
+**决定：** 新的资源容量领域服务 `resource-allocation.ts` 在组织命令事务内计算**整个租户同一人员**于拟登记日期闭区间每个投入变化边界的最大已有百分比，以 `existingPeak+requestedPercentage<=100` 决定能否加入。边界集合为拟登记开始日和区间内所有已有分配的开始日；投入百分比只在已有分配起止日变动，故无需按日展开整个年份。涵盖跨项目、同项目、相同日期、部分重叠、前一项贯穿请求起始日期和端点接壤（结束日当天仍占用容量），区间完全不重叠可复用 100%。必须在同一事务内使用既有 `organizationCommand` 租户 advisory 互斥锁、当前 tenant admin 行锁和持久 UUID receipt；校验成功后才能写业务行和 OrganizationAudit/Receipt。超额 HTTP 409，不写分配、审计和新回执；同 key 同 payload 成功回放不能重新分配或因后来的真实分配误判为失败。
+
+**权限与数据：** 输入项目、人员必须是当前同一租户、且该人是项目成员；组织内其他项目的分配同样计入，不能通过在多个项目/部门分别登记规避上限。保留旧资源记录且不虚构历史真实工时。当前系统的所有资源分配 API 都经 organizationCommand 全租户互斥，但数据库直接手工改写不在此应用层校验覆盖范围内；未来若增加更新/删除、批量导入或独立 Worker 写资源，必须共享同一容量锁/服务，或升级成数据库触发器/强制约束。此规则是计划投入容量，不代表每人实际考勤或每日工时实测。
+
+**验收：** 真 PostgreSQL API 测试覆盖同人多项目 60+40 成功、60+41 失败、相交边界、完全不重叠、日中重叠、不同人员互不影响、多份不同 key 同时写 60+60 只有一份成功；原 key 重试只返回相同 ID，一次失败可用新合法计划重试；同键不同负载 409，越权和项目成员资格仍拒绝。
