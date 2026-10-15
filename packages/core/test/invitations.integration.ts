@@ -43,6 +43,21 @@ try{
     passwordHash:'unused',
   }),/邀请码无效/,'Consumed token must never create another identity');
 
+  await assert.rejects(createTenantInvitation({
+    tenantId:tenant.id,actorId:newMember,email:'unauthorized-'+suffix+'@example.test',
+    idempotencyKey:randomUUID(),
+  }),/没有该组织的管理权限/,'Regular members cannot issue invitations');
+
+  const expired=await createTenantInvitation({tenantId:tenant.id,actorId:a.id,
+    email:'expired-'+suffix+'@example.test',idempotencyKey:randomUUID()});
+  await pool.query(`UPDATE tenant_invitations SET
+    created_at=NOW()-INTERVAL '9 days',expires_at=NOW()-INTERVAL '1 day'
+    WHERE id=$1`,[expired.invitation.id]);
+  await assert.rejects(acceptTenantInvitationNew({
+    token:expired.code!,email:'expired-'+suffix+'@example.test',
+    displayName:'Expired',password:'Strong-password-12345',
+  }),/邀请码无效/,'Expired invitations cannot be claimed');
+
   const existing=(await pool.query(
     "INSERT INTO users(email,display_name,password_hash) VALUES($1,'Existing user','unused') RETURNING id",
     ['existing-'+suffix+'@example.test'])).rows[0];
