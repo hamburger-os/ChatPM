@@ -339,3 +339,11 @@
 **决定：** 重复成员邀请、同角色修改、相同部门角色重复指派统一返回 409，且不新建审计与回执；同 key+payload 的已完成操作继续重放成功结果。只对组织角色变更命令开启更窄的 replayAccess='member'：租户 advisory 事务锁和成员行锁依然有效，当前仍是 tenant member 的原 actor 可以读取自己已完成、同 tenant/kind/key/hash 的 Receipt；若尚无该 Receipt，则必须有 admin 权限才允许新 mutation。Role route 前置验证只要求 tenant member，由 organizationCommand 在事务内重新决定新命令权限。失去组织成员身份的人不能读取回执。
 
 **约束：** 必须至少保留一位租户 admin，成员角色修改和最后管理员检查在统一租户 advisory lock 下执行；原 key 不同 payload 409、无 key 400、普通 member 不能发出新的组织管理操作。其它组织命令严格保持 admin 回放要求，不修改全局模型管理员身份。不改既有迁移与 API 的其它契约。
+
+## ADR-055 · 项目设置必须真正变化才增加版本与发出事件（2026-10-15）
+
+**问题：** 项目负责人在 Web 重复点击「保存设置」而 AI 开关、提醒时段与冷却间隔均未发生变化时，旧 settings PATCH 仍在同一事务写入 settings_revision+1，创建 project.settings_changed.v1、DomainEvent、Outbox、Audit/Receipt，并重新计算所有任务 FollowUp。这些既不是实际策略更改，也会错误消耗其他浏览器的设置版本。项目启用 AI 的授权账本须保持其自身真实变化版本。
+
+**决定：** 项目 settings 修改保持当前 tenant/project owner 的 executePmCommand 事务锁与 UUID idempotencyKey/expectedRevision；在锁住 Project 并确认 expectedRevision 仍最新之后，比较 ai_enabled/work_start/work_end/cooldown_hours 全部规范化字段。当新设置与数据库逐项相等时，以 409 拒绝新命令，不插入正式成功 Receipt、Audit、DomainEvent、Outbox，也不重新生成 FollowUp；相同 key/payload 的**已经完成**的真实变更命令继续返回原回执，不再次比较或写入。旧版本的请求仍以版本冲突 409 被拒绝，不把无操作判断作为绕过并发锁的方法。
+
+**Web：** 维护最后一次已确认成功保存的设置快照，只有表单数据不同才启用保存按钮；成功提交后更新设置版本和基线，后续又修改表单形成新意图。其他人修改导致的旧版本冲突仍由服务端返回，用户须刷新并确认。AI 默认模型与密钥仍由总管理员配置，触发器只在 AI enable 标志实际改变时推进 AI 授权版本。没有新增数据库迁移、无兼容无键 POST。

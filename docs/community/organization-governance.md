@@ -79,6 +79,12 @@ npm run admin:grant -- --email=admin@example.com --confirm
 
 若组织已有另一位管理员，当前管理员可在明确确认后将自己降为普通成员；成功后工作台重新载入权限。响应丢失时仍可重试**自己原来那次已完成的降权命令**，但降权后不能凭新的命令键修改组织人员。组织不能移除最后一名管理员。AI 模型、项目管理角色与系统总管理员资格均不会因此被自动授予。
 
+### 项目设置只有真正改变才提交
+
+项目 owner 可以控制自己项目的 AI 消息分析开关以及工作日提醒时段与间隔。只有与当前项目记录不同的设置，才能生成新的设置版本、变更审计和项目领域事件。工作台表单没有未保存的修改时，「保存设置」按钮不可用。网络中断时使用原操作 UUID 重试，仍可取回已成功保存的回执；如果用一个新的操作键保存与当前项目完全相同的设置，服务器会拒绝这次无操作请求，不重复计算提醒或推进版本。
+
+如果另一个窗口已经修改了项目设置，旧版本保存也会被拒绝，需要刷新后重新确认。项目 AI 开关授权版本仅在开关实际改变时前进；模型供应商、默认模型与 API Key 始终由系统总管理员统一配置。
+
 ## English
 
 ### Organization and project structure
@@ -144,4 +150,10 @@ A project may belong to a primary department, to a program, or directly to a por
 Organization membership and role audit records should describe genuine changes. A **new** invitation for an already enrolled tenant member, a role change to the person's existing tenant role, or an unchanged department assignment is rejected rather than recorded as a successful change. Retrying the **original completed command** with the same UUID safely replays its receipt without creating another audit entry.
 
 If another tenant administrator remains, an administrator can explicitly confirm their own demotion to an ordinary member. The workspace refreshes the user's permissions after success. A lost response can be recovered by replaying only that same already-completed demotion command while the issuer remains a tenant member; a new privileged command is denied. The last administrator cannot be demoted. AI model actions and system administrator permissions remain separate from tenant governance.
+
+### Project settings are saved only when they change
+
+Project owners can configure AI message analysis and the project's reminder window and cooldown. A new project-settings revision, audit entry and domain event are created only when one of those values actually changes. The workspace disables **Save settings** when the form matches the last successfully saved values. Retrying an earlier completed write with its original UUID returns the original receipt; sending a new command with unchanged values is rejected without replanning reminders or incrementing the revision.
+
+A stale settings revision from another browser is also rejected so the owner can refresh and review the latest values. AI authorization version changes only when the enablement flag changes; global model providers, default model and API keys remain system-administrator-only.
 

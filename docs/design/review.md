@@ -191,3 +191,7 @@ CI 新增 `tools/test/task-linkage-smoke.mjs`：PostgreSQL 创建正式任务与
 ## ADR-054 · 组织治理无操作/降权回放 /review
 
 检查 organizationCommand 默认仍持 tenant-governance advisory 互斥锁与当前 admin 角色行锁；只有 tenant.member_role_changed 选择 replayAccess='member'，旧 admin 降为 member 后可凭相同 actor/tenant/kind/key/hash 取得其已完成命令回执，不能使用新 key 发起任何组织角色更改。不同 payload 同 key 409，已撤销 tenant 成员权不能读取回执。重复成员邀请、同角色修改、部门角色相同重新指派的新命令均 409 且没有新审计/receipt；同一 key 原操作可以重放。至少一位 tenant admin 不变量未削弱。Web 保留同意图 UUID 重试。真实 Postgres smoke 覆盖普通成员拒绝、同角色无操作、双管理员自降权后的精确回放、部门角色无操作、回执与审计计数及现有资源容量/项目创建回归；最新 SHA 的五项 CI 全通过、无未解决 review thread 后合并。
+
+## ADR-055 · 项目设置无操作/版本守卫 /review
+
+在事务内验证当前组织及项目 owner、UUID command key 与期望设置版本后，对 ai_enabled/work_start/work_end/cooldown_hours 做全字段比较；值均相同时新 key 返回 409，项目 settings_revision、AI 授权 version、任务 FollowUp、项目 domain_events/audit/outbox 和新成功 Receipt 均保持不变。已完成真实更改的相同 key+hash 重放依旧 200，改 payload 同 key 409，新 key 旧 expectedRevision 409；正常真实变化照常+1、重新计算 FollowUp 并留下单次事件。Web 在没有未保存变更时禁用「保存设置」，成功后以刚提交的值更新基线，切换项目时重置基线。回归包含原 PostgreSQL API Smoke、Owner/tenant 权限、AI 版本触发器、并发冲突、Windows/Linux/Docker、文档与安全扫描；最新 PR Head 五项 CI success 且无未解决 review 线程才能合并。

@@ -266,3 +266,7 @@ AI 可讨论资源风险，但不能因聊天建议绕过真实组织管理员�
 ## ADR-054 · 人员写入必须对应真实变更，AI 不能代签管理员操作
 
 组织成员已存在时重复邀请、同一组织角色重复设置、部门成员重复指派同一角色的新命令应当拒绝为 409（不生成虚假的 OrganizationAudit 与租户 Receipt）；已提交成功的同一 actor/tenant/action/key/hash 请求可以返回旧 Receipt。只有组织角色变更命令允许现为普通组织成员的**原管理员**读取自己已完成的降权 Receipt，任何新的写入仍须由事务内当前 tenant admin 授权。租户最后一名 admin 不可降权。AI 不能因为会话、模型建议或候选审核替代组织管理员修改角色，也不能提升平台系统管理员权限。服务端的权限、回执哈希和行锁是约束根源，浏览器的确认和刷新只是 UX，不是安全授权依据。
+
+## ADR-055 · 项目设置状态变化、模型授权版本与幂等事件
+
+项目设置 PATCH 通过 executePmCommand 在当前 tenant/project owner 写事务内比较 expectedRevision 与 ai_enabled、work_start、work_end、cooldown_hours 当前数据库值；如果所有字段相同，新 UUID 命令返回 409，不产生 project.settings_changed.v1 领域事件、Outbox 通知、Audit 或 CommandReceipt，也不执行 syncFollowup。已完成真正修改的相同 actor/project/kind/key/hash 命令重试应在 mutate 之前返回原回执，不改变后续版本。系统独立的 ai_authorization_version 仅在 ai_enabled 真实变化时由数据库触发器推进，重存同样设置或只更改提醒时间不能冒充一次新的 AI 授权。网页保存按钮只在本地表单不同于最后成功保存快照时启用，但最终写权限、版本与变更判断只能由服务器提供，模型不能改写这些规则或自行启用 AI。

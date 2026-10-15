@@ -1117,6 +1117,16 @@ try{
     version:2,assigneeId:uid,dueDate:new Date(Date.now()+86400000).toISOString().slice(0,10),
   }});
   assert.equal(edited.status,200,'Owner may edit task plan');
+  const noOpInitialSettings=await api('/projects/'+pid+'/settings',{
+    method:'PATCH',body:{idempotencyKey:randomUUID(),expectedRevision:1,
+      aiEnabled:false,workStart:null,workEnd:null,cooldownHours:null}});
+  assert.equal(noOpInitialSettings.status,409,
+    'Saving unchanged initial settings cannot claim a real policy change');
+  const initialSettings=(await db.query(`SELECT settings_revision,
+    ai_authorization_version FROM projects WHERE id=$1`,[pid])).rows[0];
+  assert.equal(initialSettings.settings_revision,1);
+  assert.equal(Number(initialSettings.ai_authorization_version),1,
+    'Unchanged AI enabled flag must not advance authorization version');
   const settingsCommand={idempotencyKey:randomUUID(),expectedRevision:1,
     aiEnabled:false,workStart:9,workEnd:18,cooldownHours:24};
   const configured=await api('/projects/'+pid+'/settings',{
@@ -1127,6 +1137,17 @@ try{
     method:'PATCH',body:settingsCommand});
   assert.equal(configurationReplay.status,200);
   assert.equal(configurationReplay.data.settingsRevision,2);
+  const noOpConfiguredSettings=await api('/projects/'+pid+'/settings',{
+    method:'PATCH',body:{...settingsCommand,idempotencyKey:randomUUID(),
+      expectedRevision:2}});
+  assert.equal(noOpConfiguredSettings.status,409,
+    'A fresh command with the same persisted settings must be a no-op');
+  const settingsAfterNoop=(await db.query(`SELECT settings_revision,
+    ai_authorization_version FROM projects WHERE id=$1`,[pid])).rows[0];
+  assert.equal(settingsAfterNoop.settings_revision,2,
+    'No-op must not increment the project settings version');
+  assert.equal(Number(settingsAfterNoop.ai_authorization_version),1,
+    'Saving only reminder settings must not advance AI authorization');
   const settingsConflict=await api('/projects/'+pid+'/settings',{
     method:'PATCH',body:{...settingsCommand,workStart:10}});
   assert.equal(settingsConflict.status,409,'Same key cannot hide altered project settings');
@@ -1146,7 +1167,23 @@ try{
   const settingsEvents=(await db.query(`SELECT count(*)::int AS n
     FROM domain_events WHERE project_id=$1 AND aggregate_id=$2
       AND kind='project.settings_changed.v1'`,[pid,pid])).rows[0].n;
-  assert.equal(settingsEvents,1,'Stale settings writes must not emit extra events');
+  assert.equal(settingsEvents,1,'No-op, replay and stale writes must not emit extra events');
+  const settingsReceipts=(await db.query(`SELECT count(*)::int AS n
+    FROM command_receipts WHERE project_id=$1
+      AND kind='project.settings_changed.v1'`,[pid])).rows[0].n;
+  assert.equal(settingsReceipts,1,
+    'Only one real settings change may create a durable command receipt');
+  const settingsAudit=(await db.query(`SELECT count(*)::int AS n
+    FROM audit_entries WHERE project_id=$1 AND action='project.settings_changed.v1'`,
+    [pid])).rows[0].n;
+  assert.equal(settingsAudit,1,'No-op settings saves must not create audit entries');
+  const settingsOutbox=(await db.query(`SELECT count(*)::int AS n
+    FROM outbox_events o JOIN domain_events d
+      ON o.payload->>'domainEventId'=d.id::text
+    WHERE d.project_id=$1 AND d.kind='project.settings_changed.v1'`,
+    [pid])).rows[0].n;
+  assert.equal(settingsOutbox,1,
+    'No-op settings saves must not enqueue new DomainEvent notifications');
   const followup=await db.query(
     'SELECT active FROM followup_plans WHERE task_id=$1',[tid]);
   assert.equal(followup.rows[0]?.active,true,'Task follow-up must be durable');
