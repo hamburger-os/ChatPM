@@ -95,7 +95,7 @@ export function registerPmRoutes(app:FastifyInstance,
           const active=await db.query(`SELECT 1 FROM project_members pm
             JOIN projects p ON p.id=pm.project_id
             JOIN tenant_members tm ON tm.tenant_id=p.tenant_id AND tm.user_id=pm.user_id
-            WHERE pm.project_id=$1 AND pm.user_id=$2 FOR SHARE OF pm,tm`,
+            WHERE pm.project_id=$1 AND pm.user_id=$2 AND pm.role<>'observer' FOR SHARE OF pm,tm`,
             [projectId,assignee]);
           if(!active.rowCount)fail(400,'负责人必须是当前项目和组织成员');
         }
@@ -112,6 +112,48 @@ export function registerPmRoutes(app:FastifyInstance,
   });
 
   const versioned=z.object({idempotencyKey:uuid,expectedVersion:z.number().int().positive()});
+  const reassignSchema=versioned.extend({
+    assigneeId:uuid,note:z.string().trim().min(1).max(2000),
+  });
+  app.post('/projects/:projectId/pm/deliverables/:itemId/reassign',async req=>{
+    const projectId=context(req),actor=await authenticated(req);
+    const id=uuid.parse((req.params as {itemId:string}).itemId);
+    const input=reassignSchema.parse(req.body);
+    return executePmCommand({
+      projectId,actorId:actor,action:'pm.plan',
+      kind:'pm.deliverable.reassigned.v1',
+      idempotencyKey:input.idempotencyKey,payload:{id,...input},
+      mutate:async db=>{
+        const before=(await db.query<{
+          version:number;status:string;assignee_id:string;
+        }>(`SELECT version,status,assignee_id FROM project_deliverables
+          WHERE project_id=$1 AND id=$2 FOR UPDATE`,[projectId,id])).rows[0];
+        if(!before)fail(404,'交付物不存在');
+        if(before.version!==input.expectedVersion)fail(409,'交付物版本冲突');
+        if(before.status==='accepted')fail(409,'已验收交付物不能重新指派');
+        if(before.assignee_id===input.assigneeId)fail(409,'交付物责任人未发生变化');
+        const eligible=await db.query(`SELECT 1 FROM project_members pm
+          JOIN projects p ON p.id=pm.project_id
+          JOIN tenant_members tm ON tm.tenant_id=p.tenant_id AND tm.user_id=pm.user_id
+          WHERE pm.project_id=$1 AND pm.user_id=$2 AND pm.role<>'observer'
+          FOR SHARE OF pm,tm`,[projectId,input.assigneeId]);
+        if(!eligible.rowCount)fail(400,'新交付物负责人必须是当前项目有效成员');
+        // Any prior submission belongs to the former assignee. The successor
+        // must submit again and receive independent acceptance.
+        const updated=(await db.query(`UPDATE project_deliverables SET
+          assignee_id=$3,status='planned',submitted_by=NULL,submitted_at=NULL,
+          reviewed_by=NULL,reviewed_at=NULL,version=version+1
+          WHERE project_id=$1 AND id=$2 RETURNING *`,
+          [projectId,id,input.assigneeId])).rows[0];
+        return {response:{item:updated},aggregateType:'deliverables',
+          aggregateId:id,aggregateVersion:updated.version,
+          auditDetails:{previousAssigneeId:before.assignee_id,
+            newAssigneeId:input.assigneeId,previousStatus:before.status,
+            note:input.note}};
+      },
+    });
+  });
+
   app.post('/projects/:projectId/pm/deliverables/:itemId/submit',async req=>{
     const projectId=context(req),user=await authenticated(req);
     const id=uuid.parse((req.params as {itemId:string}).itemId);

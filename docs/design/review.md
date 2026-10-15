@@ -195,3 +195,13 @@ CI 新增 `tools/test/task-linkage-smoke.mjs`：PostgreSQL 创建正式任务与
 ## ADR-055 · 项目设置无操作/版本守卫 /review
 
 在事务内验证当前组织及项目 owner、UUID command key 与期望设置版本后，对 ai_enabled/work_start/work_end/cooldown_hours 做全字段比较；值均相同时新 key 返回 409，项目 settings_revision、AI 授权 version、任务 FollowUp、项目 domain_events/audit/outbox 和新成功 Receipt 均保持不变。已完成真实更改的相同 key+hash 重放依旧 200，改 payload 同 key 409，新 key 旧 expectedRevision 409；正常真实变化照常+1、重新计算 FollowUp 并留下单次事件。Web 在没有未保存变更时禁用「保存设置」，成功后以刚提交的值更新基线，切换项目时重置基线。回归包含原 PostgreSQL API Smoke、Owner/tenant 权限、AI 版本触发器、并发冲突、Windows/Linux/Docker、文档与安全扫描；最新 PR Head 五项 CI success 且无未解决 review 线程才能合并。
+
+## 2026-10-15 · 治理、安全与后台可靠性专项复核（增量）
+
+审查基线为 main ef64ec19aa34。已知变更审批死锁由缺少独立授权审批人引起：owner 与 manager 都可以在 `pm.approve` 下审核基线变更，但 `created_by === reviewer` 必须被拒绝；至少需要两位具有不同职责的真实成员。单人项目无法完成必须独立复核的重大变更属于刻意的职责分离约束，应在 UI 中说明不能自批。
+
+Next.js 同源代理下，API 看到的 IP 是公共代理地址。登录/注册在 body 可用的 preHandler 阶段按 HMAC 规范化账号分桶，缺失或超长账号使用来源 IP 回退。该机制避免正常用户共同消耗 8 次尝试限额；但高频随机账号攻击仍需要可信入口网关的全局和来源限流，不能信任未经校验的转发头。
+
+Worker 的 AI、提醒和周期报告改为三个独立 single-flight lane；并发队列仍受共同数据库池限制，尚不属于生产级负载隔离。模型响应发布前需在业务事务内持有项目授权行锁并核验 AI 授权版本，包含正常回复、候选进展和澄清结果；撤权无法收回已经发送的第三方请求。
+
+交付物负责人不得是 observer；成员移除/降为 observer 前必须清理未完成交付物和仍有效的项目资源投入。资源分配使用取消时间/执行人保留历史；组织管理员通过幂等命令取消，容量计算只统计未取消记录。此处没有实现交付物重新指派/资源调优，更完整的转岗向导、PMP 项目集收益、历史周/月报、完整领域路由分离、真实模型和 Win11 验收仍需独立工作项，不得把本次增量称为全部交付。

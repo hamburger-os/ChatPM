@@ -4,7 +4,7 @@ type Item={id:string;name:string;description?:string;parent_id?:string|null;port
 type Project=Item&{department_id:string|null;program_id:string|null;
   portfolio_id:string|null;classification_revision:number};
 type Member={id:string;display_name:string;email:string;role:'admin'|'member'};
-type Allocation={id:string;project_id:string;user_id:string;percentage:number;start_date:string;end_date:string};
+type Allocation={id:string;project_id:string;user_id:string;percentage:number;start_date:string;end_date:string;cancelled_at:string|null;cancelled_by:string|null};
 type Structure={departments:Item[];portfolios:Item[];programs:Item[];projects:Project[]};
 const empty:Structure={departments:[],portfolios:[],programs:[],projects:[]};
 async function api<T>(path:string,options?:RequestInit):Promise<T>{
@@ -190,10 +190,18 @@ export default function OrganizationPanel({tenantId,currentUserId}:{tenantId:str
         <label>结束<input type="date" value={endDate} required onChange={e=>setEndDate(e.target.value)}/></label>
       </div><button disabled={busy}>登记投入</button>
     </form>
-    {allocations.map(a=><p className="hint" key={a.id}>
-      {members.find(x=>x.id===a.user_id)?.display_name||a.user_id} · {data.projects.find(x=>x.id===a.project_id)?.name||a.project_id} ·
-      {a.percentage}% · {a.start_date} ~ {a.end_date}
-    </p>)}
+    {allocations.map(a=><div className="row-form" key={a.id}>
+      <p className="hint">
+        {members.find(x=>x.id===a.user_id)?.display_name||a.user_id} · {data.projects.find(x=>x.id===a.project_id)?.name||a.project_id} ·
+        {a.percentage}% · {a.start_date} ~ {a.end_date}
+        {a.cancelled_at?' · 已取消':''}
+      </p>
+      {!a.cancelled_at&&<button type="button" className="secondary" disabled={busy}
+        onClick={()=>{if(window.confirm('确定取消该资源投入计划？历史记录仍会保留。'))
+          void run(async()=>{await write(base+'/allocations/'+a.id+'/cancel','POST',{});});}}>
+        取消投入
+      </button>}
+    </div>)}
     </div>}
     {notice&&<p role="status" className="notice">{notice}</p>}
   </section>;

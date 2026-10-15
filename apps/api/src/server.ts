@@ -44,7 +44,7 @@ await app.register(helmet);
 // Verify signed session identity before choosing a quota bucket. Never trust raw
 // cookies or X-Forwarded-For; anonymous requests remain IP-scoped.
 await app.register(rateLimit,{
-  max:180,timeWindow:'1 minute',
+  max:180,timeWindow:'1 minute',hook:'preHandler',
   keyGenerator: req=>signedQuotaKey(req,serverConfig.SESSION_SECRET),
 });
 

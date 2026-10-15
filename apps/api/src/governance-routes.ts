@@ -177,9 +177,27 @@ export function registerGovernanceRoutes(app:FastifyInstance,
   app.get('/tenants/:tenantId/allocations',async req=>{
     const {tenantId}=await scope(req,true);
     const {rows}=await pool.query(`SELECT a.id,a.project_id,a.user_id,a.percentage,
-      a.start_date::text AS start_date,a.end_date::text AS end_date
+      a.start_date::text AS start_date,a.end_date::text AS end_date,
+       a.cancelled_at,a.cancelled_by
       FROM resource_allocations a WHERE tenant_id=$1 ORDER BY start_date DESC LIMIT 500`,[tenantId]);
     return {allocations:rows};
+  });
+  app.post('/tenants/:tenantId/allocations/:allocationId/cancel',async req=>{
+    const {tenantId,user}=await scope(req,true);
+    const allocationId=uuid.parse((req.params as {allocationId:string}).allocationId);
+    const v=z.object({idempotencyKey:uuid}).parse(req.body);
+    return organizationCommand(tenantId,user,'allocation.cancelled',
+      {idempotencyKey:v.idempotencyKey,payload:{allocationId}},async db=>{
+        const cancelled=await db.query<{
+          id:string;project_id:string;user_id:string;
+        }>(`UPDATE resource_allocations SET cancelled_at=NOW(),cancelled_by=$3
+          WHERE tenant_id=$1 AND id=$2 AND cancelled_at IS NULL
+          RETURNING id,project_id,user_id`,[tenantId,allocationId,user]);
+        const record=cancelled.rows[0];
+        if(!record)deny(409,'资源分配不存在或已经取消');
+        return {value:{ok:true,allocationId},targetId:allocationId,
+          metadata:{projectId:record.project_id,userId:record.user_id}};
+      });
   });
   app.post('/tenants/:tenantId/allocations',async(req,reply)=>{
     const {tenantId,user}=await scope(req,true);

@@ -36,13 +36,13 @@ export async function recordResourceAllocation(db:DbClient,request:AllocationReq
       SELECT $3::date AS day
       UNION
       SELECT a.start_date AS day FROM resource_allocations a
-      WHERE a.tenant_id=$1 AND a.user_id=$2
+      WHERE a.tenant_id=$1 AND a.user_id=$2 AND a.cancelled_at IS NULL
         AND a.start_date BETWEEN $3::date AND $4::date
     ), usage AS (
       SELECT b.day, COALESCE(SUM(a.percentage),0)::int AS used
       FROM boundaries b
       LEFT JOIN resource_allocations a
-        ON a.tenant_id=$1 AND a.user_id=$2
+        ON a.tenant_id=$1 AND a.user_id=$2 AND a.cancelled_at IS NULL
         AND a.start_date<=b.day AND a.end_date>=b.day
       GROUP BY b.day
     )

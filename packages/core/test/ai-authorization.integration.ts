@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
-import { pool } from '../src/db.ts';
-import { ConfiguredLLMProvider, readProjectAiAuthorization } from '../src/ai-provider.ts';
+import { pool, transaction } from '../src/db.ts';
+import { ConfiguredLLMProvider, readProjectAiAuthorization, assertCurrentAiGrant } from '../src/ai-provider.ts';
 
 const suffix=randomUUID();
 try {
@@ -22,10 +22,19 @@ try {
 
   await pool.query('UPDATE projects SET ai_enabled=TRUE WHERE id=$1',[project.id]);
   assert.deepEqual(await readProjectAiAuthorization(project.id),{enabled:true,version:2});
+  await transaction(async db=>{
+    await assertCurrentAiGrant(db,project.id,2);
+    await assert.rejects(assertCurrentAiGrant(db,project.id,1),
+      /AI_AUTHORIZATION_CHANGED/);
+  });
   await pool.query('UPDATE projects SET ai_enabled=TRUE WHERE id=$1',[project.id]);
   assert.deepEqual(await readProjectAiAuthorization(project.id),{enabled:true,version:2});
   await pool.query('UPDATE projects SET ai_enabled=FALSE WHERE id=$1',[project.id]);
   assert.deepEqual(await readProjectAiAuthorization(project.id),{enabled:false,version:3});
+  await transaction(async db=>{
+    await assert.rejects(assertCurrentAiGrant(db,project.id,2),
+      /AI_AUTHORIZATION_REVOKED/);
+  });
   await assert.rejects(new ConfiguredLLMProvider(project.id).respond('Private','Do not send'),
     /AI_AUTHORIZATION_REVOKED/);
   assert.equal((await pool.query(

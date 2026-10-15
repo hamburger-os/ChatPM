@@ -104,3 +104,11 @@
 - DeepSeek 能力字段基于官方协议区分 `reasoning.effort` 与 `reasoning_effort`；Chat Completions 不允许固定 6500 字符偷偷截断，输入预算仍为字符不是 Token；需实机评估实际模型成本和可靠性。
 - 站内催办既遵守发送冷却和时区，也可从阶段检查及阻塞信号提前提醒。页面滚动容器必须设置 `min-height:0`，邀请按钮不可折行；中文 IME 组合输入不能触发发送。
 
+## 2026-10-15 · 权限、资源与后台工作通道契约
+
+- 正式 ChangeRequest 审批开放给具有 `pm.approve` 的当前项目 owner 或 manager，但绝不允许 `created_by` 同人自审。单一负责人没有其他合资格成员时，应提示先指定独立复核人，不能自动降级为自批。
+- 经 Next.js 代理的登录/注册请求以规范化邮箱 HMAC 作为独立限流桶；挂载在 Fastify preHandler 以读取解析后的 body。缺失/无效的账号输入退回所见 IP。不要把未经验证的 `X-Forwarded-For` 当可信客户端身份。公网应另有来源级和全局防滥用层。
+- Worker 以 events、reminders、reports 三个独立 single-flight 通道安排工作，任何 AI 重试/超时都不得停止规则提醒或周期报告调度；关闭进程时等待全部正在执行的通道结束。
+- 受控模型调用返回对应 `ai_authorization_version`，将 AI 回复、提案、进展和澄清消息正式发布前，都必须在同一事务中 `SELECT ... FOR SHARE` 检查项目 `ai_enabled` 与版本；版本已变化应抛出 `AI_AUTHORIZATION_CHANGED`，禁止旧授权产物写入业务记录。
+- 任何需要正式提交的 Deliverable 只允许有效的 owner/manager/member 负责人，不允许 observer。项目成员撤权或降为 observer 前必须检查未验收交付物与未取消且 end_date 未过去的资源分配。组织管理员取消分配时保留历史行、幂等回执和组织审计；容量汇总过滤已取消行。
+- 这些代码合同需要单元、数据库集成、完整 Smoke 和跨平台真实环境验证。不得将静态架构检查宣称为生产级高并发、隐私或安全验收。

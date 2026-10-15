@@ -1,6 +1,6 @@
 import { secureModelFetch } from './model-egress.ts';
 import { createHmac } from 'node:crypto';
-import { pool } from './db.ts';
+import { pool, type DbClient } from './db.ts';
 import { z } from 'zod';
 import { callStructuredLLM, modelAuditIdentity } from './llm-transport.ts';
 import { resolveProjectModel } from './project-model.ts';
@@ -64,7 +64,7 @@ const clarification=z.object({
 });
 export type Candidate=z.infer<typeof proposal>;
 export type Clarification=z.infer<typeof clarification>;
-export type ModelResult<T>={value:T;modelName:string;promptVersion:string};
+export type ModelResult<T>={value:T;modelName:string;promptVersion:string;authorizationVersion?:number};
 export class DailyAIBudgetExceeded extends Error {
   constructor(){super('Daily AI budget exceeded');this.name='DailyAIBudgetExceeded';}
 }
@@ -95,6 +95,20 @@ export async function readProjectAiAuthorization(projectId:string):Promise<{
   if(!row)throw new Error('PROJECT_NOT_FOUND');
   return {enabled:row.ai_enabled,version:Number(row.ai_authorization_version)};
 }
+/** Bind every AI publication to the authorization epoch used for inference.
+ * FOR SHARE is held through the caller's transaction so toggle/revoke cannot
+ * race with the final write. */
+export async function assertCurrentAiGrant(
+  db:DbClient,projectId:string,authorizationVersion:number|undefined,
+):Promise<void>{
+  const row=(await db.query<{ai_enabled:boolean;ai_authorization_version:string}>(`
+    SELECT ai_enabled,ai_authorization_version FROM projects
+    WHERE id=$1 FOR SHARE`,[projectId])).rows[0];
+  if(!row?.ai_enabled)throw new Error('AI_AUTHORIZATION_REVOKED');
+  if(!authorizationVersion||Number(row.ai_authorization_version)!==authorizationVersion)
+    throw new Error('AI_AUTHORIZATION_CHANGED');
+}
+
 function safeErrorCode(error:unknown):string{
   if(error instanceof z.ZodError)return 'MODEL_SCHEMA';
   if(error instanceof Error){
@@ -135,7 +149,7 @@ export class ConfiguredLLMProvider implements LLMProvider{
       await pool.query(`UPDATE ai_model_invocations SET status='succeeded',
         latency_ms=$2,finished_at=NOW() WHERE id=$1`,
         [invocationId,Math.max(0,Date.now()-start)]);
-      return {value:parsed,modelName,promptVersion};
+      return {value:parsed,modelName,promptVersion,authorizationVersion:current.version};
     }catch(error){
       await pool.query(`UPDATE ai_model_invocations SET status='failed',
         error_code=$2,latency_ms=$3,finished_at=NOW() WHERE id=$1`,
