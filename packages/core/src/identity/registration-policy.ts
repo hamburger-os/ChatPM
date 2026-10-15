@@ -1,6 +1,11 @@
 import type {DbClient} from '../db.ts';
 
 export type RegistrationMode='open'|'bootstrap'|'closed';
+export function configuredRegistrationMode(
+  environment:'development'|'test'|'production',configured?:RegistrationMode,
+):RegistrationMode{
+  return configured??(environment==='production'?'bootstrap':'open');
+}
 
 /** Only an explicit operator opt-in allows unrestricted public sign-up. */
 export function mayRegister(mode:RegistrationMode,hasUsers:boolean):boolean{
