@@ -3,15 +3,15 @@ import { hasReminderPolicy, type WorkingPolicy } from './policy.ts';
 
 export async function syncFollowup(db: DbClient, projectId: string, taskId: string) {
   const state = await db.query(
-    `SELECT t.id,t.version,t.assignee_id,t.due_date::text AS due_date,t.status,p.timezone,p.work_start,p.work_end,p.cooldown_hours
+    `SELECT t.id,t.version,t.assignee_id,t.due_date::text AS due_date,t.status,t.archived_at,p.timezone,p.work_start,p.work_end,p.cooldown_hours
      FROM tasks t JOIN projects p ON p.id=t.project_id WHERE t.id=$1 AND t.project_id=$2`,
     [taskId,projectId],
   );
   const row = state.rows[0] as (WorkingPolicy & {
-    version:number; assignee_id:string|null; due_date:string|null; status:string
+    version:number; assignee_id:string|null; due_date:string|null; status:string; archived_at:Date|null
   }) | undefined;
   if (!row) throw new Error('Task not found');
-  const active = Boolean(row.assignee_id && row.due_date && !['done','cancelled'].includes(row.status)
+  const active = Boolean(!row.archived_at && row.assignee_id && row.due_date && !['done','cancelled'].includes(row.status)
     && hasReminderPolicy(row));
   if (!active) {
     await db.query('UPDATE followup_plans SET active=FALSE WHERE task_id=$1', [taskId]);
