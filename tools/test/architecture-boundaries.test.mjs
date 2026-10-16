@@ -152,3 +152,13 @@ test('formal PM register reads use one authorized database snapshot',()=>{
   assert.match(query,/SET TRANSACTION ISOLATION LEVEL REPEATABLE READ/);
   assert.match(query,/lockProjectAccess\(db,projectId,actorId\)/);
 });
+
+test('platform AI model mutations reauthorize admin within the business transaction',()=>{
+  const route=readFileSync(new URL('../../apps/api/src/admin-model-routes.ts',import.meta.url),'utf8');
+  const access=readFileSync(new URL('../../packages/core/src/identity/system-access.ts',import.meta.url),'utf8');
+  assert.equal((route.match(/systemAdminTransaction\(actor,async db=>/g)||[]).length,7);
+  assert.match(route,/systemAdminTransaction\(actor,db=>db\.query/);
+  assert.doesNotMatch(route,/transaction\(async db=>|pool\.query/);
+  assert.match(access,/SELECT is_system_admin FROM users WHERE id=\$1 FOR SHARE/);
+  assert.match(access,/transaction\(async db/);
+});
