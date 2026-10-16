@@ -1,6 +1,7 @@
 'use client';
 import { useEffect,useRef,useState,type FormEvent } from 'react';
 import GovernancePulse from './GovernancePulse';
+import { request as api } from './client';
 type Item={id:string;name:string;description?:string;parent_id?:string|null;portfolio_id?:string|null};
 type Project=Item&{department_id:string|null;program_id:string|null;
   portfolio_id:string|null;classification_revision:number;
@@ -11,13 +12,6 @@ type Invitation={id:string;email:string;created_at:string;expires_at:string;
 type Allocation={id:string;project_id:string;user_id:string;percentage:number;start_date:string;end_date:string;cancelled_at:string|null;cancelled_by:string|null};
 type Structure={departments:Item[];portfolios:Item[];programs:Item[];projects:Project[]};
 const empty:Structure={departments:[],portfolios:[],programs:[],projects:[]};
-async function api<T>(path:string,options?:RequestInit):Promise<T>{
-  const response=await fetch('/api'+path,{...options,credentials:'include',cache:'no-store',
-    headers:{'Content-Type':'application/json',...options?.headers}});
-  const data=await response.json().catch(()=>({error:'暂时无法访问服务'}));
-  if(!response.ok)throw new Error(data.error||'操作失败');
-  return data as T;
-}
 export default function OrganizationPanel({tenantId,currentUserId}:{tenantId:string;currentUserId:string}){
   const [data,setData]=useState<Structure>(empty);
   const [members,setMembers]=useState<Member[]>([]);

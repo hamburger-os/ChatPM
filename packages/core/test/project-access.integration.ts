@@ -4,6 +4,7 @@ import { pool } from '../src/db.ts';
 import { lockProjectAccess } from '../src/identity/project-access.ts';
 import { assertPrerequisitesCompleted, lockTaskDependencyGraph } from '../src/delivery/dependency-policy.ts';
 import { assertProject } from '../src/permissions.ts';
+import { postUserMessage } from '../src/conversation/user-message-command.ts';
 
 const marker=randomUUID();
 const {rows:users}=await pool.query(
@@ -40,6 +41,26 @@ try{
   await b.query('ROLLBACK');
   await a.query('COMMIT');
 
+  // The HTTP-facing message command locks membership and publishes atomically.
+  const nonce=randomUUID();
+  const first=await postUserMessage(projectId,actorId,'项目更新',nonce);
+  const replay=await postUserMessage(projectId,actorId,'项目更新',nonce);
+  assert.equal(replay.message.id,first.message.id);
+  await assert.rejects(
+    postUserMessage(projectId,actorId,'修改后的文本',nonce),
+    /消息幂等键冲突/);
+  const {rows:published}=await pool.query(
+    "SELECT COUNT(*)::int AS count FROM outbox_events WHERE project_id=$1 AND kind='message.created'",
+    [projectId]);
+  assert.equal(published[0].count,1,'Replay must not create another outbox event');
+  const {rows:audited}=await pool.query(
+    "SELECT COUNT(*)::int AS count FROM audit_entries WHERE project_id=$1 AND action='message.created'",
+    [projectId]);
+  assert.equal(audited[0].count,1,'Message and audit commit only once');
+  // Keep this integration fixture out of the later global Outbox leasing test.
+  await pool.query("DELETE FROM outbox_events WHERE project_id=$1 AND kind='message.created'",
+    [projectId]);
+
   await b.query("UPDATE project_members SET role='observer' WHERE project_id=$1 AND user_id=$2",
     [projectId,actorId]);
   await a.query('BEGIN');
@@ -47,6 +68,8 @@ try{
   assert.equal(current.role,'observer');
   assert.throws(()=>assertProject(current.role,'task.create'),/没有执行该操作的权限/);
   await a.query('COMMIT');
+  await assert.rejects(postUserMessage(projectId,actorId,'越权发送',randomUUID()),
+    /没有执行该操作的权限/);
 
   // Owner-only operations must never rely on a stale manager/observer role.
   for(const action of ['members.manage','report.manage','settings.manage',
@@ -103,6 +126,8 @@ try{
   await pool.query("DELETE FROM tenant_members WHERE tenant_id=$1 AND user_id=$2",
     [tenantId,actorId]);
   await assert.rejects(lockProjectAccess(a,projectId,actorId),
+    /项目不存在或无权限/);
+  await assert.rejects(postUserMessage(projectId,actorId,'失效成员',randomUUID()),
     /项目不存在或无权限/);
   console.log('Transaction-scoped role and tenant revocation integration passed');
 }finally{

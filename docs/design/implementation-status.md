@@ -194,3 +194,7 @@ Docker 部署 Smoke 原先仅验证 pg_dump custom-format 文件头和 pg_restor
 新增真实 PostgreSQL 集成直接调用 Core 命令，验证回放/不同 payload、版本冲突、跨租户 FK 回滚、角色越权、仅真实修改产生审计；此前 API Smoke 的完整项目分类和并发版本回归继续运行。静态架构测试确保该 HTTP 命令不会退回到路由层直接写业务表。
 
 这是 Issue #49 的一个完整归属命令迁移增量，不代表 `server.ts`、其余组织路由、Task/Risk/PM 全领域命令、Worker 多实例 fencing、死信和生产性能验收已经完成。
+
+## ADR-065 · 整体审查后的首个实现切片
+
+本轮增加 Conversation Core 事务内消息权限及单一写入入口、消息最小审计/Outbox 原子性、AI 审批复用 Delivery/Risk Core 记录创建、PM 登记簿统一授权快照、组织前端共享 HTTP 请求入口，并补充静态架构断言与 PostgreSQL 消息重试和撤权集成检查。验收必须以本 PR 最终 Head 的 CI 为准，而不是先前 main 的结果。Owner 两处表示、跨聚合 DomainEvent、管理员模型事务授权、AI Schema 单源及其余路由、真实模型/Windows/SSE/生产安全与数据保留仍未全面交付；P1–P4 的整体 Issues 不应据此关闭。

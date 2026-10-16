@@ -1,4 +1,5 @@
 import { assertProject } from '../permissions.ts';
+import type { DbClient } from '../db.ts';
 import { executePmCommand } from '../pm-command.ts';
 import { ensureTaskAssignee } from './task-assignee.ts';
 import { lockTaskDependencyGraph,assertPrerequisitesCompleted } from './dependency-policy.ts';
@@ -17,6 +18,30 @@ function fail(statusCode:number,message:string):never{
   throw Object.assign(new Error(message),{statusCode});
 }
 
+/** The Delivery module is the sole writer of newly created Task rows.
+ * A parent approval command may call this within its existing transaction:
+ * it must not open a second receipt, transaction or independent approval.
+ */
+export async function createTaskRecord(db:DbClient,projectId:string,input:{
+  title:string;detail:string;assigneeId:string|null;
+  dueDate?:string|null;sourceDueAt?:Date|null;sourceProposalId?:string|null;
+}):Promise<{id:string;version:number}>{
+  if(input.assigneeId)await ensureTaskAssignee(db,projectId,input.assigneeId);
+  const {rows}=await db.query(`
+    INSERT INTO tasks(project_id,title,detail,assignee_id,due_date,source_proposal_id)
+    VALUES($1,$2,$3,$4,
+      CASE WHEN $5::boolean THEN $6::date
+           ELSE ($7::timestamptz AT TIME ZONE
+             (SELECT timezone FROM projects WHERE id=$1))::date END,$8)
+    RETURNING *
+  `,[projectId,input.title,input.detail,input.assigneeId,
+    input.dueDate!==undefined,input.dueDate??null,
+    input.sourceDueAt??null,input.sourceProposalId??null]);
+  const task=rows[0] as {id:string;version:number};
+  await syncFollowup(db,projectId,task.id);
+  return task;
+}
+
 /** Official Task writes share PM receipts, domain events, audit and outbox. */
 export async function createTask(
   projectId:string,actorId:string,v:CreateTaskInput,
@@ -25,13 +50,7 @@ export async function createTask(
     projectId,actorId,action:'task.create',
     kind:'task.created.v1',idempotencyKey:v.idempotencyKey,payload:v,
     mutate:async db=>{
-      if(v.assigneeId)await ensureTaskAssignee(db,projectId,v.assigneeId);
-      const {rows}=await db.query(`
-        INSERT INTO tasks(project_id,title,detail,assignee_id,due_date)
-        VALUES($1,$2,$3,$4,$5) RETURNING *
-      `,[projectId,v.title,v.detail,v.assigneeId,v.dueDate]);
-      const task=rows[0] as {id:string;version:number};
-      await syncFollowup(db,projectId,task.id);
+      const task=await createTaskRecord(db,projectId,v);
       return {response:{task},aggregateType:'tasks',aggregateId:task.id,
         aggregateVersion:task.version};
     },

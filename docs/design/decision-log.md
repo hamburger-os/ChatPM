@@ -347,3 +347,10 @@
 **决定：** 项目 settings 修改保持当前 tenant/project owner 的 executePmCommand 事务锁与 UUID idempotencyKey/expectedRevision；在锁住 Project 并确认 expectedRevision 仍最新之后，比较 ai_enabled/work_start/work_end/cooldown_hours 全部规范化字段。当新设置与数据库逐项相等时，以 409 拒绝新命令，不插入正式成功 Receipt、Audit、DomainEvent、Outbox，也不重新生成 FollowUp；相同 key/payload 的**已经完成**的真实变更命令继续返回原回执，不再次比较或写入。旧版本的请求仍以版本冲突 409 被拒绝，不把无操作判断作为绕过并发锁的方法。
 
 **Web：** 维护最后一次已确认成功保存的设置快照，只有表单数据不同才启用保存按钮；成功提交后更新设置版本和基线，后续又修改表单形成新意图。其他人修改导致的旧版本冲突仍由服务端返回，用户须刷新并确认。AI 默认模型与密钥仍由总管理员配置，触发器只在 AI enable 标志实际改变时推进 AI 授权版本。没有新增数据库迁移、无兼容无键 POST。
+
+## ADR-065 · 面向所有入口的授权事务与领域数据单一写入权（2026-10-16）
+
+- **决定**：HTTP 用户消息统一交由 Conversation Core 命令，在保存 Message、Outbox 与 Audit 的同一 PostgreSQL 事务中锁定当前 ProjectMember/TenantMember，并验证 message.write。AI 人工审批仍为一个 CommandReceipt，却经 Delivery/Risk Core 写正式 Task/Risk；PM 多登记簿读取在 Core 的 REPEATABLE READ 事务内锁定成员身份。
+- **原因**：消除消息权限检查与提交之间的撤权竞态，避免同一领域由 HTTP 与 Core 双重维护 SQL，防止 PM 多表读取快照不一致。
+- **不选择**：外部权限服务器、微服务、跨事务嵌套命令、第二套兼容 API。跨聚合 DomainEvent/Receipt 一对一问题另行设计。
+- **代价与验收**：同事务的成员行锁会与角色撤销互斥；新增不含正文的 message.created 审计。真实 PostgreSQL 覆盖权限/幂等/撤权，架构守卫拒绝路由直接写业务表。本切片不代表 P1–P4 整体完结、真实模型或生产实机验收。

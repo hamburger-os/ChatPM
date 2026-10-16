@@ -4,6 +4,7 @@ import { pool, type DbClient } from '../../../packages/core/src/db.ts';
 import { executePmCommand, type PmMutation } from '../../../packages/core/src/pm-command.ts';
 import { assertProject, type ProjectAction, type ProjectRole } from '../../../packages/core/src/permissions.ts';
 import { lockTaskDependencyGraph } from '../../../packages/core/src/delivery/dependency-policy.ts';
+import { listPmRegisters } from '../../../packages/core/src/governance/pm-register-query.ts';
 
 const uuid=z.string().uuid();
 const title=z.string().trim().min(1).max(250);
@@ -61,18 +62,8 @@ type Mutation=PmMutation<{item:Record<string,unknown>}>;
 export function registerPmRoutes(app:FastifyInstance,
   authenticated:(req:FastifyRequest)=>Promise<string>):void{
   app.get('/projects/:projectId/pm',async req=>{
-    const projectId=context(req),user=await authenticated(req);
-    const access=await pool.query(`SELECT 1 FROM project_members pm
-      JOIN projects p ON p.id=pm.project_id
-      JOIN tenant_members tm ON tm.tenant_id=p.tenant_id AND tm.user_id=pm.user_id
-      WHERE pm.project_id=$1 AND pm.user_id=$2`,[projectId,user]);
-    if(!access.rowCount)fail(404,'项目不存在或无权限');
-    const names=entryKind.options;
-    const tables=names.map(name=>definitions[name].table);
-    const lists=await Promise.all(tables.map(table=>
-      pool.query(`SELECT * FROM ${table} WHERE project_id=$1
-        ORDER BY ${table==='project_decisions'?'decided_at':'created_at'} DESC LIMIT 100`,[projectId])));
-    return Object.fromEntries(names.map((name,i)=>[name,lists[i].rows]));
+    const projectId=context(req),actorId=await authenticated(req);
+    return listPmRegisters(projectId,actorId);
   });
 
   app.post('/projects/:projectId/pm/:kind',async (req,reply)=>{

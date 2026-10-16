@@ -1,6 +1,17 @@
 import {executePmCommand} from '../pm-command.ts';
 import type {DbClient} from '../db.ts';
 
+/** Sole Risk insert path. Called under the parent human-approval transaction. */
+export async function createRiskRecord(db:DbClient,projectId:string,input:{
+  title:string;detail:string;sourceProposalId:string;
+}):Promise<{id:string}>{
+  const {rows}=await db.query<{id:string}>(`
+    INSERT INTO risks(project_id,title,detail,source_proposal_id)
+    VALUES($1,$2,$3,$4) RETURNING id
+  `,[projectId,input.title,input.detail,input.sourceProposalId]);
+  return rows[0];
+}
+
 type Decision='start_mitigation'|'resolve'|'reopen';
 export type RiskAssessmentInput={
   idempotencyKey:string;expectedVersion:number;

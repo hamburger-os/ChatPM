@@ -1,8 +1,8 @@
 import type { FastifyInstance,FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import { executePmCommand } from '../../../packages/core/src/pm-command.ts';
-import { ensureTaskAssignee } from '../../../packages/core/src/delivery/task-assignee.ts';
-import { syncFollowup } from '../../../packages/core/src/followup.ts';
+import { createTaskRecord } from '../../../packages/core/src/delivery/task-commands.ts';
+import { createRiskRecord } from '../../../packages/core/src/risk/risk-commands.ts';
 
 const uuid=z.string().uuid();
 const dateOnly=z.string().regex(/^\d{4}-\d{2}-\d{2}$/).refine(
@@ -85,25 +85,19 @@ export function registerApprovalRoutes(app:FastifyInstance,
         let createdTaskId:string|null=null,createdRiskId:string|null=null;
         if(v.decision==='accepted'){
           if(proposal.kind==='task'){
-            if(v.assigneeId)await ensureTaskAssignee(db,projectId,v.assigneeId);
-            const {rows}=await db.query<{id:string}>(`
-              INSERT INTO tasks(project_id,title,detail,assignee_id,due_date,source_proposal_id)
-              VALUES($1,$2,$3,$4,
-                CASE WHEN $5::boolean THEN $6::date
-                ELSE (COALESCE($7::timestamptz,$8::timestamptz)
-                  AT TIME ZONE (SELECT timezone FROM projects WHERE id=$1))::date END,
-                $9) RETURNING id
-            `,[projectId,proposal.title,proposal.detail,v.assigneeId,
-              v.dueDate!==undefined,v.dueDate??null,
-              proposal.clarified_due_at,proposal.due_at,proposal.id]);
-            createdTaskId=rows[0].id;
-            await syncFollowup(db,projectId,createdTaskId);
+            const task=await createTaskRecord(db,projectId,{
+              title:proposal.title,detail:proposal.detail,
+              assigneeId:v.assigneeId,dueDate:v.dueDate,
+              sourceDueAt:proposal.clarified_due_at??proposal.due_at,
+              sourceProposalId:proposal.id,
+            });
+            createdTaskId=task.id;
           }else{
-            const {rows}=await db.query<{id:string}>(`
-              INSERT INTO risks(project_id,title,detail,source_proposal_id)
-              VALUES($1,$2,$3,$4) RETURNING id
-            `,[projectId,proposal.title,proposal.detail,proposal.id]);
-            createdRiskId=rows[0].id;
+            const risk=await createRiskRecord(db,projectId,{
+              title:proposal.title,detail:proposal.detail,
+              sourceProposalId:proposal.id,
+            });
+            createdRiskId=risk.id;
           }
         }
         await db.query(`

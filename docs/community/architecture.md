@@ -127,3 +127,9 @@ English: A tenant administrator can create a project with validated name and tim
 中文：除了生成备份，Docker 集成测试还会停止 Web、API 和 Worker，在独立、随机命名的 PostgreSQL 测试数据库中实际恢复备份，并逐表检查数据条数和内容指纹是否与源数据库完全一致；不覆盖原数据库。出错即阻止合并。备份只在私有临时目录存放，演练结束删除测试库和归档。该测试不替代企业生产环境的离机加密、PITR、灾难恢复与 Windows/Linux 实机演练。
 
 English: The Docker integration workflow stops application writers and restores a real PostgreSQL backup into a fresh, randomly named, isolated database. It compares all public table row counts and deterministic content fingerprints with the unchanged source. Mismatches fail CI; the private backup and isolated database are cleaned up. This verifies a small CI dataset, not off-site encrypted retention, point-in-time recovery, a production RTO, or real Windows/Linux disaster recovery.
+
+### ADR-065 · 当前事务与领域边界改进 / Transaction and domain boundaries
+
+中文：成员聊天写入现在在同一数据库事务中重新验证并锁住当前组织和项目权限，原子保存消息、Outbox 与最小审计；相同操作重试不会重复发送。AI 候选被人工批准后，正式任务/风险创建复用对应核心领域的唯一 SQL 写入路径。项目治理登记簿使用一致性数据库快照读取；组织工作台复用公共 HTTP 请求工具。此变更不是实时 SSE、完整 AI PM、企业模型认证或生产验收。
+
+English: Chat submission now locks and revalidates current organization and project membership within the same transaction that commits the message, outbox event and minimal audit. Replays do not republish. Human-approved Task/Risk proposals use their respective Core domain insertion paths. Formal PM registers are fetched from a consistent transaction snapshot, and the organization UI reuses the shared HTTP request helper. Live SSE, a complete AI PM, enterprise model certification and production acceptance are not delivered by this change.

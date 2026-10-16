@@ -111,3 +111,44 @@ test('Risk HTTP endpoints own only DTOs and delegate scoped Core services',()=>{
   assert.match(queries,/SET TRANSACTION ISOLATION LEVEL REPEATABLE READ/);
   assert.match(queries,/lockProjectAccess\(/);
 });
+
+test('user messages have one Core-owned transaction and authorization boundary',()=>{
+  const api=readFileSync(new URL('../../apps/api/src/server.ts',import.meta.url),'utf8');
+  const command=readFileSync(new URL('../../packages/core/src/conversation/user-message-command.ts',import.meta.url),'utf8');
+  const start=api.indexOf("app.post('/projects/:id/messages'");
+  const end=api.indexOf("app.get('/projects/:id/tasks'",start);
+  assert.ok(start>=0&&end>start);
+  const block=api.slice(start,end);
+  assert.match(block,/postUserMessage\(projectId,actorId,content,nonce\)/);
+  assert.doesNotMatch(block,/insertMessage\(|INSERT INTO messages|pool\.query|transaction\(/);
+  assert.match(command,/transaction\(async db/);
+  assert.match(command,/lockProjectAccess\(db,projectId,actorId\)/);
+  assert.match(command,/assertProject\(access\.role,'message\.write'\)/);
+  assert.match(command,/insertMessage\(db/);
+  assert.match(command,/outbox_events/);
+});
+
+test('human-approved Task and Risk inserts remain owned by Core domains',()=>{
+  const approval=readFileSync(new URL('../../apps/api/src/approval-routes.ts',import.meta.url),'utf8');
+  const delivery=readFileSync(new URL('../../packages/core/src/delivery/task-commands.ts',import.meta.url),'utf8');
+  const risk=readFileSync(new URL('../../packages/core/src/risk/risk-commands.ts',import.meta.url),'utf8');
+  assert.doesNotMatch(approval,/INSERT INTO (?:tasks|risks)\b/i);
+  assert.match(approval,/createTaskRecord\(db,projectId/);
+  assert.match(approval,/createRiskRecord\(db,projectId/);
+  assert.match(delivery,/export async function createTaskRecord/);
+  assert.match(delivery,/createTaskRecord\(db,projectId,v\)/);
+  assert.match(risk,/export async function createRiskRecord/);
+});
+
+test('formal PM register reads use one authorized database snapshot',()=>{
+  const api=readFileSync(new URL('../../apps/api/src/pm-routes.ts',import.meta.url),'utf8');
+  const query=readFileSync(new URL('../../packages/core/src/governance/pm-register-query.ts',import.meta.url),'utf8');
+  const start=api.indexOf("app.get('/projects/:projectId/pm'");
+  const end=api.indexOf("app.post('/projects/:projectId/pm/:kind'",start);
+  assert.ok(start>=0&&end>start);
+  const block=api.slice(start,end);
+  assert.match(block,/listPmRegisters\(projectId,actorId\)/);
+  assert.doesNotMatch(block,/pool\.query|SELECT|FROM project_members/);
+  assert.match(query,/SET TRANSACTION ISOLATION LEVEL REPEATABLE READ/);
+  assert.match(query,/lockProjectAccess\(db,projectId,actorId\)/);
+});
