@@ -9,7 +9,7 @@ export async function projectAnalysisContext(projectId:string,messageId:string,b
       ORDER BY seq DESC LIMIT 100`,[projectId,messageId]),
     pool.query(`SELECT t.id,t.title,t.status,t.due_date::text AS due_date,u.display_name AS assignee
       FROM tasks t LEFT JOIN users u ON u.id=t.assignee_id
-      WHERE t.project_id=$1 AND t.status NOT IN ('done','cancelled')
+      WHERE t.project_id=$1 AND t.status NOT IN ('done','cancelled') AND t.archived_at IS NULL
       ORDER BY t.updated_at DESC LIMIT 80`,[projectId]),
     pool.query(`SELECT title,status FROM risks WHERE project_id=$1 AND status='open'
       ORDER BY created_at DESC LIMIT 30`,[projectId]),
