@@ -2,6 +2,7 @@ import type { FastifyInstance,FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import { getTaskHistoryEntry, listTaskHistory } from '../../../packages/core/src/reporting/task-history.ts';
 import { createTask, updateTask, setTaskArchived } from '../../../packages/core/src/delivery/task-commands.ts';
+import { listProjectTasks } from '../../../packages/core/src/delivery/task-queries.ts';
 
 const uuid=z.string().uuid();
 const dateOnly=z.string().regex(/^\d{4}-\d{2}-\d{2}$/).refine(
@@ -26,6 +27,14 @@ const updateSchema=z.object({
 /** Direct Task writes use the SAME transaction receipt/event/audit contract as PM registers. */
 export function registerTaskRoutes(app:FastifyInstance,
   authenticated:(req:FastifyRequest)=>Promise<string>):void{
+  app.get('/projects/:id/tasks',async req=>{
+    const projectId=uuid.parse((req.params as {id:string}).id);
+    const query=z.object({
+      archived:z.enum(['true','false']).default('false'),
+    }).parse(req.query);
+    const actorId=await authenticated(req);
+    return listProjectTasks(projectId,actorId,query.archived==='true');
+  });
   // Historical evidence remains readable to current project+tenant members
   // only; task and event IDs must both match the same project.
   app.get('/projects/:id/tasks/:taskId/history',async req=>{
