@@ -170,7 +170,7 @@ export function registerAdminModelRoutes(app:FastifyInstance,
     const check=await systemAdminTransaction(actor,db=>db.query(`INSERT INTO ai_model_checks(model_config_id,last_test_at)
       VALUES($1,NOW()) ON CONFLICT(model_config_id) DO UPDATE SET
       last_test_at=NOW() WHERE ai_model_checks.last_test_at<NOW()-INTERVAL '30 seconds'
-      RETURNING model_config_id`,[id]);
+      RETURNING model_config_id`,[id]));
     if(!check.rowCount)denied(429,'每个模型最多每 30 秒测试一次，以避免误触发计费调用');
     const started=Date.now();
     const identity=modelAuditIdentity(config);
