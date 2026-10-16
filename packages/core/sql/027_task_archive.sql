@@ -52,3 +52,23 @@ BEGIN
   RETURN NEW;
 END
 $$;
+
+-- The archive command locks the Task before checking pending progress.
+-- Every progress producer must take a conflicting lock before inserting.
+-- This closes the race between a slow Worker and a concurrent archive.
+CREATE FUNCTION reject_archived_task_progress() RETURNS TRIGGER
+LANGUAGE plpgsql AS $$
+DECLARE
+  target_archived_at TIMESTAMPTZ;
+BEGIN
+  SELECT archived_at INTO target_archived_at FROM tasks
+    WHERE project_id=NEW.project_id AND id=NEW.task_id FOR SHARE;
+  IF target_archived_at IS NOT NULL THEN
+    RAISE EXCEPTION 'ARCHIVED_TASK_PROGRESS' USING ERRCODE='23514';
+  END IF;
+  RETURN NEW;
+END
+$$;
+CREATE TRIGGER trg_reject_archived_task_progress
+  BEFORE INSERT ON task_progress_updates
+  FOR EACH ROW EXECUTE FUNCTION reject_archived_task_progress();
