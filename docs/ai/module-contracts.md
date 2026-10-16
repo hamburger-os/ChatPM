@@ -326,3 +326,6 @@ Docker 工作流为验证多账号 HTTP/Origin/Cookie 人为设置 `REGISTRATION
 - 每次真实变化版本递增，现有 `project_task_history` 触发器只增一条 `before_archived_at/after_archived_at` 变化事实，与已有 CommandReceipt、Audit、DomainEvent、Outbox 同事务提交。同 key+payload 重放不加版本、不重复提醒或事件。
 - 任务已归档时拒绝 Task 更新和进度批准；Worker 在上下文、候选任务关联、催办处排除该任务。前端分别读取 active 和 archived，二者共用 `delivery/task-queries.ts` 的单事务即时成员授权和一致性读快照，Fastify 不再持有 Task 列表业务 SQL。
 - 核验 DB migration 重跑、并发版本、跨项目/角色拒绝、被撤权后的拒绝、归档与恢复历史证据、旧来源和报告、幂等以及 AI/提醒无隐式激活。
+
+
+**并发底线：** 归档 Command 持目标 Task `FOR UPDATE` 至提交；进度创建在数据库 `trg_reject_archived_task_progress` 内对同一 Task `FOR SHARE`，归档或进度插入必须一方等待另一方。禁止移除此触发器而仅依赖模型/HTTP 的旧快照或状态检查。
