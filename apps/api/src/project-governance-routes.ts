@@ -263,7 +263,7 @@ export function registerProjectGovernanceRoutes(
            before.cooldown_hours===input.cooldownHours)
           fail(409,'项目设置未发生变化');
         if(input.aiEnabled){
-          try{await resolveProjectModel(projectId);}
+          try{await resolveProjectModel(projectId,db);}
           catch{fail(400,'服务器尚未正确配置 AI 模型');}
         }
         const updated=await db.query<{settings_revision:number}>(`

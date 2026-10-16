@@ -306,3 +306,10 @@ Docker 工作流为验证多账号 HTTP/Origin/Cookie 人为设置 `REGISTRATION
 - `Delivery.createTaskRecord(db,...)` 与 `Risk.createRiskRecord(db,...)` 分别拥有正式创建 SQL。AI 人工审核在同一个父 `executePmCommand` 事务中调用领域写入函数，不能在 HTTP 重复 INSERT 或再开子事务。
 - `Governance.listPmRegisters(projectId,actorId)` 使用一次 REPEATABLE READ 的授权快照读取正式项目登记簿。Organization Web 复用统一 `client.ts` 请求入口。
 - 未完成：跨聚合 DomainEvent/Receipt 语义、Owner 双字段、模型 JSON Schema/Zod 单源、所有管理员写权限与各领域的完全薄路由化，以及生产级实测。
+
+## ADR-067 · 事务传递、模型端点与用户消息幂等
+
+- `resolveProjectModel(projectId, db?)` 和 `resolveModelConfig(id?,allowDisabled?,db?)` 对非事务调用使用默认 Pool；**事务中的调用必须显式传入当前 DbClient**，保证配置解析在同一连接上完成。
+- 模型配置 URL 仅由 `model-endpoint-policy.ts` 的 `validateModelUrl` 规范化；最终请求必须仍经过 `model-egress.ts` 的 DNS/地址 pinning 与响应限制。
+- Web 用户消息一项提交意图绑定 `(projectId,content,nonce)`，同意图重试不换 nonce；切项目、编辑内容、提交成功重置。消息服务端事务和唯一索引最终保证幂等。
+- 测试：注入连接替身以确保两次查询复用客户端，统一 URL 策略单测，浏览器重试静态守卫；不声称替代完整 Web 端到端或真实供应商验收。

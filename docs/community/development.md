@@ -379,3 +379,11 @@ Task create/update operations now route through Core commands with the existing 
 ## 2026-10-16 Core Risk registry boundaries (experimental)
 
 Risk assessment and lifecycle transitions now use Core PM commands, preserving receipt, optimistic versioning, formal audit/history, domain events and outbox in one transaction. Read APIs recheck and lock current tenant and project membership in one repeatable-read snapshot. Observers can read but not manage risks; revoked or cross-project access is denied. Broader RAID/WorkItem governance and real production testing remain open.
+
+## 2026-10-17 项目设置与消息重试可靠性修复（实验性）
+
+项目负责人启用 AI 时，服务器在既有项目设置事务中使用相同数据库连接读取默认模型，避免事务内部等待第二个连接。Provider 基础 URL 与模型调用的 URL 使用同一规范化策略，网络层仍独立校验 DNS、SSRF 和允许的本地端点。聊天室同一次发送请求失败后重新发送相同内容，会复用原消息 nonce，避免“已保存但响应丢失”导致重复发言；修改文字或切换项目视为新意图。此改进不等同于已实测所有网络断线场景，也不代表已完成生产验收。
+
+## 2026-10-17 Project-settings and message-retry reliability (experimental)
+
+When a project owner enables AI, the server resolves the default model using the already active project-settings transaction connection instead of borrowing a second pool connection. Provider URLs and model invocation URLs share one normalization policy; actual network egress retains independent DNS, SSRF and explicit local-endpoint checks. Retrying the same failed chat submission preserves its message nonce, preventing a duplicate when the server committed the first attempt but its HTTP response was lost. Editing the draft or switching projects creates a new intent. This change has not been certified against all real network outages or production environments.

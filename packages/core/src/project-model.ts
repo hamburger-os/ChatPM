@@ -1,6 +1,7 @@
 import { createCipheriv, createDecipheriv, createHash, randomBytes } from 'node:crypto';
 import { pool, type DbClient } from './db.ts';
 import { readLLMSettings, type LLMSettings, type LLMApiStyle, type ReasoningFormat } from './llm-transport.ts';
+import { validateModelUrl } from './model-endpoint-policy.ts';
 
 type Reasoning='auto'|'none'|'low'|'medium'|'high'|'max';
 export type ProviderInput={
@@ -46,21 +47,7 @@ export function decryptModelKey(value:string):string{
     return Buffer.concat([cipher.update(data.subarray(28)),cipher.final()]).toString('utf8');
   }catch{throw new Error('MODEL_KEY_DECRYPTION_FAILED');}
 }
-export function validateModelUrl(value:string):string{
-  let url:URL;
-  try{url=new URL(value);}catch{throw new Error('MODEL_INVALID_URL');}
-  const hostname=url.hostname.toLowerCase();
-  const local=['localhost','127.0.0.1','[::1]','host.docker.internal'].includes(hostname);
-  if(url.username||url.password||url.search||url.hash||url.origin==='null'||
-     value.length>2048||/\r|\n/.test(value)||
-     !(url.protocol==='https:'||(url.protocol==='http:'&&local))||
-     (!local && (hostname.endsWith('.local')||hostname.endsWith('.internal')||
-       /^(?:10|127|169\.254|192\.168)\./.test(hostname)||hostname==='0.0.0.0')))
-    throw new Error('MODEL_INVALID_URL');
-  const prefix=url.pathname.replace(/\/+$/,'');
-  if(/\/(responses|chat\/completions)$/.test(prefix))throw new Error('MODEL_INVALID_URL');
-  return url.origin+prefix;
-}
+
 function providerPublic(r:ProviderRow):ProviderPublic{
   return {id:r.id,name:r.name,baseUrl:r.base_url,style:r.api_style,
     enabled:r.enabled,hasKey:Boolean(r.api_key_ciphertext)};
@@ -141,8 +128,10 @@ export async function deleteModelConfig(db:DbClient,id:string):Promise<boolean>{
   const {rowCount}=await db.query('DELETE FROM ai_model_configs WHERE id=$1',[id]);
   return Boolean(rowCount);
 }
-export async function resolveModelConfig(id?:string,allowDisabled=false):Promise<LLMSettings>{
-  const {rows}=await pool.query<EffectiveRow>(`SELECT m.*,p.base_url,p.api_style,
+export async function resolveModelConfig(
+  id?:string,allowDisabled=false,db:DbClient|typeof pool=pool,
+):Promise<LLMSettings>{
+  const {rows}=await db.query<EffectiveRow>(`SELECT m.*,p.base_url,p.api_style,
        p.api_key_ciphertext,p.enabled AS provider_enabled
     FROM ai_model_configs m JOIN ai_provider_connections p ON p.id=m.provider_id
     WHERE ${id?'m.id=$1':'m.enabled=TRUE AND m.is_default=TRUE'}`,id?[id]:[]);
@@ -157,10 +146,12 @@ export async function resolveModelConfig(id?:string,allowDisabled=false):Promise
   return {...config,reasoning:model.reasoning,reasoningFormat:model.reasoning_format,
     maxOutputTokens:model.max_output_tokens,contextChars:model.context_chars};
 }
-export async function resolveProjectModel(projectId:string):Promise<LLMSettings>{
-  const found=await pool.query('SELECT 1 FROM projects WHERE id=$1',[projectId]);
+export async function resolveProjectModel(
+  projectId:string,db:DbClient|typeof pool=pool,
+):Promise<LLMSettings>{
+  const found=await db.query('SELECT 1 FROM projects WHERE id=$1',[projectId]);
   if(!found.rowCount)throw new Error('PROJECT_NOT_FOUND');
-  return resolveModelConfig();
+  return resolveModelConfig(undefined,false,db);
 }
 
 
