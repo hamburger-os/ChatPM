@@ -74,3 +74,10 @@ Project.owner_id 是正式负责人身份；project_members 同项目只能一�
 ## ADR-051 · Tenant Governance Command 的唯一写入语义
 
 应用中与部门、项目集、组合、组织成员、项目分类和资源分配有关的 8 个写 API 统一强制 UUID idempotencyKey。组织命令服务锁住 tenant-governance advisory transaction lock 并重验 tenant_members admin FOR UPDATE，随后占有 tenant_command_receipts(tenant,actor,kind,key) 的唯一行。新命令运行业务 SQL -> organization_audit_entries -> 持久回执结果；同命令回放不触发后续 SQL/审计，同键不同 payload 409，权限撤销者即便掌握旧 key 也不能获取回执。组织 Command 与项目领域独立，不写带虚假 project_id 的 DomainEvent；迁移 021 表结构足够，无须增加新 migration。
+
+## ADR-067 · 事务连接、模型端点与消息重试（2026-10-17）
+
+- 项目设置事务中验证 AI 模型配置须复用当前 DbClient，不能重新申请全局数据库 Pool。其它事务内跨模块调用遵循同一原则，防止小连接池饥饿与隐含的死锁风险。
+- Provider 保存与模型请求构造共用 `model-endpoint-policy.ts` 的 URL 规范化，不允许出现两个配置解析真相；实际网络请求仍由 `model-egress.ts` 独立执行 DNS/SSRF 校验与固定地址 socket 连接，安全检查不因复用而删减。
+- 每次浏览器用户消息提交持有稳定的 `(projectId, content, nonce)`；响应丢失后重试复用 nonce，成功、切换项目或修改内容后更新意图。数据库唯一键仍是正式去重依据。
+- 此次不新增外部依赖、不修改数据库 Schema、不改变权限范围。验收需覆盖连接注入单测、端点规范化单测、浏览器意图静态守卫和现有 API/DB CI；真实多实例/网络故障另验。
