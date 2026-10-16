@@ -19,23 +19,23 @@ export async function postUserMessage(
   return transaction(async db=>{
     const access=await lockProjectAccess(db,projectId,actorId);
     assertProject(access.role,'message.write');
-    let message=await insertMessage(db,{
+    const inserted=await insertMessage(db,{
       projectId,authorId:actorId,kind:'user',content,nonce,
     });
-    if(!message){
-      const previous=await db.query<{
-        id:string;author_id:string|null;content:string;
-      }>('SELECT * FROM messages WHERE project_id=$1 AND client_nonce=$2',
-        [projectId,nonce]);
-      message=previous.rows[0] as typeof message;
-      if(!message||message.author_id!==actorId||message.content!==content)
-        conflict();
-    }else{
+    if(inserted){
       await db.query(
         "INSERT INTO outbox_events(project_id,kind,message_id) VALUES($1,'message.created',$2)",
-        [projectId,message.id]);
-      await audit(db,projectId,actorId,'message.created',message.id);
+        [projectId,inserted.id]);
+      await audit(db,projectId,actorId,'message.created',inserted.id);
+      return {message:inserted};
     }
+    const previous=await db.query<{
+      id:string;author_id:string|null;content:string;
+    }>('SELECT * FROM messages WHERE project_id=$1 AND client_nonce=$2',
+      [projectId,nonce]);
+    const message=previous.rows[0];
+    if(!message||message.author_id!==actorId||message.content!==content)
+      conflict();
     return {message};
   });
 }
