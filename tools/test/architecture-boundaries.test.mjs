@@ -189,6 +189,10 @@ test('Task archive uses one Core command and retains immutable factual history',
   const history=readFileSync(new URL('../../packages/core/sql/027_task_archive.sql',import.meta.url),'utf8');
   const runner=readFileSync(new URL('../../packages/core/src/automation/reminder-runner.ts',import.meta.url),'utf8');
   const ai=readFileSync(new URL('../../packages/core/src/conversation/ai-event-runner.ts',import.meta.url),'utf8');
+  const query=readFileSync(new URL('../../packages/core/src/delivery/task-queries.ts',import.meta.url),'utf8');
+  assert.match(query,/SET TRANSACTION ISOLATION LEVEL REPEATABLE READ/);
+  assert.match(query,/lockProjectAccess\(db,projectId,actorId\)/);
+  assert.match(route,/listProjectTasks\(projectId,actorId/);
   assert.match(route,/setTaskArchived\(projectId,taskId,actorId/);
   assert.doesNotMatch(route,/UPDATE tasks|DELETE FROM tasks|executePmCommand\(/,
     'Archive HTTP route must never own the official Task write');
