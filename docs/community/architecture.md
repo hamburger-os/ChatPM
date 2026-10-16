@@ -133,3 +133,9 @@ English: The Docker integration workflow stops application writers and restores 
 中文：成员聊天写入现在在同一数据库事务中重新验证并锁住当前组织和项目权限，原子保存消息、Outbox 与最小审计；相同操作重试不会重复发送。AI 候选被人工批准后，正式任务/风险创建复用对应核心领域的唯一 SQL 写入路径。项目治理登记簿使用一致性数据库快照读取；组织工作台复用公共 HTTP 请求工具。此变更不是实时 SSE、完整 AI PM、企业模型认证或生产验收。
 
 English: Chat submission now locks and revalidates current organization and project membership within the same transaction that commits the message, outbox event and minimal audit. Replays do not republish. Human-approved Task/Risk proposals use their respective Core domain insertion paths. Formal PM registers are fetched from a consistent transaction snapshot, and the organization UI reuses the shared HTTP request helper. Live SSE, a complete AI PM, enterprise model certification and production acceptance are not delivered by this change.
+
+### ADR-066 · 平台管理员模型写入锁 / Platform model administration lock
+
+中文：系统管理员修改模型连接、密钥和模型目录时，服务端会在真正写入数据库的事务内再次验证并锁定当前系统管理员资格，避免已被撤权的账号凭旧请求继续保存配置。模型测试的配额登记也受保护；对已经开始的外部模型调用，本措施不提供网络取消保证。组织权限与项目聊天权限仍彼此独立。
+
+English: Model/provider changes and model-test rate-limit reservations now recheck the current platform-administrator grant under a database row lock in the same transaction as the write. A revoked account cannot use a stale request to save configuration. This does not cancel an external inference request that has already started. Platform administration and project conversation access remain separate.

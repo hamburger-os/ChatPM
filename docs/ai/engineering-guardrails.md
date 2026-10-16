@@ -149,3 +149,7 @@
 - Risk 是潜在不确定性，Issue 是已发生事实；须保留 open→mitigating→resolved→reopen 的明确状态机和风险负责人有效性；正式关闭不得凭 AI 推断。
 - Risk GET 由 Core `listProjectRisks/readRiskHistory` 在同一 REPEATABLE READ 事务里锁定 TenantMember、ProjectMember 行并读取，仅返回本项目数据。Observer 可读不可计划；撤权和跨租户不可通过「先授权再单独查询」竞态暴露风险历史。
 - API 不得直接对 risks/risk_register_changes 写 SQL，当前改动不等于所有 PM 领域模型实现或生产多实例安全认证。
+
+## ADR-066 · 平台系统管理员的最新权限
+
+所有系统模型/供应商的**正式写入**必须通过 `Identity.systemAdminTransaction`：在业务事务中 `SELECT users.is_system_admin FOR SHARE`，验证后再修改 Model/Provider 与 SystemAudit；路由入口的预检不能代替事务授权。模型测试的频率预留同样受该机制保护，但实际 HTTP 模型调用不持数据库锁，不宣称能够撤销已经发出的第三方请求。新增 PostgreSQL 并发降权测试及静态守卫；普通系统权限不自动授予项目消息读取权。

@@ -198,3 +198,7 @@ Docker 部署 Smoke 原先仅验证 pg_dump custom-format 文件头和 pg_restor
 ## ADR-065 · 整体审查后的首个实现切片
 
 本轮增加 Conversation Core 事务内消息权限及单一写入入口、消息最小审计/Outbox 原子性、AI 审批复用 Delivery/Risk Core 记录创建、PM 登记簿统一授权快照、组织前端共享 HTTP 请求入口，并补充静态架构断言与 PostgreSQL 消息重试和撤权集成检查。验收必须以本 PR 最终 Head 的 CI 为准，而不是先前 main 的结果。Owner 两处表示、跨聚合 DomainEvent、管理员模型事务授权、AI Schema 单源及其余路由、真实模型/Windows/SSE/生产安全与数据保留仍未全面交付；P1–P4 的整体 Issues 不应据此关闭。
+
+## ADR-066 · 管理员模型写入事务授权
+
+系统供应商/模型的创建、编辑、删除、批量导入和模型测试配额写入，现统一在事务中重新锁定并检查当前系统管理员标志；此前路由入口鉴权仍可用于尽早拒绝，但不再是提交业务数据的唯一保证。新 PostgreSQL 并发测试和架构检查被接入 Product verification。真实模型外部请求期间的网络撤权、自动成本控制、真实供应商实测、身份生命周期和生产渗透测试仍未验收。结果以此 PR 最新 Head 工作流为准。
