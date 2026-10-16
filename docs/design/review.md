@@ -272,3 +272,21 @@ Risk 列表/历史读取迁入 `packages/core/src/risk/risk-queries.ts`，用同
 ## ADR-068 · 审核 Core 所有权 /review（2026-10-17）
 
 核对人工确认任务进展、候选 Task 和 Risk 均通过 Approval Core 单一命令入口，Fastify 只验证 DTO，不保留业务 SQL 或第二份 `executePmCommand`。核验本次变更没有另造审计表或事件模型，候选只允许由有权限的当前项目人审核；重复 key 回放恰好一个回执，异 payload / 二次新 key 409，正式任务和风险恰好各创建一次；任务进展审核不能直接声称任务完成。静态守卫、PostgreSQL Core 回归、现有编译 API Smoke、Windows/Linux/Docker/文档/安全 CI 均应在最后提交的 SHA 上检查。剩余域路由 SQL、性能和生产实机验证尚未因此关闭。
+
+## 2026-10-17 · V2 整体 /review（Issue #39–#51 与基础交付）
+
+**审查范围与状态：** main `ea2bf32572c378adcf57f25337b38f0ec8a9a235` 及本次 Task Archive 切片。技术核心仍是 Fastify/Next.js/PostgreSQL/Worker 模块化单体、授权命令、事务 Outbox 与人工审批。不会因“所有工作”要求而将尚缺证据的生产验收或未实现功能伪装为完成。
+
+| 工作面 | 已有基础 / 当前审查结论 | 仍需完成及实际阻塞 |
+| --- | --- | --- |
+| P0 模型出站与人员入职 (#39) | DNS 全量结果/pinning、禁止跳转、注册 bootstrap token、组织邀请码已合并 | 部署侧出站防火墙、TLS/代理/公网攻防与防滥用实测 |
+| P1 正式领域 (#48) | Goal/Deliverable/Issue/Decision/Change、Task/Risk 命令和进度审核；本次补 Task Archive/Restore | 完整 WorkItem、基线实施、跨实体命令边界及真实存量 ETL 对账 |
+| P2 API/Worker (#49/#4) | Worker 分 lane、Outbox fencing、Task/Risk/Approval 部分 Core 收敛 | server/governance/pm 剩余 SQL、租约续期与并发故障注入、告警 |
+| AI PM (#50/#5) | 授权版本、模型调用账本、Evidence/Claim 初级实现、合成黄金集 | 组织级 capability、可执行 Playbook、真实 Provider token/cost/语义评测 |
+| 部门/项目集/组合 (#43) | 独立模型、容量守卫、单源 Portfolio/Program pulse | 战略收益、实际资源工时、跨项目依赖历史、优先级 |
+| 实时协作 (#40) | 轮询和消息 nonce/seq | SSE 游标/断线恢复/代理流式传输与移动设备 E2E |
+| 任务归档 (#42) | 本次新增 Task 原位归档/恢复、历史、权限、工作台与 CI | 全量历史和规模负载、真实浏览器移动端仍未验收；永久删除另需数据保留策略 |
+| 发布与运行 (#51/#41/#20/#19/#18/#6) | Docker CI、native builds、容器隔离恢复、备份模板 | Win11/Linux/QNAP 实机、IPv6/HTTPS、签名安装包、离机加密备份与 PITR、完整 V1→V2 ETL、签署 |
+| 依赖升级 (#34) | 锁定版本和现有 CI | 分 PR 主版本迁移与生态兼容性矩阵，不能一次未经校验升级 |
+
+**合并门槛。** 本轮 Task Archive 只在最新 Head 五组 CI 和审查记录成功后合并；重大未完成 Issues 保持开放。所有生产实机、真实模型、历史迁移数据和外部签名密钥有关验收，在缺少环境/证据时必须明确标注 *未验收*。不将 CI green 写成生产安全认证。
