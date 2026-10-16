@@ -371,3 +371,11 @@ A Worker may publish AI replies, proposals, clarifications and analysis states o
 ## 2026-10-16 Core Task command ownership and no-op discipline (experimental)
 
 Task create/update operations now route through Core commands with the existing idempotent receipt, project membership grants, task prerequisites, FollowUp, audit and outbox behavior. Saving identical status, title, assignee and due date with a new request is a 409 no-op, creating **no** artificial Task version or history entry; replaying the same previously completed command remains idempotent. Other PM register writes and enterprise production validation are outside this increment.
+
+## 2026-10-16 风险登记簿权限与命令清理（实验性）
+
+风险评估、开始缓解、关闭、重新打开及历史记录仍按原有业务流程使用，但服务端统一由 Core Risk 命令执行。风险历史、项目成员权限和数据查询属于同一数据库事务；只读观察者不能修改风险，移除项目成员后不再返回风险列表或历史。Risk 是未来可能发生的不确定性，不等于已经发生的问题 Issue。正式记录继续保留版本、责任人、说明、审计、领域事件与 Outbox，AI 不得绕开人工审核更改风险状态。
+
+## 2026-10-16 Core Risk registry boundaries (experimental)
+
+Risk assessment and lifecycle transitions now use Core PM commands, preserving receipt, optimistic versioning, formal audit/history, domain events and outbox in one transaction. Read APIs recheck and lock current tenant and project membership in one repeatable-read snapshot. Observers can read but not manage risks; revoked or cross-project access is denied. Broader RAID/WorkItem governance and real production testing remain open.
