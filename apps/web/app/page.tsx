@@ -44,6 +44,7 @@ export default function Home(){
   const bottom=useRef<HTMLDivElement>(null);
   const cursor=useRef(0);
   const createIntent=useRef<{fingerprint:string;key:string}|null>(null);
+  const sendIntent=useRef<{projectId:string;content:string;nonce:string}|null>(null);
   const current=projects.find(x=>x.id===selected)||null;
   const canOrg=tenants.some(x=>x.role==='admin');
 
@@ -133,6 +134,7 @@ export default function Home(){
     window.history.replaceState(null,'',window.location.pathname+(params.size?'?'+params:''));
   }
   function selectProject(id:string){
+    sendIntent.current=null;
     setMobileWork(false);setSelected(id);setNotice('');
     const params=new URLSearchParams(window.location.search);
     params.set('project',id);params.delete('view');
@@ -171,9 +173,14 @@ export default function Home(){
   function send(e:FormEvent){
     e.preventDefault();if(!selected||!chat.trim()||current?.role==='observer')return;
     const content=chat.trim();
+    const intent=sendIntent.current;
+    const nonce=intent?.projectId===selected&&intent.content===content
+      ?intent.nonce:crypto.randomUUID();
+    sendIntent.current={projectId:selected,content,nonce};
     void action(async()=>{
       await request('/projects/'+selected+'/messages',{method:'POST',
-        body:json({content,nonce:crypto.randomUUID()})});
+        body:json({content,nonce})});
+      sendIntent.current=null;
       setChat('');
     });
   }
@@ -307,7 +314,7 @@ export default function Home(){
           {!messages.length&&<div className="empty">开始讨论任务、进度、问题与风险。</div>}<div ref={bottom}/>
         </div>{current?.role!=='observer'&&<form className="composer" onSubmit={send}>
           <textarea rows={3} placeholder="讨论项目进度；输入 @AI 与 AI 协作"
-            value={chat} onChange={e=>setChat(e.target.value)}
+            value={chat} onChange={e=>{setChat(e.target.value);sendIntent.current=null;}}
             onKeyDown={e=>{if(e.key==='Enter'&&!e.shiftKey&&!e.nativeEvent.isComposing){
               e.preventDefault();send(e as unknown as FormEvent);}}}/>
           <button disabled={working||!chat.trim()}>发送</button>

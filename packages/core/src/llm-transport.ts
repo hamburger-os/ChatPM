@@ -1,5 +1,6 @@
 import { secureModelFetch } from './model-egress.ts';
 import { createHash } from 'node:crypto';
+import { validateModelUrl } from './model-endpoint-policy.ts';
 
 // Deployment-controlled model endpoint adapters. No client-supplied URL or hidden fallback.
 export type LLMApiStyle = 'responses' | 'chat-completions';
@@ -29,17 +30,7 @@ export function readLLMSettings(env:Readonly<Record<string,string|undefined>>):L
   if(model.length>150 || /[\r\n]/.test(model))throw new Error('MODEL_INVALID_MODEL');
   const rawUrl=env.LLM_BASE_URL;
   if(!rawUrl)throw new Error('MODEL_INVALID_URL');
-  let url:URL;
-  try { url=new URL(rawUrl); } catch { throw new Error('MODEL_INVALID_URL'); }
-  const internal=['localhost','127.0.0.1','[::1]','host.docker.internal'].includes(url.hostname);
-  if((url.protocol!=='https:' && !(url.protocol==='http:' && internal)) ||
-     url.username || url.password || url.search || url.hash || !url.hostname ||
-     /[\r\n]/.test(rawUrl) || rawUrl.length>2048) {
-    throw new Error('MODEL_INVALID_URL');
-  }
-  const prefix=url.pathname.replace(/\/+$/,'');
-  if(/\/(responses|chat\/completions)$/.test(prefix))throw new Error('MODEL_INVALID_URL');
-  return {apiKey,style,model,baseUrl:url.origin+prefix};
+  return {apiKey,style,model,baseUrl:validateModelUrl(rawUrl)};
 }
 
 
