@@ -257,3 +257,13 @@ Docker `deploy:docker` 与 Windows/Linux 原生 `setup:local` 在私有 `.env` �
 **真实变化不变量：** 如果新请求使用正确 `version` 和新的幂等键，但 `status/title/assignee_id/due_date` 所有正式字段均与当前状态相同，返回 409 `任务没有实际变化`，事务回滚且不创建成功 Receipt、任务版本、历史事件、审计、DomainEvent、Outbox 或催办刷新。版本冲突先拒绝，再比较无操作；相同已成功 `idempotencyKey + payload` 可继续回放原结果，而原 key 不同 payload 必须 409。只有实际变化能递增版本并生成正式历史证据，AI 未审候选仍不直接更新正式 Task。
 
 回归补充：真实 PostgreSQL Core 集成覆盖创建、完整无操作拒绝/数量不变、有效任务更新、相同键回放/同键异参冲突、旧版本拒绝、事件计数；旧 API Smoke 中增加 no-op 后历史来源数量保持不变断言。静态架构测试防止 Fastify Task 路由恢复直接 `UPDATE/INSERT tasks`。范围仅 Task CRUD 的正式写入，不等于 PM 所有 WorkItem、验收、风险和 Portfolio 全域命令完全收敛；Issue #48/#49 继续开放。
+
+## ADR-067 · Risk 正式登记簿 Core 读写隔离 /review（2026-10-16）
+
+原有 `apps/api/src/risk-routes.ts` 同时执行 PM 风险评估/缓解/关闭的 SQL、Risk 变更历史写入和「先授权、后另外一条连接读取」的风险列表/历史查询，违背 Module/Core 读写所有权与撤权一致性约束。本次将 Risk 命令完整迁入 `packages/core/src/risk/risk-commands.ts`，复用 `executePmCommand` 的真实当前 Tenant+Project 成员授权、提交命令 Receipt/DomainEvent/Audit/Outbox 同事务及乐观版本；保留评估风险 1–5 概率/影响、非 observer 负责人、有效应对计划才能开始缓解、open→mitigating→resolved→open 合法流转、人工 `note` 审计历史。不得让 AI 未审候选自动关闭风险，也不能把实际 Issue 与潜在 Risk 混为一类。
+
+Risk 列表/历史读取迁入 `packages/core/src/risk/risk-queries.ts`，用同一个 PostgreSQL REPEATABLE READ 事务和 `lockProjectAccess` 的当前组织+项目成员 SHARE 行锁校验，再在一致快照中读取本项目风险/历史。跨项目伪造 riskId、撤权后继续读取、组织成员但非项目成员一律拒绝；普通 Observer 可只读，不能评估/转移。API 只负责 UUID/输入 Schema/身份解析及调用 Core，不再持领域 SQL。
+
+真实 PostgreSQL 验证：组织/项目隔离、Observer 阅读和写入拒绝、合法风险评估及幂等回放/变 payload 冲突、未评估不能缓解、生命周期约束、历史分页、项目成员撤权后的风险读取拒绝；保留既有 compiled API Risk Smoke。新增测试夹具于结束时处理自身 Outbox，避免污染后续全局事件 Consumer。静态架构守卫禁止 Risk HTTP route 重新持有直接 SQL 或命令执行器。
+
+这是 Issue #48/#49 正式 Risk 边界的增量，仍不代表完整 RAID/WorkItem/Portfolio/跨项目依赖、AI Playbook、多实例 Worker 或 Win11/QNAP 生产验证已经完成。
