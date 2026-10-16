@@ -116,7 +116,7 @@ test('user messages have one Core-owned transaction and authorization boundary',
   const api=readFileSync(new URL('../../apps/api/src/server.ts',import.meta.url),'utf8');
   const command=readFileSync(new URL('../../packages/core/src/conversation/user-message-command.ts',import.meta.url),'utf8');
   const start=api.indexOf("app.post('/projects/:id/messages'");
-  const end=api.indexOf("app.get('/projects/:id/tasks'",start);
+  const end=api.indexOf("app.get('/projects/:id/progress'",start);
   assert.ok(start>=0&&end>start);
   const block=api.slice(start,end);
   assert.match(block,/postUserMessage\(projectId,actorId,content,nonce\)/);
