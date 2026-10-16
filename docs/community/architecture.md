@@ -139,3 +139,8 @@ English: Chat submission now locks and revalidates current organization and proj
 中文：系统管理员修改模型连接、密钥和模型目录时，服务端会在真正写入数据库的事务内再次验证并锁定当前系统管理员资格，避免已被撤权的账号凭旧请求继续保存配置。模型测试的配额登记也受保护；对已经开始的外部模型调用，本措施不提供网络取消保证。组织权限与项目聊天权限仍彼此独立。
 
 English: Model/provider changes and model-test rate-limit reservations now recheck the current platform-administrator grant under a database row lock in the same transaction as the write. A revoked account cannot use a stale request to save configuration. This does not cancel an external inference request that has already started. Platform administration and project conversation access remain separate.
+
+
+### 人工审核与正式事项
+
+AI 进度建议、候选任务和候选风险都需要具备项目授权的人审核。审核的唯一正式写入入口是 `packages/core/src/approval/decision-commands.ts`，Fastify 路由负责参数和身份入口；采纳后的 Task/Risk 创建仍归各自 Core 服务负责。幂等回执、事件、审计与 Outbox 与审核结果处于同一 PostgreSQL 事务。详见 `docs/design/implementation-status.md` ADR-068；这不等于所有 PM 领域已完成模块化。
