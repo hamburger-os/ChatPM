@@ -1,6 +1,7 @@
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { z } from 'zod';
-import { pool, transaction } from '../../../packages/core/src/db.ts';
+import { pool } from '../../../packages/core/src/db.ts';
+import { systemAdminTransaction } from '../../../packages/core/src/identity/system-access.ts';
 import { requireSystemAdmin } from '../../../packages/core/src/permissions.ts';
 import {
   deleteModelConfig,deleteProvider,importModelConfigs,listModelConfigs,listProviders,
@@ -43,7 +44,7 @@ export function registerAdminModelRoutes(app:FastifyInstance,
   });
   app.post('/admin/ai/providers',async(req,reply)=>{
     const actor=await admin(req),value=providerSchema.parse(req.body);
-    const provider=await transaction(async db=>{
+    const provider=await systemAdminTransaction(actor,async db=>{
       const saved=await saveProvider(db,null,value);
       await db.query(`INSERT INTO system_audit_entries(actor_id,action,target_id,metadata)
         VALUES($1,'ai.provider_created',$2,$3)`,
@@ -55,7 +56,7 @@ export function registerAdminModelRoutes(app:FastifyInstance,
   app.put('/admin/ai/providers/:id',async req=>{
     const actor=await admin(req),id=uuid.parse((req.params as {id:string}).id);
     const value=providerSchema.parse(req.body);
-    const provider=await transaction(async db=>{
+    const provider=await systemAdminTransaction(actor,async db=>{
       const saved=await saveProvider(db,id,value);
       await db.query(`INSERT INTO system_audit_entries(actor_id,action,target_id,metadata)
         VALUES($1,'ai.provider_updated',$2,$3)`,[actor,id,JSON.stringify({
@@ -67,7 +68,7 @@ export function registerAdminModelRoutes(app:FastifyInstance,
   });
   app.delete('/admin/ai/providers/:id',async req=>{
     const actor=await admin(req),id=uuid.parse((req.params as {id:string}).id);
-    const removed=await transaction(async db=>{
+    const removed=await systemAdminTransaction(actor,async db=>{
       const related=await db.query('SELECT 1 FROM ai_model_configs WHERE provider_id=$1 LIMIT 1',[id]);
       if(related.rowCount)denied(409,'请先移除该供应商的模型');
       const ok=await deleteProvider(db,id);
@@ -112,7 +113,7 @@ export function registerAdminModelRoutes(app:FastifyInstance,
         name:z.string().trim().min(1).max(100).optional(),
       }).strict()).min(1).max(50),
     }).strict().parse(req.body);
-    const result=await transaction(async db=>{
+    const result=await systemAdminTransaction(actor,async db=>{
       const imported=await importModelConfigs(db,input.providerId,input.models);
       await db.query(`INSERT INTO system_audit_entries(actor_id,action,target_id,metadata)
         VALUES($1,'ai.models_imported',$2,$3)`,[actor,input.providerId,
@@ -127,7 +128,7 @@ export function registerAdminModelRoutes(app:FastifyInstance,
   });
   app.post('/admin/ai/models',async(req,reply)=>{
     const actor=await admin(req),value=modelSchema.parse(req.body);
-    const model=await transaction(async db=>{
+    const model=await systemAdminTransaction(actor,async db=>{
       const saved=await saveModelConfig(db,null,value);
       await db.query(`INSERT INTO system_audit_entries(actor_id,action,target_id,metadata)
         VALUES($1,'ai.model_created',$2,$3)`,[actor,saved.id,JSON.stringify({
@@ -139,7 +140,7 @@ export function registerAdminModelRoutes(app:FastifyInstance,
   app.put('/admin/ai/models/:id',async req=>{
     const actor=await admin(req),id=uuid.parse((req.params as {id:string}).id);
     const value=modelSchema.parse(req.body);
-    const model=await transaction(async db=>{
+    const model=await systemAdminTransaction(actor,async db=>{
       const saved=await saveModelConfig(db,id,value);
       await db.query(`INSERT INTO system_audit_entries(actor_id,action,target_id,metadata)
         VALUES($1,'ai.model_updated',$2,$3)`,[actor,id,JSON.stringify({
@@ -151,7 +152,7 @@ export function registerAdminModelRoutes(app:FastifyInstance,
   });
   app.delete('/admin/ai/models/:id',async req=>{
     const actor=await admin(req),id=uuid.parse((req.params as {id:string}).id);
-    const deleted=await transaction(async db=>{
+    const deleted=await systemAdminTransaction(actor,async db=>{
       const removed=await deleteModelConfig(db,id);
       if(removed)await db.query(`INSERT INTO system_audit_entries(actor_id,action,target_id)
         VALUES($1,'ai.model_deleted',$2)`,[actor,id]);
