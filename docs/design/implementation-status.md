@@ -212,6 +212,6 @@ Docker 部署 Smoke 原先仅验证 pg_dump custom-format 文件头和 pg_restor
 
 ## ADR-069 · 任务归档/恢复完整命令切片（2026-10-17）
 
-新增 `027_task_archive.sql`，在正式 Task 增加原位归档标记并扩展不可变 `project_task_history`，`packages/core/src/delivery/task-commands.ts` 提供 `setTaskArchived`，POST `/projects/:id/tasks/:taskId/archive` 与 `/restore` 只做入参校验、现时角色与版本由已有命令运行时控制。项目 Owner/Manager 有权归档完成/取消且无待审核进度的任务，Owner/Manager 可恢复；成员/观察者只读历史。归档期间禁止修改任务或接受进度，停止催办和后续针对该任务的 AI 进度抽取；项目任务 UI 增加归档列表与恢复。周月报当前工作量和项目集组合快照剔除归档任务，但来源、领域事件、历史证据以及先前报告仍保留；不实现硬删除。
+新增 `027_task_archive.sql`，在正式 Task 增加原位归档标记并扩展不可变 `project_task_history`，`packages/core/src/delivery/task-commands.ts` 提供 `setTaskArchived`，POST `/projects/:id/tasks/:taskId/archive` 与 `/restore` 只做入参校验、现时角色与版本由已有命令运行时控制。项目 Owner/Manager 有权归档完成/取消且无待审核进度的任务，Owner/Manager 可恢复；成员/观察者只读历史。归档期间禁止修改任务或接受进度，停止催办和后续针对该任务的 AI 进度抽取；项目任务 UI 增加归档列表与恢复。正式 Task 列表 GET 从 `server.ts` 移入 Core `delivery/task-queries.ts`，使用同一个 REPEATABLE READ 事务的当前成员行锁核验与读取，避免旧请求在撤权后继续跨连接拿到归档任务。周月报当前工作量和项目集组合快照剔除归档任务，但来源、领域事件、历史证据以及先前报告仍保留；不实现硬删除。
 
 同 PR 增加 PostgreSQL 集成测试与架构守卫，纳入 Product verification。实际完成及质量验证须以 PR 最终 SHA 的 CI 为准；不宣称正式生产实机、长期数据保留策略、完整 PMP 或 AI 性能验收。
