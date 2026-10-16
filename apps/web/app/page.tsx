@@ -180,8 +180,8 @@ export default function Home(){
     void action(async()=>{
       await request('/projects/'+selected+'/messages',{method:'POST',
         body:json({content,nonce})});
-      sendIntent.current=null;
-      setChat('');
+      if(sendIntent.current?.nonce===nonce)sendIntent.current=null;
+      setChat(current=>current.trim()===content?'':current);
     });
   }
   function logout(){
