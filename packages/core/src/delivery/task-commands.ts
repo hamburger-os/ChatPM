@@ -58,7 +58,7 @@ export async function createTask(
 }
 type TaskBefore={
   version:number;status:TaskStatus;title:string;assignee_id:string|null;
-  due_date:string|null;archived_at:Date|null;
+  due_date:string|null;archived_at?:Date|null;
 };
 export function hasTaskChanges(before:TaskBefore,next:{
   status:TaskStatus;title:string;assigneeId:string|null;dueDate:string|null;
