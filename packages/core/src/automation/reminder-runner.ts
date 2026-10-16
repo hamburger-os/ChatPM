@@ -7,7 +7,7 @@ export async function processReminders() {
   await transaction(async db=>{
     const {rows:plans}=await db.query(
       `SELECT fp.id,fp.project_id,fp.task_id,fp.task_version,
-        t.title,t.status,t.version,t.due_date::text AS due_date,t.assignee_id,
+        t.title,t.status,t.version,t.archived_at,t.due_date::text AS due_date,t.assignee_id,
         last_progress.kind AS latest_progress_kind,
         u.display_name,p.timezone,p.work_start,p.work_end,p.cooldown_hours
        FROM followup_plans fp
@@ -22,7 +22,7 @@ export async function processReminders() {
        WHERE fp.active AND fp.next_at <= NOW()
        ORDER BY fp.next_at LIMIT 30 FOR UPDATE OF fp SKIP LOCKED`);
     for(const p of plans) {
-      const current=p.status!=='done'&&p.status!=='cancelled'&&
+      const current=!p.archived_at&&p.status!=='done'&&p.status!=='cancelled'&&
         p.version===p.task_version&&p.assignee_id&&p.due_date;
       if(!current){
         await db.query('UPDATE followup_plans SET active=FALSE WHERE id=$1',[p.id]);
