@@ -58,7 +58,7 @@ export async function createTask(
 }
 type TaskBefore={
   version:number;status:TaskStatus;title:string;assignee_id:string|null;
-  due_date:string|null;
+  due_date:string|null;archived_at:Date|null;
 };
 export function hasTaskChanges(before:TaskBefore,next:{
   status:TaskStatus;title:string;assigneeId:string|null;dueDate:string|null;
@@ -91,6 +91,7 @@ export async function updateTask(
       `,[projectId,taskId]);
       const before=rows[0] as TaskBefore|undefined;
       if(!before)fail(404,'任务不存在');
+      if(before.archived_at)fail(409,'任务已归档，请先恢复后再修改');
       if(v.status!==undefined)assertProject(role,'task.status',{
         isAssignee:before.assignee_id===actorId});
       if(before.version!==v.version)fail(409,'任务版本已更新，请刷新');
@@ -122,6 +123,57 @@ export async function updateTask(
           assigneeId:before.assignee_id,dueDate:before.due_date},
           after:next},
       };
+    },
+  });
+}
+
+export type TaskArchiveInput={idempotencyKey:string;expectedVersion:number};
+
+/** Archive is not cancellation and never destroys immutable history.
+ * Only finished/cancelled work with no pending human review may be archived.
+ * Both actions require a live project planner role and an optimistic version.
+ */
+export async function setTaskArchived(
+  projectId:string,taskId:string,actorId:string,
+  input:TaskArchiveInput,archive:boolean,
+){
+  return executePmCommand({
+    projectId,actorId,action:'task.plan',
+    kind:archive?'task.archived.v1':'task.restored.v1',
+    idempotencyKey:input.idempotencyKey,payload:{taskId,...input},
+    mutate:async db=>{
+      const before=(await db.query<{
+        version:number;status:TaskStatus;archived_at:Date|null;
+      }>(`SELECT version,status,archived_at FROM tasks
+        WHERE project_id=$1 AND id=$2 FOR UPDATE`,
+      [projectId,taskId])).rows[0];
+      if(!before)fail(404,'任务不存在');
+      if(before.version!==input.expectedVersion)
+        fail(409,'任务版本已更新，请刷新');
+      if(archive){
+        if(before.archived_at)fail(409,'任务已经归档');
+        if(!['done','cancelled'].includes(before.status))
+          fail(409,'只有已完成或已取消的任务才能归档');
+        const pending=await db.query(`
+          SELECT 1 FROM task_progress_updates
+          WHERE project_id=$1 AND task_id=$2 AND status='pending' LIMIT 1`,
+          [projectId,taskId]);
+        if(pending.rowCount)fail(409,'仍有待审核的进度证据，请先完成审核');
+      }else if(!before.archived_at)fail(409,'任务未归档');
+      const {rows}=await db.query<{id:string;version:number;archived_at:Date|null}>(`
+        UPDATE tasks SET
+          archived_at=CASE WHEN $3::boolean THEN NOW() ELSE NULL END,
+          archived_by=CASE WHEN $3::boolean THEN $4::uuid ELSE NULL END,
+          version=version+1,updated_at=NOW()
+        WHERE project_id=$1 AND id=$2 RETURNING id,version,archived_at`,
+      [projectId,taskId,archive,actorId]);
+      await syncFollowup(db,projectId,taskId);
+      return {response:{task:rows[0]},
+        aggregateType:'tasks',aggregateId:taskId,
+        aggregateVersion:rows[0].version,
+        auditDetails:{previousVersion:before.version,archived:archive,
+          previousArchivedAt:before.archived_at?.toISOString()??null,
+          newArchivedAt:rows[0].archived_at?.toISOString()??null}};
     },
   });
 }
