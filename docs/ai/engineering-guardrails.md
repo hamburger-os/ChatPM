@@ -142,3 +142,10 @@
 - 正式 Task 创建与更新只能通过 Core `createTask/updateTask`，HTTP/Worker 不得绕过当前 Project/Tenant 授权、依赖完成规则、有效负责人和 `executePmCommand` 事务写表。Task 状态、任务计划、FollowUp 与 TaskHistory 的事实必须同源。
 - 只有 status、title、assignee 或 due_date **至少一个发生实际变化** 才创建新的版本、CommandReceipt、DomainEvent、审计、Outbox 与任务历史；新幂等键但完全无变化的调用 409 并完整回滚。完全相同的已完成命令仍按原 key+payload 回放。
 - 任务计划编辑与任务状态编辑分别沿用 Role/action 校验，未审 AI 提议不能绕过 Core 写任务。此次仅迁移 Task 的创建更新写入口，不可将其冒称为完整 PM Domain Runtime 的迁移完成。
+
+## ADR-067 · Risk 登记簿域所有权
+
+- 正式风险评估及状态改变仅可经 Core `assessRisk/transitionRisk`，用现有 `executePmCommand` 按当前项目授权与版本执行，必须同事务记录风险历史、CommandReceipt、DomainEvent、Outbox、审计；未经人类批准的 AI Risk 候选不能改变正式风险的状态或归属。
+- Risk 是潜在不确定性，Issue 是已发生事实；须保留 open→mitigating→resolved→reopen 的明确状态机和风险负责人有效性；正式关闭不得凭 AI 推断。
+- Risk GET 由 Core `listProjectRisks/readRiskHistory` 在同一 REPEATABLE READ 事务里锁定 TenantMember、ProjectMember 行并读取，仅返回本项目数据。Observer 可读不可计划；撤权和跨租户不可通过「先授权再单独查询」竞态暴露风险历史。
+- API 不得直接对 risks/risk_register_changes 写 SQL，当前改动不等于所有 PM 领域模型实现或生产多实例安全认证。

@@ -61,6 +61,8 @@ jobs:
         run: node --import tsx packages/core/test/ai-authorization.integration.ts
       - name: One-time organization invitation integration
         run: node --import tsx packages/core/test/invitations.integration.ts
+      - name: Core Risk registry commands and membership-scoped read integration
+        run: node --import tsx packages/core/test/risk-service.integration.ts
       - name: Core Task commands and no-op domain/event integration
         run: node --import tsx packages/core/test/task-commands.integration.ts
       - name: Core project classification command and rollback integration
