@@ -1,6 +1,5 @@
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { z } from 'zod';
-import { pool } from '../../../packages/core/src/db.ts';
 import { systemAdminTransaction } from '../../../packages/core/src/identity/system-access.ts';
 import { requireSystemAdmin } from '../../../packages/core/src/permissions.ts';
 import {
@@ -162,13 +161,13 @@ export function registerAdminModelRoutes(app:FastifyInstance,
     return {ok:true};
   });
   app.post('/admin/ai/models/:id/test',async req=>{
-    await admin(req);
+    const actor=await admin(req);
     const id=uuid.parse((req.params as {id:string}).id);
     const mode=z.object({mode:z.enum(['quick','full']).default('quick')})
       .strict().parse(req.body??{}).mode;
     const config=await resolveModelConfig(id,true).catch(()=>denied(400,'模型配置不可用'));
     // Tests invoke a billable model. Preserve the per-model test cooldown.
-    const check=await pool.query(`INSERT INTO ai_model_checks(model_config_id,last_test_at)
+    const check=await systemAdminTransaction(actor,db=>db.query(`INSERT INTO ai_model_checks(model_config_id,last_test_at)
       VALUES($1,NOW()) ON CONFLICT(model_config_id) DO UPDATE SET
       last_test_at=NOW() WHERE ai_model_checks.last_test_at<NOW()-INTERVAL '30 seconds'
       RETURNING model_config_id`,[id]);
