@@ -267,3 +267,8 @@ Risk 列表/历史读取迁入 `packages/core/src/risk/risk-queries.ts`，用同
 真实 PostgreSQL 验证：组织/项目隔离、Observer 阅读和写入拒绝、合法风险评估及幂等回放/变 payload 冲突、未评估不能缓解、生命周期约束、历史分页、项目成员撤权后的风险读取拒绝；保留既有 compiled API Risk Smoke。新增测试夹具于结束时处理自身 Outbox，避免污染后续全局事件 Consumer。静态架构守卫禁止 Risk HTTP route 重新持有直接 SQL 或命令执行器。
 
 这是 Issue #48/#49 正式 Risk 边界的增量，仍不代表完整 RAID/WorkItem/Portfolio/跨项目依赖、AI Playbook、多实例 Worker 或 Win11/QNAP 生产验证已经完成。
+
+
+## ADR-068 · 审核 Core 所有权 /review（2026-10-17）
+
+核对人工确认任务进展、候选 Task 和 Risk 均通过 Approval Core 单一命令入口，Fastify 只验证 DTO，不保留业务 SQL 或第二份 `executePmCommand`。核验本次变更没有另造审计表或事件模型，候选只允许由有权限的当前项目人审核；重复 key 回放恰好一个回执，异 payload / 二次新 key 409，正式任务和风险恰好各创建一次；任务进展审核不能直接声称任务完成。静态守卫、PostgreSQL Core 回归、现有编译 API Smoke、Windows/Linux/Docker/文档/安全 CI 均应在最后提交的 SHA 上检查。剩余域路由 SQL、性能和生产实机验证尚未因此关闭。
