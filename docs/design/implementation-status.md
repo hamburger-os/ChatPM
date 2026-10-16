@@ -202,3 +202,10 @@ Docker 部署 Smoke 原先仅验证 pg_dump custom-format 文件头和 pg_restor
 ## ADR-066 · 管理员模型写入事务授权
 
 系统供应商/模型的创建、编辑、删除、批量导入和模型测试配额写入，现统一在事务中重新锁定并检查当前系统管理员标志；此前路由入口鉴权仍可用于尽早拒绝，但不再是提交业务数据的唯一保证。新 PostgreSQL 并发测试和架构检查被接入 Product verification。真实模型外部请求期间的网络撤权、自动成本控制、真实供应商实测、身份生命周期和生产渗透测试仍未验收。结果以此 PR 最新 Head 工作流为准。
+
+
+## ADR-068 · AI 候选和进度人工审核统一归属 Core（2026-10-17）
+
+`/projects/:id/progress/:progressId/decision` 和 `/projects/:id/proposals/:proposalId/decision` 不再由 Fastify 路由负责业务 SQL、事务和审批状态变更，改为 DTO 验证后委托 `packages/core/src/approval/decision-commands.ts` 的 `decideProgress` / `decideProposal`。两个命令继续共用现有 `executePmCommand`，在单事务内重新验证当前 Tenant+Project 角色、写入原业务变更和持久 Receipt/DomainEvent/Audit/Outbox；同键同 payload 重放、同键异 payload 拒绝及候选单次决策语义不变。被接受的 Task/Risk 仍使用 Delivery/Risk Core 的唯一创建函数；AI 仅产生待确认记录，不能绕开人工审核写正式计划。已增加 API 无 SQL 静态守卫和真实 PostgreSQL Core 集成测试，覆盖 Observer/非项目成员拒绝、重放、冲突、单次正式插入和审计事件数。
+
+此改动不声称完成全部 P1/P2：项目成员管理、PM 登记簿剩余路由等领域 SQL 尚待迁出，AI 源证据体系、生产实机/安全/迁移验收仍为独立开放事项。CI 结论必须以本 PR 最终 Head 为准。

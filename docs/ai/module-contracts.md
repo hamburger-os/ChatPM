@@ -313,3 +313,8 @@ Docker 工作流为验证多账号 HTTP/Origin/Cookie 人为设置 `REGISTRATION
 - 模型配置 URL 仅由 `model-endpoint-policy.ts` 的 `validateModelUrl` 规范化；最终请求必须仍经过 `model-egress.ts` 的 DNS/地址 pinning 与响应限制。
 - Web 用户消息一项提交意图绑定 `(projectId,content,nonce)`，同意图重试不换 nonce；切项目、编辑内容、提交成功重置。消息服务端事务和唯一索引最终保证幂等。
 - 测试：注入连接替身以确保两次查询复用客户端，统一 URL 策略单测，浏览器重试静态守卫；不声称替代完整 Web 端到端或真实供应商验收。
+
+
+## 人工审核命令的模块所有权
+
+人工进度审核和 AI 候选采纳只能由 `packages/core/src/approval/decision-commands.ts` 实现正式业务更改；HTTP `apps/api/src/approval-routes.ts` 只校验入参、读取当前身份并调用 Core。所有审核复用 `executePmCommand` 的真实组织与项目授权、原子 Receipt/DomainEvent/Audit/Outbox；采纳 Task/Risk 时只调用已有 Delivery/Risk Core 的记录创建服务。不得在路由中重建 SQL、直接采纳 AI 输出或引入平行的审核事务及来源数据。具体未完成边界见 `docs/design/implementation-status.md` ADR-068。

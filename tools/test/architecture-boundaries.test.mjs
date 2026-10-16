@@ -128,15 +128,21 @@ test('user messages have one Core-owned transaction and authorization boundary',
   assert.match(command,/outbox_events/);
 });
 
-test('human-approved Task and Risk inserts remain owned by Core domains',()=>{
-  const approval=readFileSync(new URL('../../apps/api/src/approval-routes.ts',import.meta.url),'utf8');
+test('human-approved progress and proposal decisions are owned by Core',()=>{
+  const route=readFileSync(new URL('../../apps/api/src/approval-routes.ts',import.meta.url),'utf8');
+  const command=readFileSync(new URL('../../packages/core/src/approval/decision-commands.ts',import.meta.url),'utf8');
   const delivery=readFileSync(new URL('../../packages/core/src/delivery/task-commands.ts',import.meta.url),'utf8');
   const risk=readFileSync(new URL('../../packages/core/src/risk/risk-commands.ts',import.meta.url),'utf8');
-  assert.doesNotMatch(approval,/INSERT INTO (?:tasks|risks)\b/i);
-  assert.match(approval,/createTaskRecord\(db,projectId/);
-  assert.match(approval,/createRiskRecord\(db,projectId/);
+  assert.match(route,/decideProgress\(projectId,progressId,actorId,v\)/);
+  assert.match(route,/decideProposal\(projectId,proposalId,actorId,v\)/);
+  assert.doesNotMatch(route,/\b(?:SELECT|INSERT INTO|UPDATE|DELETE FROM)\b/i,
+    'Review HTTP routes may validate DTOs but never execute domain SQL');
+  assert.doesNotMatch(route,/executePmCommand\(|db\.query|pool\.query/,
+    'Review command runtime belongs to Core');
+  assert.equal((command.match(/executePmCommand\(\{/g)||[]).length,2);
+  assert.match(command,/createTaskRecord\(db,projectId/);
+  assert.match(command,/createRiskRecord\(db,projectId/);
   assert.match(delivery,/export async function createTaskRecord/);
-  assert.match(delivery,/createTaskRecord\(db,projectId,v\)/);
   assert.match(risk,/export async function createRiskRecord/);
 });
 
