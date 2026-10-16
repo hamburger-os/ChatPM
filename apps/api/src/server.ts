@@ -215,10 +215,13 @@ app.post('/projects/:id/messages',async(req,reply)=>{
 });
 app.get('/projects/:id/tasks',async req=>{
   const projectId=uuid.parse((req.params as {id:string}).id);
+  const query=z.object({archived:z.enum(['true','false']).default('false')}).parse(req.query);
   await member(await authenticated(req),projectId);
   const {rows}=await pool.query(
-    `SELECT t.*,t.due_date::text AS due_date,u.display_name AS assignee FROM tasks t LEFT JOIN users u ON u.id=t.assignee_id
-     WHERE t.project_id=$1 ORDER BY t.created_at DESC LIMIT 300`,[projectId]);
+    `SELECT t.*,t.due_date::text AS due_date,u.display_name AS assignee
+     FROM tasks t LEFT JOIN users u ON u.id=t.assignee_id
+     WHERE t.project_id=$1 AND (t.archived_at IS NOT NULL)=$2::boolean
+     ORDER BY t.created_at DESC LIMIT 300`,[projectId,query.archived==='true']);
   return {tasks:rows};
 });
 app.get('/projects/:id/progress',async req=>{
