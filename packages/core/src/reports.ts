@@ -9,6 +9,7 @@ type TaskSummary = {
   done: number;
   cancelled: number;
   overdue: number;
+  archived: number;
 };
 type ReportSnapshot = {
   name: string;
@@ -22,6 +23,7 @@ type ReportSnapshot = {
     id:string;task_id:string;kind:'created'|'updated';title:string;
     before_status:string|null;after_status:string;
     before_due_date:string|null;after_due_date:string|null;
+    before_archived_at:string|null;after_archived_at:string|null;
   }>;
 };
 
@@ -46,18 +48,19 @@ export async function generateReport(
      )
      SELECT p.name, p.timezone,
        (SELECT json_build_object(
-         'total', COUNT(*),
-         'todo', COUNT(*) FILTER (WHERE status='todo'),
-         'doing', COUNT(*) FILTER (WHERE status='doing'),
-         'blocked', COUNT(*) FILTER (WHERE status='blocked'),
-         'done', COUNT(*) FILTER (WHERE status='done'),
-         'cancelled', COUNT(*) FILTER (WHERE status='cancelled'),
+         'total', COUNT(*) FILTER (WHERE archived_at IS NULL),
+         'archived', COUNT(*) FILTER (WHERE archived_at IS NOT NULL),
+         'todo', COUNT(*) FILTER (WHERE status='todo' AND archived_at IS NULL),
+         'doing', COUNT(*) FILTER (WHERE status='doing' AND archived_at IS NULL),
+         'blocked', COUNT(*) FILTER (WHERE status='blocked' AND archived_at IS NULL),
+         'done', COUNT(*) FILTER (WHERE status='done' AND archived_at IS NULL),
+         'cancelled', COUNT(*) FILTER (WHERE status='cancelled' AND archived_at IS NULL),
          'overdue', COUNT(*) FILTER (
-           WHERE due_date < ($3::timestamptz AT TIME ZONE p.timezone)::date AND status NOT IN ('done','cancelled'))
+           WHERE archived_at IS NULL AND due_date < ($3::timestamptz AT TIME ZONE p.timezone)::date AND status NOT IN ('done','cancelled'))
        ) FROM tasks WHERE project_id=p.id) AS counts,
        (SELECT COALESCE(json_agg(item), '[]'::json)
         FROM (SELECT id,title,status FROM tasks
-              WHERE project_id=p.id AND (
+              WHERE project_id=p.id AND archived_at IS NULL AND (
                 status='blocked' OR (due_date < ($3::timestamptz AT TIME ZONE p.timezone)::date AND status NOT IN ('done','cancelled')))
               ORDER BY due_date ASC NULLS LAST, created_at DESC LIMIT 200) AS item
        ) AS attention_tasks,
@@ -89,7 +92,8 @@ export async function generateReport(
           FROM (SELECT h.id,h.task_id,h.kind,h.after_title AS title,
                  h.before_status,h.after_status,
                  h.before_due_date::text AS before_due_date,
-                 h.after_due_date::text AS after_due_date
+                 h.after_due_date::text AS after_due_date,
+                 h.before_archived_at,h.after_archived_at
                 FROM project_task_history h
                 WHERE h.project_id=p.id
                   AND h.changed_at >= (p.period_start AT TIME ZONE p.timezone)
@@ -109,6 +113,8 @@ export async function generateReport(
     if(event.kind==='created')facts.push('创建');
     if(event.kind==='updated'&&event.before_status!==event.after_status)
       facts.push('状态 '+event.before_status+' → '+event.after_status);
+    if(event.kind==='updated'&&event.before_archived_at!==event.after_archived_at)
+      facts.push(event.after_archived_at?'归档':'恢复归档');
     if(event.kind==='updated'&&event.before_due_date!==event.after_due_date)
       facts.push('期限 '+(event.before_due_date??'未设置')+' → '+(event.after_due_date??'未设置'));
     if(!facts.length)facts.push('任务计划内容调整');
@@ -134,7 +140,7 @@ export async function generateReport(
     '',
     '## 当前任务概况',
     '- 总数：'+c.total+'；待开始：'+c.todo+'；进行中：'+c.doing+
-      '；阻塞：'+c.blocked+'；完成：'+c.done+'；取消：'+c.cancelled,
+      '；阻塞：'+c.blocked+'；完成：'+c.done+'；取消：'+c.cancelled+'；已归档（不计入当前任务）：'+c.archived,
     '- 当前逾期未完成：'+c.overdue,
     '',
     '## 当前阻塞与逾期事项',

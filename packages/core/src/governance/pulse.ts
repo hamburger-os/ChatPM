@@ -100,7 +100,7 @@ export async function getGovernancePulse(tenantId:string,actorId:string,onDate:s
             COUNT(*) FILTER(WHERE t.status='blocked')::int AS tasks_blocked,
             COUNT(*) FILTER(WHERE t.due_date<$2::date
               AND t.status NOT IN ('done','cancelled'))::int AS tasks_overdue
-          FROM tasks t WHERE t.project_id=p.id
+          FROM tasks t WHERE t.project_id=p.id AND t.archived_at IS NULL
         ) ts
         CROSS JOIN LATERAL (
           SELECT COUNT(*) FILTER(WHERE r.status<>'resolved')::int AS risks_open

@@ -8,7 +8,8 @@ export type Person={id:string,display_name:string,email:string,role:Role};
 export type Message={id:string,seq:number,kind:string,content:string,author:string|null,
   author_id?:string|null,created_at:string,client_nonce?:string};
 export type Task={id:string,title:string,detail:string,status:string,version:number,
-  assignee:string|null,assignee_id:string|null,due_date:string|null};
+  assignee:string|null,assignee_id:string|null,due_date:string|null;
+  archived_at:string|null;archived_by:string|null};
 export type Proposal={id:string,kind:'task'|'risk',status:string,title:string,detail:string,
   assignee_hint:string|null,due_at:string|null,clarified_due_at:string|null,
   evidence_text?:string,model_name?:string};

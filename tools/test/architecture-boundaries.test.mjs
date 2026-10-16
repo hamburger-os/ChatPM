@@ -116,7 +116,7 @@ test('user messages have one Core-owned transaction and authorization boundary',
   const api=readFileSync(new URL('../../apps/api/src/server.ts',import.meta.url),'utf8');
   const command=readFileSync(new URL('../../packages/core/src/conversation/user-message-command.ts',import.meta.url),'utf8');
   const start=api.indexOf("app.post('/projects/:id/messages'");
-  const end=api.indexOf("app.get('/projects/:id/tasks'",start);
+  const end=api.indexOf("app.get('/projects/:id/progress'",start);
   assert.ok(start>=0&&end>start);
   const block=api.slice(start,end);
   assert.match(block,/postUserMessage\(projectId,actorId,content,nonce\)/);
@@ -181,4 +181,30 @@ test('browser message retry retains the same nonce until success or editing',()=
   assert.match(page,/sendIntent\.current=\{projectId:selected,content,nonce\}/);
   assert.match(page,/intent\.content===content/);
   assert.match(page,/body:json\(\{content,nonce\}\)/);
+});
+
+test('Task archive uses one Core command and retains immutable factual history',()=>{
+  const route=readFileSync(new URL('../../apps/api/src/task-routes.ts',import.meta.url),'utf8');
+  const core=readFileSync(new URL('../../packages/core/src/delivery/task-commands.ts',import.meta.url),'utf8');
+  const history=readFileSync(new URL('../../packages/core/sql/027_task_archive.sql',import.meta.url),'utf8');
+  const runner=readFileSync(new URL('../../packages/core/src/automation/reminder-runner.ts',import.meta.url),'utf8');
+  const ai=readFileSync(new URL('../../packages/core/src/conversation/ai-event-runner.ts',import.meta.url),'utf8');
+  const query=readFileSync(new URL('../../packages/core/src/delivery/task-queries.ts',import.meta.url),'utf8');
+  assert.match(query,/SET TRANSACTION ISOLATION LEVEL REPEATABLE READ/);
+  assert.match(query,/lockProjectAccess\(db,projectId,actorId\)/);
+  assert.match(route,/listProjectTasks\(projectId,actorId/);
+  assert.match(route,/setTaskArchived\(projectId,taskId,actorId/);
+  assert.doesNotMatch(route,/UPDATE tasks|DELETE FROM tasks|executePmCommand\(/,
+    'Archive HTTP route must never own the official Task write');
+  assert.match(core,/kind:archive\?'task\.archived\.v1':'task\.restored\.v1'/);
+  assert.match(core,/executePmCommand\(/);
+  assert.match(core,/before\.archived_at\)fail\(409/);
+  assert.match(core,/task_progress_updates/);
+  assert.match(history,/CREATE OR REPLACE FUNCTION capture_project_task_history/);
+  assert.match(history,/before_archived_at,after_archived_at/);
+  assert.match(history,/BEFORE INSERT ON task_progress_updates/);
+  assert.match(history,/FOR SHARE/);
+
+  assert.match(runner,/!p\.archived_at/);
+  assert.match(ai,/archived_at IS NULL/);
 });

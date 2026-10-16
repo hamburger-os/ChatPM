@@ -209,3 +209,9 @@ Docker 部署 Smoke 原先仅验证 pg_dump custom-format 文件头和 pg_restor
 `/projects/:id/progress/:progressId/decision` 和 `/projects/:id/proposals/:proposalId/decision` 不再由 Fastify 路由负责业务 SQL、事务和审批状态变更，改为 DTO 验证后委托 `packages/core/src/approval/decision-commands.ts` 的 `decideProgress` / `decideProposal`。两个命令继续共用现有 `executePmCommand`，在单事务内重新验证当前 Tenant+Project 角色、写入原业务变更和持久 Receipt/DomainEvent/Audit/Outbox；同键同 payload 重放、同键异 payload 拒绝及候选单次决策语义不变。被接受的 Task/Risk 仍使用 Delivery/Risk Core 的唯一创建函数；AI 仅产生待确认记录，不能绕开人工审核写正式计划。已增加 API 无 SQL 静态守卫和真实 PostgreSQL Core 集成测试，覆盖 Observer/非项目成员拒绝、重放、冲突、单次正式插入和审计事件数。
 
 此改动不声称完成全部 P1/P2：项目成员管理、PM 登记簿剩余路由等领域 SQL 尚待迁出，AI 源证据体系、生产实机/安全/迁移验收仍为独立开放事项。CI 结论必须以本 PR 最终 Head 为准。
+
+## ADR-069 · 任务归档/恢复完整命令切片（2026-10-17）
+
+新增 `027_task_archive.sql`，在正式 Task 增加原位归档标记并扩展不可变 `project_task_history`，`packages/core/src/delivery/task-commands.ts` 提供 `setTaskArchived`，POST `/projects/:id/tasks/:taskId/archive` 与 `/restore` 只做入参校验、现时角色与版本由已有命令运行时控制。项目 Owner/Manager 有权归档完成/取消且无待审核进度的任务，Owner/Manager 可恢复；成员/观察者只读历史。归档期间禁止修改任务或接受进度，停止催办和后续针对该任务的 AI 进度抽取；项目任务 UI 增加归档列表与恢复。正式 Task 列表 GET 从 `server.ts` 移入 Core `delivery/task-queries.ts`，使用同一个 REPEATABLE READ 事务的当前成员行锁核验与读取，避免旧请求在撤权后继续跨连接拿到归档任务。周月报当前工作量和项目集组合快照剔除归档任务，但来源、领域事件、历史证据以及先前报告仍保留；不实现硬删除。
+
+同 PR 增加 PostgreSQL 集成测试与架构守卫，纳入 Product verification。实际完成及质量验证须以 PR 最终 SHA 的 CI 为准；不宣称正式生产实机、长期数据保留策略、完整 PMP 或 AI 性能验收。

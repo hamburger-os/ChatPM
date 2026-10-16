@@ -8,6 +8,7 @@ export type TaskHistoryEntry={
   before_title:string|null;after_title:string;
   before_due_date:string|null;after_due_date:string|null;
   before_assignee_id:string|null;after_assignee_id:string|null;
+  before_archived_at:string|null;after_archived_at:string|null;
   changed_at:string;
 };
 
@@ -24,7 +25,7 @@ async function authorize(db:DbClient,projectId:string,taskId:string,actorId:stri
 const fields=`id,project_id,task_id,task_version,kind,before_status,after_status,
   before_title,after_title,before_due_date::text AS before_due_date,
   after_due_date::text AS after_due_date,before_assignee_id,
-  after_assignee_id,changed_at`;
+  after_assignee_id,before_archived_at,after_archived_at,changed_at`;
 
 export async function listTaskHistory(projectId:string,taskId:string,
   actorId:string,cursor:Cursor){

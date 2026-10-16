@@ -213,14 +213,6 @@ app.post('/projects/:id/messages',async(req,reply)=>{
   const result=await postUserMessage(projectId,actorId,content,nonce);
   return reply.code(201).send(result);
 });
-app.get('/projects/:id/tasks',async req=>{
-  const projectId=uuid.parse((req.params as {id:string}).id);
-  await member(await authenticated(req),projectId);
-  const {rows}=await pool.query(
-    `SELECT t.*,t.due_date::text AS due_date,u.display_name AS assignee FROM tasks t LEFT JOIN users u ON u.id=t.assignee_id
-     WHERE t.project_id=$1 ORDER BY t.created_at DESC LIMIT 300`,[projectId]);
-  return {tasks:rows};
-});
 app.get('/projects/:id/progress',async req=>{
   const id=uuid.parse((req.params as {id:string}).id);
   await member(await authenticated(req),id);

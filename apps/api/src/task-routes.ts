@@ -1,7 +1,8 @@
 import type { FastifyInstance,FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import { getTaskHistoryEntry, listTaskHistory } from '../../../packages/core/src/reporting/task-history.ts';
-import { createTask, updateTask } from '../../../packages/core/src/delivery/task-commands.ts';
+import { createTask, updateTask, setTaskArchived } from '../../../packages/core/src/delivery/task-commands.ts';
+import { listProjectTasks } from '../../../packages/core/src/delivery/task-queries.ts';
 
 const uuid=z.string().uuid();
 const dateOnly=z.string().regex(/^\d{4}-\d{2}-\d{2}$/).refine(
@@ -26,6 +27,14 @@ const updateSchema=z.object({
 /** Direct Task writes use the SAME transaction receipt/event/audit contract as PM registers. */
 export function registerTaskRoutes(app:FastifyInstance,
   authenticated:(req:FastifyRequest)=>Promise<string>):void{
+  app.get('/projects/:id/tasks',async req=>{
+    const projectId=uuid.parse((req.params as {id:string}).id);
+    const query=z.object({
+      archived:z.enum(['true','false']).default('false'),
+    }).parse(req.query);
+    const actorId=await authenticated(req);
+    return listProjectTasks(projectId,actorId,query.archived==='true');
+  });
   // Historical evidence remains readable to current project+tenant members
   // only; task and event IDs must both match the same project.
   app.get('/projects/:id/tasks/:taskId/history',async req=>{
@@ -52,6 +61,18 @@ export function registerTaskRoutes(app:FastifyInstance,
     const input=createSchema.parse(req.body);
     return reply.code(201).send(await createTask(projectId,actorId,input));
   });
+  const archiveInput=z.object({
+    idempotencyKey:uuid,expectedVersion:z.number().int().positive(),
+  });
+  for(const action of ['archive','restore'] as const){
+    app.post('/projects/:id/tasks/:taskId/'+action,async req=>{
+      const p=req.params as {id:string;taskId:string};
+      const projectId=uuid.parse(p.id),taskId=uuid.parse(p.taskId);
+      const actorId=await authenticated(req);
+      return setTaskArchived(projectId,taskId,actorId,
+        archiveInput.parse(req.body),action==='archive');
+    });
+  }
   app.patch('/projects/:id/tasks/:taskId',async req=>{
     const p=req.params as {id:string;taskId:string};
     const projectId=uuid.parse(p.id),taskId=uuid.parse(p.taskId);

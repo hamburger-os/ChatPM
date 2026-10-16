@@ -7,6 +7,7 @@ type Entry={
   before_status:string|null;after_status:string;
   before_title:string|null;after_title:string;
   before_due_date:string|null;after_due_date:string|null;
+  before_archived_at:string|null;after_archived_at:string|null;
   changed_at:string;
 };
 type Cursor={beforeAt:string;beforeId:string}|null;
@@ -46,6 +47,8 @@ export default function TaskHistoryPanel({projectId,taskId}:{
     {events.map(e=><div className="hint" key={e.id}>
       <strong>{e.kind==='created'?'创建任务':'版本 '+e.task_version}</strong>
       {' · '+new Date(e.changed_at).toLocaleString()}
+      {e.kind==='updated'&&e.before_archived_at!==e.after_archived_at&&
+        <span> · {e.after_archived_at?'已归档':'已恢复'}</span>}
       {e.before_status!==e.after_status&&
         <span> · 状态：{e.before_status??'未创建'} → {e.after_status}</span>}
       {e.before_due_date!==e.after_due_date&&

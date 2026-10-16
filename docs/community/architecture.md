@@ -144,3 +144,9 @@ English: Model/provider changes and model-test rate-limit reservations now reche
 ### 人工审核与正式事项
 
 AI 进度建议、候选任务和候选风险都需要具备项目授权的人审核。审核的唯一正式写入入口是 `packages/core/src/approval/decision-commands.ts`，Fastify 路由负责参数和身份入口；采纳后的 Task/Risk 创建仍归各自 Core 服务负责。幂等回执、事件、审计与 Outbox 与审核结果处于同一 PostgreSQL 事务。详见 `docs/design/implementation-status.md` ADR-068；这不等于所有 PM 领域已完成模块化。
+
+### 任务归档与恢复 / Task archive and restore
+
+中文：正式任务可以由项目负责人或项目管理者在「已完成」或「已取消」且没有待审核进度时归档，归档后从当前任务列表中移除但仍可在已归档任务中查看和恢复；历史变更、AI 来源、任务依赖及已发布报告都保留。归档会停止提醒，且不能在恢复前继续编辑任务或确认其进度。普通成员和观察者不能执行归档/恢复。归档是可逆业务状态，不是不可恢复的数据删除。
+
+English: Project owners and managers may archive completed or cancelled tasks after all pending progress reviews are resolved. Archived tasks leave the active list but remain visible in a dedicated archive view and may be restored without changing their prior status. Source proposals, dependencies, immutable task history and published reports are preserved; reminders and new updates are blocked until restoration. Members and observers cannot archive or restore. Archiving is reversible and is not permanent deletion.

@@ -72,7 +72,7 @@ async function runAnalysis(event:EventRow):Promise<AnalysisResult|null> {
     return {kind:'extract',status:'no_change',modelName:output.modelName};
   }
   const known=await pool.query(`SELECT id,title FROM tasks
-    WHERE project_id=$1 AND status NOT IN ('done','cancelled')`,[event.project_id]);
+    WHERE project_id=$1 AND status NOT IN ('done','cancelled') AND archived_at IS NULL`,[event.project_id]);
   const matching=new Map(known.rows.map(r=>[r.id as string,r.title as string]));
 
   const total=await transaction(async db=>{
@@ -86,7 +86,7 @@ async function runAnalysis(event:EventRow):Promise<AnalysisResult|null> {
       const inserted=await db.query(`INSERT INTO task_progress_updates(
         project_id,task_id,source_message_id,summary,kind,model_name,prompt_version)
         SELECT $1,t.id,$3,$4,$5,$6,$7 FROM tasks t
-        WHERE t.project_id=$1 AND t.id=$2 AND t.status NOT IN ('done','cancelled')
+        WHERE t.project_id=$1 AND t.id=$2 AND t.status NOT IN ('done','cancelled') AND t.archived_at IS NULL
         ON CONFLICT(project_id,task_id,source_message_id) DO NOTHING RETURNING id`,
         [event.project_id,suggestion.task_id,event.message_id,suggestion.summary,
           suggestion.kind,output.modelName,output.promptVersion]);
@@ -105,7 +105,7 @@ async function runAnalysis(event:EventRow):Promise<AnalysisResult|null> {
             const saved=await db.query(`INSERT INTO task_progress_updates(
               project_id,task_id,source_message_id,summary,kind,model_name,prompt_version)
               SELECT $1,t.id,$3,$4,'progress',$5,$6 FROM tasks t
-              WHERE t.project_id=$1 AND t.id=$2 AND t.status NOT IN ('done','cancelled')
+              WHERE t.project_id=$1 AND t.id=$2 AND t.status NOT IN ('done','cancelled') AND t.archived_at IS NULL
               ON CONFLICT(project_id,task_id,source_message_id) DO NOTHING RETURNING id`,
               [event.project_id,candidates[0].id,event.message_id,msg.content.slice(0,2000),
                 output.modelName,output.promptVersion]);

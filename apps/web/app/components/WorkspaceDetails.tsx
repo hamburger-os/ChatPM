@@ -12,6 +12,8 @@ export default function WorkspaceDetails({project,user,messages}:{
 }){
   const [tab,setTab]=useState<Tab>('tasks');
   const [tasks,setTasks]=useState<Task[]>([]);
+  const [archivedTasks,setArchivedTasks]=useState<Task[]>([]);
+  const [showArchived,setShowArchived]=useState(false);
   const [people,setPeople]=useState<Person[]>([]);
   const [risks,setRisks]=useState<Risk[]>([]);
   const [proposals,setProposals]=useState<Proposal[]>([]);
@@ -27,6 +29,7 @@ export default function WorkspaceDetails({project,user,messages}:{
   const [busy,setBusy]=useState(false);
   const createTaskIntent=useRef<string|null>(null);
   const updateTaskIntents=useRef(new Map<string,string>());
+  const archiveIntents=useRef(new Map<string,string>());
   const reviewIntents=useRef(new Map<string,string>());
   const reportIntents=useRef(new Map<string,string>());
   const riskIntents=useRef(new Map<string,string>());
@@ -43,15 +46,16 @@ export default function WorkspaceDetails({project,user,messages}:{
   const owner=project?.role==='owner',manager=owner||project?.role==='manager';
   async function reload(pid:string){
     const base='/projects/'+pid;
-    const [t,m,r,p,u,reports]=await Promise.all([
+    const [t,a,m,r,p,u,reports]=await Promise.all([
       request<{tasks:Task[]}>(base+'/tasks'),
+      request<{tasks:Task[]}>(base+'/tasks?archived=true'),
       request<{members:Person[]}>(base+'/members'),
       request<{risks:Risk[]}>(base+'/risks'),
       request<{proposals:Proposal[]}>(base+'/proposals'),
       request<{updates:Progress[]}>(base+'/progress'),
       request<{reports:Report[]}>(base+'/reports'),
     ]);
-    return {tasks:t.tasks,people:m.members,risks:r.risks,proposals:p.proposals,
+    return {tasks:t.tasks,archivedTasks:a.tasks,people:m.members,risks:r.risks,proposals:p.proposals,
       progress:u.updates,reports:reports.reports};
   }
   useEffect(()=>{
@@ -59,6 +63,8 @@ export default function WorkspaceDetails({project,user,messages}:{
     let active=true;
     setTab('tasks');
     setHistoryTaskId(null);
+    setShowArchived(false);
+    setArchivedTasks([]);
     setNextOwnerId('');
     setSettingsRevision(project.settings_revision);
     const loadedSettings={aiEnabled:project.ai_enabled,workStart:project.work_start,
@@ -72,7 +78,7 @@ export default function WorkspaceDetails({project,user,messages}:{
       try{
         const x=await reload(id);
         if(!active)return;
-        setTasks(x.tasks);setPeople(x.people);setRisks(x.risks);
+        setTasks(x.tasks);setArchivedTasks(x.archivedTasks);setPeople(x.people);setRisks(x.risks);
         setProposals(x.proposals);setProgress(x.progress);setReports(x.reports);
       }catch(e){if(active)setNotice(e instanceof Error?e.message:'刷新失败');}
       finally{inFlight=false;}
@@ -87,7 +93,7 @@ export default function WorkspaceDetails({project,user,messages}:{
     if(!id)return;
     setBusy(true);setNotice('');
     try{await fn();const x=await reload(id);
-      setTasks(x.tasks);setPeople(x.people);setRisks(x.risks);
+      setTasks(x.tasks);setArchivedTasks(x.archivedTasks);setPeople(x.people);setRisks(x.risks);
       setProposals(x.proposals);setProgress(x.progress);setReports(x.reports);
     }catch(e){setNotice(e instanceof Error?e.message:'操作失败');}
     finally{setBusy(false);}
@@ -112,6 +118,19 @@ export default function WorkspaceDetails({project,user,messages}:{
       await request(base+'/tasks/'+task.id,{method:'PATCH',
         body:json({idempotencyKey,version:task.version,...change})});
       updateTaskIntents.current.delete(intent);
+    });
+  }
+  function changeArchive(task:Task,archive:boolean){
+    if(archive&&!window.confirm('归档后任务将退出当前任务列表、暂停提醒，历史证据不会删除。确认归档「'+task.title+'」？'))return;
+    if(!archive&&!window.confirm('确认恢复「'+task.title+'」到当前任务列表？'))return;
+    const action=archive?'archive':'restore';
+    const signature=JSON.stringify([id,task.id,task.version,action]);
+    const idempotencyKey=archiveIntents.current.get(signature)??crypto.randomUUID();
+    archiveIntents.current.set(signature,idempotencyKey);
+    void act(async()=>{
+      await request(base+'/tasks/'+task.id+'/'+action,{method:'POST',
+        body:json({idempotencyKey,expectedVersion:task.version})});
+      archiveIntents.current.delete(signature);
     });
   }
   function reviewCommand(path:string,decision:'accepted'|'rejected',
@@ -209,6 +228,9 @@ export default function WorkspaceDetails({project,user,messages}:{
               if(e.target.value!==(task.due_date||''))patchTask(task,{dueDate:e.target.value||null});
             }}/></label>
         </div>}
+        {manager&&['done','cancelled'].includes(task.status)&&
+          <button className="secondary" disabled={busy} type="button"
+            onClick={()=>changeArchive(task,true)}>归档任务</button>}
         <button className="secondary" type="button"
           onClick={()=>setHistoryTaskId(old=>old===task.id?null:task.id)}>
           {historyTaskId===task.id?'收起任务历史':'查看任务历史'}
@@ -216,6 +238,23 @@ export default function WorkspaceDetails({project,user,messages}:{
         {historyTaskId===task.id&&
           <TaskHistoryPanel key={task.id+':'+task.version}
             projectId={project.id} taskId={task.id}/>}
+      </article>)}
+      <button className="secondary" type="button"
+        onClick={()=>setShowArchived(value=>!value)}>
+        {showArchived?'收起已归档任务':'查看已归档任务（'+archivedTasks.length+'）'}
+      </button>
+      {showArchived&&archivedTasks.map(task=><article className="item" key={task.id}>
+        <strong>{task.title}</strong>
+        <small>原状态：{task.status} · 归档于：{task.archived_at?
+          new Date(task.archived_at).toLocaleString():'未知'}</small>
+        {manager&&<button className="secondary" type="button" disabled={busy}
+          onClick={()=>changeArchive(task,false)}>恢复任务</button>}
+        <button className="secondary" type="button"
+          onClick={()=>setHistoryTaskId(old=>old===task.id?null:task.id)}>
+          {historyTaskId===task.id?'收起任务历史':'查看任务历史'}
+        </button>
+        {historyTaskId===task.id&&<TaskHistoryPanel
+          key={task.id+':'+task.version} projectId={project.id} taskId={task.id}/>}
       </article>)}
       <h3>当前风险 ({risks.length})</h3>
       {risks.map(x=><RiskRegisterItem key={x.id+':'+x.version}
