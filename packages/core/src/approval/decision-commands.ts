@@ -27,6 +27,14 @@ export async function decideProgress(
       kind:'task.progress.reviewed.v1',idempotencyKey:v.idempotencyKey,
       payload:{progressId,...v},
       mutate:async db=>{
+        // Lock the Task before accepting progress, so an archive cannot
+        // commit between review and publication.
+        const linked=(await db.query<{id:string;archived_at:Date|null}>(`
+          SELECT t.id,t.archived_at FROM task_progress_updates u
+          JOIN tasks t ON t.project_id=u.project_id AND t.id=u.task_id
+          WHERE u.project_id=$1 AND u.id=$2 FOR UPDATE OF t`,
+          [projectId,progressId])).rows[0];
+        if(linked?.archived_at)fail(409,'已归档任务不可审核进度，请先恢复');
         // Atomic single-shot decision, scoped by project and pending status.
         const {rows}=await db.query<{task_id:string;kind:string}>(`
           UPDATE task_progress_updates SET
