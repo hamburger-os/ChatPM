@@ -57,6 +57,9 @@ try{
     "SELECT COUNT(*)::int AS count FROM audit_entries WHERE project_id=$1 AND action='message.created'",
     [projectId]);
   assert.equal(audited[0].count,1,'Message and audit commit only once');
+  // Keep this integration fixture out of the later global Outbox leasing test.
+  await pool.query("DELETE FROM outbox_events WHERE project_id=$1 AND kind='message.created'",
+    [projectId]);
 
   await b.query("UPDATE project_members SET role='observer' WHERE project_id=$1 AND user_id=$2",
     [projectId,actorId]);
