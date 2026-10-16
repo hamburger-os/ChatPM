@@ -95,3 +95,19 @@ test('all direct Task mutations flow through core application commands',()=>{
   assert.match(service,/hasTaskChanges\(before,next\)/,
     'Every Task update must verify meaningful state change');
 });
+
+test('Risk HTTP endpoints own only DTOs and delegate scoped Core services',()=>{
+  const route=readFileSync(new URL('../../apps/api/src/risk-routes.ts',import.meta.url),'utf8');
+  const commands=readFileSync(new URL('../../packages/core/src/risk/risk-commands.ts',import.meta.url),'utf8');
+  const queries=readFileSync(new URL('../../packages/core/src/risk/risk-queries.ts',import.meta.url),'utf8');
+  for(const method of ['listProjectRisks','readRiskHistory','assessRisk','transitionRisk'])
+    assert.match(route,new RegExp('\\b'+method+'\\('));
+  assert.doesNotMatch(route,/\b(?:SELECT|INSERT INTO|UPDATE|DELETE FROM)\b/i,
+    'Risk HTTP must not run domain SQL');
+  assert.doesNotMatch(route,/executePmCommand\(/,
+    'Risk command receipts and events belong to Core');
+  assert.match(commands,/executePmCommand\(/);
+  assert.match(commands,/risk_register_changes/);
+  assert.match(queries,/SET TRANSACTION ISOLATION LEVEL REPEATABLE READ/);
+  assert.match(queries,/lockProjectAccess\(/);
+});
