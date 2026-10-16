@@ -162,3 +162,17 @@ test('platform AI model mutations reauthorize admin within the business transact
   assert.match(access,/SELECT is_system_admin FROM users WHERE id=\$1 FOR SHARE/);
   assert.match(access,/transaction\(async db/);
 });
+
+test('project settings reuses model configuration transaction client',()=>{
+  const routes=readFileSync(new URL('../../apps/api/src/project-governance-routes.ts',import.meta.url),'utf8');
+  const core=readFileSync(new URL('../../packages/core/src/project-model.ts',import.meta.url),'utf8');
+  assert.match(routes,/resolveProjectModel\(projectId,db\)/);
+  assert.match(core,/resolveModelConfig\(undefined,false,db\)/);
+  assert.match(core,/await db\.query<EffectiveRow>/);
+});
+test('browser message retry retains the same nonce until success or editing',()=>{
+  const page=readFileSync(new URL('../../apps/web/app/page.tsx',import.meta.url),'utf8');
+  assert.match(page,/sendIntent\.current=\{projectId:selected,content,nonce\}/);
+  assert.match(page,/intent\.content===content/);
+  assert.match(page,/body:json\(\{content,nonce\}\)/);
+});
