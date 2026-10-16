@@ -98,6 +98,13 @@ try{
     .some(t=>t.id===taskId),false);
   assert.equal((await listProjectTasks(pid,observer,true)).tasks
     .some(t=>t.id===taskId),true);
+  await assert.rejects(pool.query(`
+    INSERT INTO task_progress_updates(project_id,task_id,source_message_id,
+      summary,kind,model_name,prompt_version)
+    VALUES($1,$2,$3,'Should not be accepted','progress','mock','test')`,
+    [pid,taskId,msg]),/ARCHIVED_TASK_PROGRESS/,
+    'Database must reject alternate progress writers during archival');
+
   await assert.rejects(listProjectTasks(pid,outsider,true),
     /项目不存在或无权限/);
   await assert.rejects(listProjectTasks(otherProject,owner,true),
