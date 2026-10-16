@@ -324,5 +324,5 @@ Docker 工作流为验证多账号 HTTP/Origin/Cookie 人为设置 `REGISTRATION
 - `setTaskArchived(projectId,taskId,actorId,{idempotencyKey,expectedVersion},archive)` 是唯一归档/恢复写入入口，复用 Delivery Core 和 `executePmCommand`；Fastify 不持业务 SQL。
 - Task 始终保留原始行、UUID、`source_proposal_id`、状态与依赖关系；归档与取消/删除语义严格不同。仅 Owner/Manager 可以归档或恢复；归档前任务必须 done/cancelled 且无 pending progress；恢复不隐式启动任务。
 - 每次真实变化版本递增，现有 `project_task_history` 触发器只增一条 `before_archived_at/after_archived_at` 变化事实，与已有 CommandReceipt、Audit、DomainEvent、Outbox 同事务提交。同 key+payload 重放不加版本、不重复提醒或事件。
-- 任务已归档时拒绝 Task 更新和进度批准；Worker 在上下文、候选任务关联、催办处排除该任务。前端分别读取 active 和 archived，二者都依靠当前项目授权。
+- 任务已归档时拒绝 Task 更新和进度批准；Worker 在上下文、候选任务关联、催办处排除该任务。前端分别读取 active 和 archived，二者共用 `delivery/task-queries.ts` 的单事务即时成员授权和一致性读快照，Fastify 不再持有 Task 列表业务 SQL。
 - 核验 DB migration 重跑、并发版本、跨项目/角色拒绝、被撤权后的拒绝、归档与恢复历史证据、旧来源和报告、幂等以及 AI/提醒无隐式激活。
