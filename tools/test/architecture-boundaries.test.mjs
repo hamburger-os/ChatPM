@@ -202,6 +202,9 @@ test('Task archive uses one Core command and retains immutable factual history',
   assert.match(core,/task_progress_updates/);
   assert.match(history,/CREATE OR REPLACE FUNCTION capture_project_task_history/);
   assert.match(history,/before_archived_at,after_archived_at/);
+  assert.match(history,/BEFORE INSERT ON task_progress_updates/);
+  assert.match(history,/FOR SHARE/);
+
   assert.match(runner,/!p\.archived_at/);
   assert.match(ai,/archived_at IS NULL/);
 });
