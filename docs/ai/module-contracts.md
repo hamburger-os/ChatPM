@@ -299,3 +299,10 @@ Docker 工作流为验证多账号 HTTP/Origin/Cookie 人为设置 `REGISTRATION
 ## ADR-061 · 跨项目管理统计数据权限与事实口径
 
 项目集/组合汇总必须使用正式项目 Task/Risk/Allocation 数据，不能根据 AI 推测的进度、受邀组织人员和聊天文本增减实际完成项目数。Project 经 Program 归属 Portfolio 时不可在组合内重复累加。完成数只计正式 `done`；取消数独立列示。跨项目人员投入仅表示选定日期有效的非取消资源计划，不能解释为工时、实际容量或财务 ROI。管理总览仅限组织管理员；成员加入组织/部门不隐含访问其他项目或跨项目资源明细的授权。查询历史日期不应展示为真实的历史完成状态，除非未来基于事件日志实现独立可追溯回放。
+
+## ADR-065 · 消息与正式 PM 数据所有权约束
+
+- `Conversation.postUserMessage(projectId,actorId,content,nonce)` 是用户消息唯一 HTTP 写入命令：在事务中锁当前组织和项目成员，再检查 `message.write`，插入 Message、Outbox 和不包含原始聊天正文的 Audit。nonce 幂等，撤权后不可取回写入授权。
+- `Delivery.createTaskRecord(db,...)` 与 `Risk.createRiskRecord(db,...)` 分别拥有正式创建 SQL。AI 人工审核在同一个父 `executePmCommand` 事务中调用领域写入函数，不能在 HTTP 重复 INSERT 或再开子事务。
+- `Governance.listPmRegisters(projectId,actorId)` 使用一次 REPEATABLE READ 的授权快照读取正式项目登记簿。Organization Web 复用统一 `client.ts` 请求入口。
+- 未完成：跨聚合 DomainEvent/Receipt 语义、Owner 双字段、模型 JSON Schema/Zod 单源、所有管理员写权限与各领域的完全薄路由化，以及生产级实测。
