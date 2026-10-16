@@ -26,7 +26,7 @@ import { pool, transaction } from '../../../packages/core/src/db.ts';
 import { createSession, hashPassword, readSession, revokeSession, verifyPassword } from '../../../packages/core/src/security.ts';
 import { syncFollowup } from '../../../packages/core/src/followup.ts';
 import { enforceRegistration,mayRegister } from '../../../packages/core/src/identity/registration-policy.ts';
-import { insertMessage } from '../../../packages/core/src/messages.ts';
+import { postUserMessage } from '../../../packages/core/src/conversation/user-message-command.ts';
 
 
 const port = serverConfig.API_PORT;
@@ -208,25 +208,10 @@ app.get('/projects/:id/messages',async req=>{
 });
 app.post('/projects/:id/messages',async(req,reply)=>{
   const projectId=uuid.parse((req.params as {id:string}).id);
-  const userId=await authenticated(req);
-  assertProject((await member(userId,projectId)).role,'message.write');
+  const actorId=await authenticated(req);
   const {content,nonce}=z.object({content:text,nonce:z.string().uuid()}).parse(req.body);
-  const message=await transaction(async db=>{
-    let row=await insertMessage(db,{
-      projectId,authorId:userId,kind:'user',content,nonce,
-    });
-    if(!row) {
-      row=(await db.query('SELECT * FROM messages WHERE project_id=$1 AND client_nonce=$2',
-        [projectId,nonce])).rows[0];
-      if(!row || row.author_id!==userId || row.content!==content) fail(409,'消息幂等键冲突');
-    } else {
-      await db.query(
-        `INSERT INTO outbox_events(project_id,kind,message_id) VALUES($1,'message.created',$2)`,
-        [projectId,row.id]);
-    }
-    return row;
-  });
-  return reply.code(201).send({message});
+  const result=await postUserMessage(projectId,actorId,content,nonce);
+  return reply.code(201).send(result);
 });
 app.get('/projects/:id/tasks',async req=>{
   const projectId=uuid.parse((req.params as {id:string}).id);
