@@ -3,6 +3,9 @@ import {z} from 'zod';
 import {listProjectMessages} from '../../../packages/core/src/conversation/message-queries.ts';
 
 const uuid=z.string().uuid();
+// Process-local connection budget only; Message data and permissions remain in PostgreSQL.
+const activeStreams=new Map<string,number>();
+const MAX_USER_STREAMS=3;
 const cursor=z.string().regex(/^(?:0|[1-9][0-9]{0,15})$/).transform(v=>{
   const parsed=Number(v);
   if(!Number.isSafeInteger(parsed))throw Object.assign(
@@ -25,6 +28,11 @@ export function registerMessageStreamRoutes(
     const actorId=await authenticated(req);
     // Do not send stream headers until current project membership is proven.
     await listProjectMessages(projectId,actorId,{after:start,limit:1});
+    const current=activeStreams.get(actorId)??0;
+    if(current>=MAX_USER_STREAMS)return reply.code(429).send({
+      error:'实时连接过多，请关闭重复的项目窗口',
+    });
+    activeStreams.set(actorId,current+1);
     reply.hijack();
     reply.raw.writeHead(200,{
       'Content-Type':'text/event-stream; charset=utf-8',
@@ -42,6 +50,9 @@ export function registerMessageStreamRoutes(
     const cleanup=()=>{
       if(!active)return;
       active=false;
+      const count=activeStreams.get(actorId)??1;
+      if(count<=1)activeStreams.delete(actorId);
+      else activeStreams.set(actorId,count-1);
       clearInterval(timer);
       clearInterval(ping);
     };
