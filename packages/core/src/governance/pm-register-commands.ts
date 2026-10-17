@@ -54,7 +54,8 @@ type Mutation=PmMutation<{item:Record<string,unknown>}>;
 type Versioned={idempotencyKey:string;expectedVersion:number};
 type ReassignInput=Versioned & {assigneeId:string;note:string};
 type ImplementationInput=
-  | (Versioned & {decision:'start'|'reassign';ownerId:string;note:string})
+  | (Versioned & {decision:'start';ownerId:string;note:string})
+  | (Versioned & {decision:'reassign';ownerId:string;note:string})
   | (Versioned & {decision:'complete';evidenceMessageId:string;note:string});
 type DependencyInput={idempotencyKey:string;dependentTaskId:string;prerequisiteTaskId:string};
 function fail(code:number,message:string):never{
