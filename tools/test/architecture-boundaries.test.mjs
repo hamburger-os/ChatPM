@@ -185,12 +185,14 @@ test('formal PM read models use the sole Core membership snapshot',()=>{
   assert.doesNotMatch(navigation,/pool\.query|\bSELECT\b/i);
   assert.match(projectQuery,/JOIN tenant_members tm/);
 });
-test('platform AI model mutations reauthorize admin within the business transaction',()=>{
+test('platform AI reads, writes and model probe cooldown reauthorize current admin',()=>{
   const route=readFileSync(new URL('../../apps/api/src/admin-model-routes.ts',import.meta.url),'utf8');
   const access=readFileSync(new URL('../../packages/core/src/identity/system-access.ts',import.meta.url),'utf8');
-  assert.equal((route.match(/systemAdminTransaction\(actor,async db=>/g)||[]).length,7);
-  assert.match(route,/systemAdminTransaction\(actor,db=>db\.query/);
-  assert.doesNotMatch(route,/transaction\(async db=>|pool\.query/);
+  // 7 business writes/cooldown + 3 sensitive reads, all scoped to the same
+  // Core boundary; no stale HTTP preflight or second unscoped pool read.
+  assert.equal((route.match(/systemAdminTransaction\(actor,async db=>/g)||[]).length,10);
+  assert.match(route,/const check=await db\.query\(`INSERT INTO ai_model_checks/);
+  assert.doesNotMatch(route,/transaction\(async db=>|pool\.query|requireSystemAdmin\(/);
   assert.match(access,/SELECT is_system_admin FROM users WHERE id=\$1 FOR SHARE/);
   assert.match(access,/transaction\(async db/);
 });
