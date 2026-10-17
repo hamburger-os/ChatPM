@@ -2,6 +2,9 @@ import { pool, transaction, type DbClient } from './db.ts';
 import { DailyAIBudgetExceeded } from './ai-provider.ts';
 
 export const MAX_EVENT_ATTEMPTS=8;
+/** One lease length shared by claim, renewal, publication and acknowledgement. */
+export const OUTBOX_LEASE_SECONDS=300;
+export const OUTBOX_HEARTBEAT_MS=60_000;
 export type EventRow={
   id:string; project_id:string; kind:string; message_id:string|null;
   claimed_at:Date; claim_token:string; attempts:number;
@@ -14,13 +17,15 @@ export async function claimEvents(limit=12):Promise<EventRow[]>{
       SET dead_at=NOW(),last_error_code=COALESCE(last_error_code,'LEASE_EXPIRED'),
           claimed_at=NULL,claim_token=NULL
       WHERE processed_at IS NULL AND dead_at IS NULL AND attempts >= $1
-        AND claimed_at < NOW()-INTERVAL '5 minutes'`,[MAX_EVENT_ATTEMPTS]);
+        AND claimed_at < NOW()-($2::int*INTERVAL '1 second')`,
+      [MAX_EVENT_ATTEMPTS,OUTBOX_LEASE_SECONDS]);
     const {rows}=await db.query(`SELECT id,project_id,kind,message_id FROM outbox_events
       WHERE processed_at IS NULL AND dead_at IS NULL AND attempts < $1
         AND next_attempt_at<=NOW()
-        AND (claimed_at IS NULL OR claimed_at < NOW()-INTERVAL '5 minutes')
+        AND (claimed_at IS NULL OR
+          claimed_at < NOW()-($3::int*INTERVAL '1 second'))
       ORDER BY next_attempt_at,created_at LIMIT $2 FOR UPDATE SKIP LOCKED`,
-      [MAX_EVENT_ATTEMPTS,limit]);
+      [MAX_EVENT_ATTEMPTS,limit,OUTBOX_LEASE_SECONDS]);
     if(!rows.length)return [];
     const claimed=await db.query(`UPDATE outbox_events SET claimed_at=NOW(),claim_token=gen_random_uuid(),attempts=attempts+1
       WHERE id=ANY($1::uuid[]) RETURNING id,project_id,kind,message_id,claimed_at,claim_token,attempts`,
@@ -29,7 +34,7 @@ export async function claimEvents(limit=12):Promise<EventRow[]>{
   });
 }
 
-export const OUTBOX_LEASE_MINUTES=5;
+
 
 /**
  * Publication fence: hold the live claim row FOR UPDATE until the same
@@ -41,17 +46,62 @@ export async function assertEventClaim(db:DbClient,event:EventRow):Promise<void>
   const {rowCount}=await db.query(`
     SELECT 1 FROM outbox_events
     WHERE id=$1 AND project_id=$2 AND claim_token=$3
-      AND claimed_at>NOW()-INTERVAL '5 minutes'
+      AND claimed_at>NOW()-($4::int*INTERVAL '1 second')
       AND processed_at IS NULL AND dead_at IS NULL
     FOR UPDATE
-  `,[event.id,event.project_id,event.claim_token]);
+  `,[event.id,event.project_id,event.claim_token,OUTBOX_LEASE_SECONDS]);
   if(!rowCount)throw new Error('OUTBOX_LEASE_LOST');
+}
+
+/** Extend only a currently valid live claim. Expired or reassigned leases
+ * cannot be revived, even if no other worker has claimed them yet.
+ * A concurrent publisher holding FOR UPDATE serializes this update naturally.
+ */
+export async function renewEventLease(event:EventRow):Promise<boolean>{
+  const {rowCount}=await pool.query(`
+    UPDATE outbox_events SET claimed_at=NOW()
+    WHERE id=$1 AND project_id=$2 AND claim_token=$3
+      AND claimed_at>NOW()-($4::int*INTERVAL '1 second')
+      AND processed_at IS NULL AND dead_at IS NULL
+  `,[event.id,event.project_id,event.claim_token,OUTBOX_LEASE_SECONDS]);
+  return Boolean(rowCount);
+}
+
+/** Refresh one leased event while a slow model or external call is pending.
+ * Renewal failure alone never grants publication authority: all effects are
+ * separately protected by assertEventClaim in their own DB transactions.
+ * Only one heartbeat query may be in-flight; shutdown waits for it.
+ */
+export async function withEventLeaseHeartbeat<T>(
+  event:EventRow,work:()=>Promise<T>,intervalMs=OUTBOX_HEARTBEAT_MS,
+):Promise<T>{
+  let pending:Promise<void>|null=null;
+  let lost=false;
+  const beat=()=>{
+    if(pending||lost)return;
+    pending=renewEventLease(event).then(ok=>{if(!ok)lost=true;})
+      .catch(()=>{/* transient DB outage: the publication fence is authoritative */})
+      .finally(()=>{pending=null;});
+  };
+  const timer=setInterval(beat,intervalMs);
+  timer.unref();
+  try{
+    const result=await work();
+    if(pending)await pending;
+    if(lost)throw new Error('OUTBOX_LEASE_LOST');
+    return result;
+  }finally{
+    clearInterval(timer);
+    if(pending)await pending;
+  }
 }
 
 export async function finishEvent(event:EventRow){
   await pool.query(`UPDATE outbox_events SET processed_at=NOW(),claimed_at=NULL,claim_token=NULL,last_error_code=NULL
-    WHERE id=$1 AND claim_token=$2 AND processed_at IS NULL AND dead_at IS NULL`,
-    [event.id,event.claim_token]);
+    WHERE id=$1 AND claim_token=$2
+      AND claimed_at>NOW()-($3::int*INTERVAL '1 second')
+      AND processed_at IS NULL AND dead_at IS NULL`,
+    [event.id,event.claim_token,OUTBOX_LEASE_SECONDS]);
 }
 
 export function failureCode(error:unknown){
@@ -73,8 +123,10 @@ export async function failEvent(event:EventRow,error:unknown){
       last_error_code='AI_DAILY_BUDGET',attempts=GREATEST(0,attempts-1),
       next_attempt_at=date_trunc('day',NOW() AT TIME ZONE 'UTC') AT TIME ZONE 'UTC'
         +INTERVAL '1 day 5 minutes'
-      WHERE id=$1 AND claim_token=$2 AND processed_at IS NULL AND dead_at IS NULL`,
-      [event.id,event.claim_token]);
+      WHERE id=$1 AND claim_token=$2
+        AND claimed_at>NOW()-($3::int*INTERVAL '1 second')
+        AND processed_at IS NULL AND dead_at IS NULL`,
+      [event.id,event.claim_token,OUTBOX_LEASE_SECONDS]);
     return;
   }
   const code=failureCode(error);
@@ -82,8 +134,10 @@ export async function failEvent(event:EventRow,error:unknown){
   if(code==='MODEL_SCHEMA'){
     await pool.query(`UPDATE outbox_events SET claimed_at=NULL,claim_token=NULL,
       last_error_code='MODEL_SCHEMA',dead_at=NOW(),next_attempt_at=NOW()
-      WHERE id=$1 AND claim_token=$2 AND processed_at IS NULL AND dead_at IS NULL`,
-      [event.id,event.claim_token]);
+      WHERE id=$1 AND claim_token=$2
+        AND claimed_at>NOW()-($3::int*INTERVAL '1 second')
+        AND processed_at IS NULL AND dead_at IS NULL`,
+      [event.id,event.claim_token,OUTBOX_LEASE_SECONDS]);
     return;
   }
   // Error class only: no chat, model output, credentials or stack in persisted state.
@@ -93,8 +147,10 @@ export async function failEvent(event:EventRow,error:unknown){
       dead_at=CASE WHEN attempts >= $4 THEN NOW() ELSE NULL END,
       next_attempt_at=NOW()+(
         LEAST(3600,5*POWER(2,LEAST(attempts,10))) * INTERVAL '1 second')
-    WHERE id=$1 AND claim_token=$2 AND processed_at IS NULL AND dead_at IS NULL`,
-    [event.id,event.claim_token,failureCode(error),MAX_EVENT_ATTEMPTS]);
+    WHERE id=$1 AND claim_token=$2
+      AND claimed_at>NOW()-($5::int*INTERVAL '1 second')
+      AND processed_at IS NULL AND dead_at IS NULL`,
+    [event.id,event.claim_token,failureCode(error),MAX_EVENT_ATTEMPTS,OUTBOX_LEASE_SECONDS]);
 }
 
 export async function deadEvents(projectId:string){
