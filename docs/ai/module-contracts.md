@@ -370,3 +370,10 @@ retryDeadEvent 唯一使用现有 executePmCommand：当前授权、dead_at 非�
 - Governance Core `listPmRegisters`、`readPmIssueHistory`、`readPmChangeImplementationHistory`、`listPmTaskDependencies` 全部复用 Identity 的 `withProjectRead(...,'read',...)`：同一 REPEATABLE READ 事务内锁当前 Tenant/Project 成员，检查目标项目作用域，再读取正式登记簿/历史/依赖。PM 的正式 Command 写入不因只读改动变化。
 - 问题与变更历史均按 50 条返回，额外查询第 51 条以产生 `nextBeforeVersion`；参数必须是 1..2147483647 的整数，目标记录缺失/越项目 404、游标无效 400。不得退化为路由层先 `pool.query` 授权、再 `pool.query` 读业务。
 - 工程门禁：核心 PostgreSQL 真实历史分页、跨项目和跨租户隔离、项目与组织两种撤权、observer 可读、项目列表可见性和静态 HTTP 无业务 SQL 守卫。数据库迁移、AI 模型输出、正式领域命令/事件行为均不变。
+
+## ADR-076 · 正式 PM 命令统一归属
+
+- `governance/pm-register-commands.ts` 是 PM 登记簿及生命周期变更的唯一 Core 命令入口。导出 `pmEntryKind` 和 `pmCreateDefinitions` 供 API 校验真实 DTO，而不是在 API 与 Core 各维护一份表名/字段映射；用户输入永远不得成为 SQL table/column。
+- `createPmEntry`、`reassignPmDeliverable`、`submitPmDeliverable`、`reviewPmDeliverable`、`transitionPmIssue`、`decidePmChange`、`updatePmChangeImplementation`、`createPmTaskDependency` 必须调用既有 `executePmCommand`，不可新增第二套 Receipt/Event/Outbox 管道。
+- `pm-routes.ts` 是 Fastify 路由/身份/UUID/Zod DTO 层，不包含 `db.query`、`executePmCommand`、领域 `INSERT/UPDATE/DELETE` 或 dependency graph SQL。Owner/Manager/Member/Observer 的不同权限由 Core 校验；AI 不得以候选代替人类创建/验收/变更实施证据。
+- 验证：真实 PostgreSQL 回执同键/异参、观察者/跨项目拒绝、Issue 变更历史一次写入、交付物提交人与审核者分离、任务依赖环阻断、成功命令审计/事件数量一致；加编译版 API Smoke、静态边界及最新 Head 五项 CI。

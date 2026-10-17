@@ -328,3 +328,9 @@ CI 须验证 PostgreSQL 游标 200 条边界、25 条更早记录、跨项目与
 **目前剩余风险按交付门槛区分：** P0：#39 公网出站策略、DNS/SSRF 与邀请注册的实网验证；P1：#48 的 PM 命令 SQL/Owner 单源、#49 的剩余 HTTP 模块和真实多 Worker 崩溃恢复、#4 主动告警；P2：#50/#5 AI 多轮证据追问和真实模型评测、#43 PMP 项目集/组合收益与资源容量、#40 真机移动端/SSE 网关压力；发布：#51 V2 数据转换/异机灾备和 #18/#19/#20/#41 的 Windows/Linux/QNAP、加密离机、PITR、签名产物与公网 HTTPS 验收；#34 主版本依赖升级需独立变更。Issue #42 任务归档 Core 能力已存在，但剩余设备/权限验收未完成，不以“代码存在”代替结项。
 
 **合并条件：** 固定本 PR 的最终 Head SHA；Product verification（TypeScript、真实 PostgreSQL、架构、编译 API Smoke、Web build）、Documentation governance、native Windows/Linux、Docker deployment/restore drill、Security scanning 五组工作流全部 success，无未解决阻断线程，确认 main 未漂移，再允许 Squash Merge。无真实设备与模型凭据的验收一律保持开放，不声称整体 V2 / 生产就绪。
+
+## ADR-076 · PM 全写入路由的模块所有权 /review（2026-10-17）
+
+本次审查将 `pm-routes.ts` 的八类变更全量与 `governance/pm-register-commands.ts` 逐项比对，核心要求：SQL 表名必须来自固定 Schema/字段规格，HTTP 不参与 CommandReceipt/DomainEvent/Outbox；所有写入继续使用唯一 `executePmCommand` 当前身份锁、幂等与审计事务。交付物改派后旧提交失效、提交人与审核人分离，Issue 不能无理由解决/重开，Change 审批不可自批且实施需要有效负责人真实项目消息证据，依赖防环路及已完成任务前置约束不能因重构消失。无 V1/V2 双命令、无旧路由兼容层、无新表。
+
+回归门禁：真实 PostgreSQL Core 集成 + 原编译版 API Smoke 保留业务和越权语义；静态测试确保 Fastify 不再拥有 `executePmCommand` 或直接 PM SQL；新 PR 最终 Head 的 Product/Docs/Windows+Linux/Docker/Security 五项全 success、Review threads 无阻断和 main 未漂移后才能 Squash Merge。此处是 #48/#49 的 PM 命令归属完成切片，**不是**全系统完工：Project Owner 双来源、组织部分查询、主动运维告警、多 Worker 故障、PMP 跨项目收益/容量、AI Playbook/真实评测、生产 HTTPS/Win11/QNAP/PITR/签名包/迁移均仍有独立门槛。

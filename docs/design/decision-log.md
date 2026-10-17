@@ -431,3 +431,13 @@
 **取舍与失败语义。** 保留原有 GET 路径、JSON 字段、依赖条数上限 250、历史 50+1 的 `nextBeforeVersion` 和所有正式写入命令；没有 V1 兼容分支。当前项目成员包括 observer 仍可查看业务历史；非当前成员和跨项目记录 404；无效历史游标 400。读取开始前完成的撤权会被拒绝，并发撤权与已开始读取由数据库行锁序列化，无法追回此前合法返回给客户端的信息。只读访问不创建 CommandReceipt、DomainEvent 或 Outbox。
 
 **验证与后续。** 真实 PostgreSQL 集成测试覆盖 54 条问题状态历史、53 条变更实施历史、翻页与越界值、独立租户/项目、撤权后读取、项目导航隔离；API 静态架构门禁和整体 CI 必须在同一最新 Head 上通过。剩余 PM 正式命令 SQL 仍在 `pm-routes.ts`，应以独立命令所有权迁移继续 #48/#49；多进程故障、真实模型、跨平台设备和 V2 ETL/生产发布不是本变更范围。
+
+## ADR-076 · PM 正式命令的 Core 唯一所有权（2026-10-17）
+
+**问题。** `pm-routes.ts` 原本在 Fastify 入口直接持有八条正式变更的 `executePmCommand` 和 SQL：目标/里程碑/交付物/Issue/Decision/Change 通用创建、交付物改派/提交/验收、Issue 解决与重新打开、变更批准/拒绝、变更实施启动/改派/完成和任务依赖创建。其它领域已将正式写入迁至 Core，PM 路由保留这种模式会使新业务逻辑继续向 HTTP 复制，违反 #48/#49 的单一命令所有者要求。
+
+**决定。** `governance/pm-register-commands.ts` 拥有原固定目录映射、PM 创建 Zod Schema、八个业务 Command Handler 以及所有正式 SQL。每个 Command 仍直接复用原 `executePmCommand`，在当前项目和租户成员权限锁下原子写入领域表、CommandReceipt、Audit、DomainEvent 和 Outbox；不引入替代命令总线、并行审核表、领域中间层或新迁移。Fastify 只做 Cookie/Session 身份解析、UUID/枚举/日期/版本 DTO 解析及委托。
+
+**保持的不变量。** 项目/组织成员撤权保护与角色 `pm.plan`/`pm.submit`/`pm.accept`/`pm.approve` 仍由后端管控；交付物必须由当前责任人提交，独立审核者验收；Issue 状态只能合法切换并留下历史备注；重大 Change 不允许申请人自批，批准不等于实施完成，需不同有效责任人及项目原始消息的实施证据；任务依赖保持项目级锁、跨项目拒绝、循环拒绝和完成前置约束；同一意图的幂等键重放不得产生新事件。人工审核仍不授权 AI 直接更改正式状态。
+
+**取舍与验收。** 当前代码保留完整 REST 路径、状态码、返回结构、事件 kind、数据库字段和历史，且无需历史兼容层。真实 PostgreSQL 直接调用 Core 验证创建、幂等、权限、验收、Issue 历史、依赖环与 Receipt/Event/Audit 原子数量；静态守卫阻止 Fastify 再直接调用 `executePmCommand` 或持有正式 PM SQL。原编译版 API Smoke、Web、native、Docker 和 Security 全套以 PR 最新 Head 验收。并不声称 Owner 模型单源、全域 API/Worker SQL、企业生产迁移及实机环境已经完成。
