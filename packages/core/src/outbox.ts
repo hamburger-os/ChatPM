@@ -153,14 +153,14 @@ export async function failEvent(event:EventRow,error:unknown){
     [event.id,event.claim_token,failureCode(error),MAX_EVENT_ATTEMPTS,OUTBOX_LEASE_SECONDS]);
 }
 
-export async function deadEvents(projectId:string){
-  return (await pool.query(`SELECT id,kind,message_id,attempts,last_error_code,dead_at
+export async function deadEvents(projectId:string,db:DbClient|typeof pool=pool){
+  return (await db.query(`SELECT id,kind,message_id,attempts,last_error_code,dead_at
     FROM outbox_events WHERE project_id=$1 AND dead_at IS NOT NULL AND processed_at IS NULL
     ORDER BY dead_at DESC LIMIT 100`,[projectId])).rows;
 }
 
-export async function outboxSummary(projectId:string){
-  const {rows}=await pool.query(`SELECT
+export async function outboxSummary(projectId:string,db:DbClient|typeof pool=pool){
+  const {rows}=await db.query(`SELECT
     COUNT(*) FILTER (WHERE processed_at IS NULL AND dead_at IS NULL)::int AS pending,
     COUNT(*) FILTER (WHERE processed_at IS NULL AND dead_at IS NOT NULL)::int AS dead,
     COUNT(*) FILTER (WHERE last_error_code LIKE 'MODEL_%')::int AS model_errors,
