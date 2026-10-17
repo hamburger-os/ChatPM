@@ -34,18 +34,30 @@ try{
       ($5,$6,'admin')
   `,[tenant,owner,member,candidate,outsiderTenant,external]);
   const project=(await pool.query<{id:string}>(`
-    INSERT INTO projects(tenant_id,name,owner_id)
-    VALUES($1,'Governance project',$2) RETURNING id
+    WITH created AS (
+      INSERT INTO projects(tenant_id,name)
+      VALUES($1,'Governance project') RETURNING id
+    ), seeded_owner AS (
+      INSERT INTO project_members(project_id,user_id,role)
+      SELECT id,$2,'owner' FROM created RETURNING project_id
+    )
+    SELECT id FROM created
   `,[tenant,owner])).rows[0].id;
   testProject=project;
   const foreignProject=(await pool.query<{id:string}>(`
-    INSERT INTO projects(tenant_id,name,owner_id)
-    VALUES($1,'Foreign project',$2) RETURNING id
+    WITH created AS (
+      INSERT INTO projects(tenant_id,name)
+      VALUES($1,'Foreign project') RETURNING id
+    ), seeded_owner AS (
+      INSERT INTO project_members(project_id,user_id,role)
+      SELECT id,$2,'owner' FROM created RETURNING project_id
+    )
+    SELECT id FROM created
   `,[outsiderTenant,external])).rows[0].id;
   await pool.query(`
     INSERT INTO project_members(project_id,user_id,role)
     VALUES($1,$2,'owner'),($1,$3,'member'),($4,$5,'owner')
-  `,[project,owner,member,foreignProject,external]);
+   ON CONFLICT DO NOTHING`,[project,owner,member,foreignProject,external]);
 
   const members=await listProjectMembers(project,member);
   assert.deepEqual(new Set(members.members.map(x=>x.id)),new Set([owner,member]));
@@ -173,7 +185,9 @@ try{
   assert.deepEqual(await transferProjectOwnership(project,owner,revision),moved);
   const {rows:ownership}=await pool.query<{
     owner_id:string;ownership_revision:number;
-  }>('SELECT owner_id,ownership_revision FROM projects WHERE id=$1',[project]);
+  }>(`SELECT pm.user_id AS owner_id,p.ownership_revision FROM projects p
+    JOIN project_members pm ON pm.project_id=p.id AND pm.role='owner'
+    WHERE p.id=$1`,[project]);
   assert.equal(ownership[0].owner_id,candidate);
   assert.equal(ownership[0].ownership_revision,2);
   await assert.rejects(updateProjectSettings(project,owner,

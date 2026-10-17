@@ -363,3 +363,23 @@ test('tenant resource planning never assigns execution capacity to project obser
   assert.match(core,/FOR SHARE OF p,pm,tm/);
   assert.match(core,/资源只能分配给本组织内当前可承担执行责任的项目成员/);
 });
+
+test('project owner has exactly one persisted identity in project_members',()=>{
+  const migration=readFileSync(new URL('../../packages/core/sql/028_project_owner_single_authority.sql',import.meta.url),'utf8');
+  const creation=readFileSync(new URL('../../packages/core/src/project-creation.ts',import.meta.url),'utf8');
+  const governance=readFileSync(new URL('../../packages/core/src/identity/project-governance.ts',import.meta.url),'utf8');
+  const query=readFileSync(new URL('../../packages/core/src/project-queries.ts',import.meta.url),'utf8');
+  assert.match(migration,/ALTER TABLE projects DROP COLUMN owner_id/);
+  assert.match(migration,/PROJECT_OWNER_MIGRATION_REQUIRES_RECONCILIATION/);
+  assert.match(migration,/DEFERRABLE INITIALLY DEFERRED/g);
+  assert.match(migration,/PROJECT_OWNER_REQUIRED/);
+  assert.match(creation,/INSERT INTO projects\(tenant_id,name,timezone\)/);
+  assert.match(creation,/VALUES\(\$1,\$2,'owner'\)/);
+  assert.match(creation,/owner_id:actorId/);
+  assert.doesNotMatch(creation,/INSERT INTO projects\([^)]*owner_id/);
+  assert.match(governance,/JOIN project_members owner ON owner.project_id=p.id AND owner.role='owner'/);
+  assert.doesNotMatch(governance,/UPDATE projects SET owner_id/);
+  assert.match(governance,/UPDATE projects SET ownership_revision=ownership_revision\+1/);
+  assert.match(query,/owner.user_id AS owner_id/g);
+  assert.doesNotMatch(query,/p\.owner_id/);
+});

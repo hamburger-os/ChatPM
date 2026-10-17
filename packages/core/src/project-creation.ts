@@ -62,13 +62,13 @@ export async function createProjectCommand(actorId:string,
       if(!accessible.rowCount)deny(404,'原项目不存在或无权读取');
       return receipt.result;
     }
-    const {rows}=await db.query<CreatedProject>(`
-      INSERT INTO projects(tenant_id,name,owner_id,timezone)
-      VALUES($1,$2,$3,$4)
+    const {rows}=await db.query<Omit<CreatedProject,'owner_id'>>(`
+      INSERT INTO projects(tenant_id,name,timezone)
+      VALUES($1,$2,$3)
       RETURNING id,tenant_id,name,timezone,ai_enabled,work_start,work_end,
-        cooldown_hours,settings_revision,owner_id,ownership_revision
-    `,[input.tenantId,input.name,actorId,input.timezone]);
-    const project=rows[0];
+        cooldown_hours,settings_revision,ownership_revision
+    `,[input.tenantId,input.name,input.timezone]);
+    const project:CreatedProject={...rows[0],owner_id:actorId};
     await db.query(`
       INSERT INTO project_members(project_id,user_id,role)
       VALUES($1,$2,'owner')

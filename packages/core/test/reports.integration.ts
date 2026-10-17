@@ -11,7 +11,14 @@ try{
     ['report-'+id+'@example.com'])).rows[0];
   const tenant=(await pool.query("INSERT INTO tenants(name) VALUES('Report Test') RETURNING id")).rows[0];
   const project=(await pool.query(
-    "INSERT INTO projects(tenant_id,name,owner_id) VALUES($1,'Scheduled project',$2) RETURNING id",
+    `WITH created AS (
+      INSERT INTO projects(tenant_id,name)
+      VALUES($1,'Scheduled project') RETURNING id
+    ), seeded_owner AS (
+      INSERT INTO project_members(project_id,user_id,role)
+      SELECT id,$2,'owner' FROM created RETURNING project_id
+    )
+    SELECT id FROM created`,
     [tenant.id,user.id])).rows[0];
   const task=(await pool.query("INSERT INTO tasks(project_id,title) VALUES($1,'Task before schedule') RETURNING id",[project.id])).rows[0];
   const initialEvents=(await pool.query(
@@ -72,7 +79,14 @@ try{
   assert.equal(published.content,manual.content,'Published report remains immutable');
 
   const another=(await pool.query(
-    "INSERT INTO projects(tenant_id,name,owner_id) VALUES($1,'Concurrent project',$2) RETURNING id",
+    `WITH created AS (
+      INSERT INTO projects(tenant_id,name)
+      VALUES($1,'Concurrent project') RETURNING id
+    ), seeded_owner AS (
+      INSERT INTO project_members(project_id,user_id,role)
+      SELECT id,$2,'owner' FROM created RETURNING project_id
+    )
+    SELECT id FROM created`,
     [tenant.id,user.id])).rows[0];
   // More than 100 real events: full counts, bounded evidence. Never silently
   // convert the first 100 events into an incorrect monthly total.

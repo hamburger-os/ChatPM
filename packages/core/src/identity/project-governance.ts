@@ -149,8 +149,10 @@ export function transferProjectOwnership(projectId:string,actor:string,input:Own
         fail(400,'项目负责人不能移交给自己');
       const project=(await db.query<{
         owner_id:string;ownership_revision:number;
-      }>(`SELECT owner_id,ownership_revision FROM projects
-        WHERE id=$1 FOR UPDATE`,[projectId])).rows[0];
+      }>(`SELECT owner.user_id AS owner_id,p.ownership_revision
+        FROM projects p
+        JOIN project_members owner ON owner.project_id=p.id AND owner.role='owner'
+        WHERE p.id=$1 FOR UPDATE OF p,owner`,[projectId])).rows[0];
       if(!project)fail(404,'项目不存在');
       if(project.owner_id!==actor)fail(403,'只有当前项目负责人可以转让项目');
       if(project.ownership_revision!==input.expectedRevision)
@@ -175,11 +177,10 @@ export function transferProjectOwnership(projectId:string,actor:string,input:Own
       `,[projectId,input.targetUserId]);
       if(!promoted.rowCount)fail(409,'新负责人已经离开项目');
       const updated=await db.query<{ownership_revision:number}>(`
-        UPDATE projects SET owner_id=$2,
-          ownership_revision=ownership_revision+1
-        WHERE id=$1 AND owner_id=$3 AND ownership_revision=$4
+        UPDATE projects SET ownership_revision=ownership_revision+1
+        WHERE id=$1 AND ownership_revision=$2
         RETURNING ownership_revision
-      `,[projectId,input.targetUserId,actor,input.expectedRevision]);
+      `,[projectId,input.expectedRevision]);
       if(!updated.rowCount)fail(409,'项目负责人已被其他人变更');
       const revision=updated.rows[0].ownership_revision;
       return {response:{ok:true,projectId,previousOwnerId:actor,

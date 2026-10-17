@@ -344,3 +344,11 @@ CI 须验证 PostgreSQL 游标 200 条边界、25 条更早记录、跨项目与
 **剩余待做（不以本 PR 关闭）：** #48 的 Owner 冗余存储/全域正式聚合统一、#49 组织治理及其它路由/Worker 故障注入、#39 真实模型出站安全、#4 主动告警、#50 模型 Evidence/Playbook、#43 跨项目收益容量、#51 实机迁移和备份，以及 #18/#19/#20/#41 的原生/公网/签名发行验证。不能因单一 Core 重构声称全部完工或生产就绪。
 
 **新增缺陷与验证：** 本轮横向检查 `resource-allocation.ts`，确认原来的项目资格只判断成员存在，遗漏观察者角色，可能在降级后再次安排执行资源。已收紧为非 observer，并复用既有 Tenant advisory + Target ProjectMember FOR SHARE，避免与角色 FOR UPDATE 并发逃逸。PostgreSQL 集成应在角色降级后实际尝试新的组织资源分配并断言拒绝，静态守卫必须长期保留此谓词。未得到最新 Head CI 成功以前不视作通过。
+
+## ADR-078 · Owner Authority 全域 /review（2026-10-17）
+
+**范围与不变量。** 旧双重 Owner 身份已在 Project 创建/导航/详情、Identity 移交命令、DB 迁移、真实测试夹具、编译 HTTP Smoke 搜查；选择 `project_members.role='owner'` 单源、`ownership_revision` 独立版本，否决镜像列和双向触发器。正式迁移必须先确认每个旧 project 的 owner_id 与 owner role 匹配；不一致则 SQL 事务中止、不可吞错、不可静默重设。延期检查允许事务内移交临时无 Owner，但禁止提交后 0 Owner；旧部分唯一索引阻止同项目第二 Owner。项目删除可级联；跨项目、跨租户和 revoked tenant 仍以服务器当前授权为准。客户端的 owner_id 只是唯一角色的派生查询字段，不是兼容数据库字段。
+
+**CI 与审计。** 旧 Raw fixture 的项目创建必须和唯一 Owner INSERT 同一 SQL 语句，否则 commit-time DB trigger 故意拒绝；如果测试手动插入重复 Owner 使用 ON CONFLICT DO NOTHING，不创建替代身份。真实 PostgreSQL 测试、强制单源架构守卫、迁移双跑、Owner 版本/重放、原有 API Smoke、Native/Docker、文档与安全扫描作为最新 Head 合并门禁；无阻断审查线程才可 Merge。真实旧数据/生产停写/异地快照、PITR 和原生 OS 设备检查不由 CI 代替。
+
+**整体未完成：** #48 尚有其它历史 Task/正式领域对齐、#49 尚有 API/Worker 故障注入、#39 第三方真实 DNS/出站网络验收、#50 模型 Evidence/Playbook、#43 PMP 组合收益/跨项目容量、#51 V2 一次性数据迁移和真正跨平台发布验收；#4 主动告警、#18/#19/#20/#41 的系统服务、恢复、安装包、QNAP 及公网 HTTPS 同样独立开放。

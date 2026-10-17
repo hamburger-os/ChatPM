@@ -32,8 +32,14 @@ try{
     VALUES($1,'Worker Test','unused') RETURNING id`,['worker-'+suffix+'@example.com'])).rows[0];
   const tenant=(await db.query(`INSERT INTO tenants(name) VALUES('Worker progress test')
     RETURNING id`)).rows[0];
-  const project=(await db.query(`INSERT INTO projects(tenant_id,name,owner_id,ai_enabled)
-    VALUES($1,'Worker project', $2,TRUE) RETURNING id`,[tenant.id,user.id])).rows[0];
+  const project=(await db.query(`WITH created AS (
+      INSERT INTO projects(tenant_id,name,ai_enabled)
+      VALUES($1,'Worker project',TRUE) RETURNING id
+    ), seeded_owner AS (
+      INSERT INTO project_members(project_id,user_id,role)
+      SELECT id,$2,'owner' FROM created RETURNING project_id
+    )
+    SELECT id FROM created`,[tenant.id,user.id])).rows[0];
   const task=(await db.query(`INSERT INTO tasks(project_id,title,status,due_date)
     VALUES($1,'评估测试系统的方案设计','doing','2026-12-15') RETURNING id`,
     [project.id])).rows[0];

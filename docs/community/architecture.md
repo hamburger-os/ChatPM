@@ -202,3 +202,9 @@ English: Project membership reads, invitations, role changes, removal, ownership
 中文补充：被降级为观察者后，不仅不能继续承担未完成工作，也不能从组织资源安排入口重新获得新的执行容量；当前组织和项目成员及角色会在数据库事务中再次校验。
 
 English addendum: An observer may not receive a new active resource allocation through the organization capacity planner. Both current tenant/project membership and the non-observer role are rechecked under database locks; historical cancelled allocations remain available for audit.
+
+### 单一项目负责人事实 / One authoritative project owner
+
+中文：项目负责人不再在项目表和成员表中各存一份。唯一身份来自项目成员列表中的 `owner` 角色；`ownership_revision` 只负责并发变更版本。创建项目和负责人移交必须在一笔数据库事务中完成，数据库在提交时验证**恰好一位**负责人。项目详情仍可以显示负责人 ID，但它直接来自唯一成员记录。升级时旧数据若存在负责人不一致，将拒绝迁移而非自动指定新 Owner；正式实例必须先备份并核对。此变更不代表企业实机部署和历史迁移验收已经完成。
+
+English: A project owner is now recorded **only** by the single project member with role `owner`. The independent `ownership_revision` protects concurrent transfers. PostgreSQL checks **exactly one** owner at commit, allowing atomic project creation and transfer without an intermediate committed gap. Project detail responses derive the owner ID from current membership rather than storing a second field. A migration on inconsistent legacy owners fails closed, requiring audited data reconciliation and a backup before retrying; this is not proof of production upgrade acceptance.

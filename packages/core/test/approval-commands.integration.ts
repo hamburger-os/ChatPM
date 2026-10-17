@@ -23,12 +23,18 @@ try{
     VALUES($1,$2,'admin'),($1,$3,'member'),($1,$4,'member')`,
     [tenant,owner,observer,outsider]);
   const pid=(await pool.query<{id:string}>(`
-    INSERT INTO projects(tenant_id,name,owner_id)
-    VALUES($1,'Review transactions',$2) RETURNING id`,[tenant,owner])).rows[0].id;
+    WITH created AS (
+      INSERT INTO projects(tenant_id,name)
+      VALUES($1,'Review transactions') RETURNING id
+    ), seeded_owner AS (
+      INSERT INTO project_members(project_id,user_id,role)
+      SELECT id,$2,'owner' FROM created RETURNING project_id
+    )
+    SELECT id FROM created`,[tenant,owner])).rows[0].id;
   projectId=pid;
   await pool.query(`
     INSERT INTO project_members(project_id,user_id,role)
-    VALUES($1,$2,'owner'),($1,$3,'observer')`,[pid,owner,observer]);
+    VALUES($1,$2,'owner'),($1,$3,'observer') ON CONFLICT DO NOTHING`,[pid,owner,observer]);
   const message=(await pool.query<{id:string}>(`
     INSERT INTO messages(project_id,author_id,kind,content,client_nonce)
     VALUES($1,$2,'user','Proposal context',$3) RETURNING id`,

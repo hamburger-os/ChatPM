@@ -34,8 +34,14 @@ try{
     VALUES($1,'Program',$2) RETURNING id`,[tenant,portfolio])).rows[0].id;
   const create=async(name:string,tenantId:string,owning:string,programId:string|null)=>{
     const {rows}=await pool.query<{id:string}>(`
-      INSERT INTO projects(tenant_id,owner_id,name,program_id)
-      VALUES($1,$2,$3,$4) RETURNING id`,[tenantId,owning,name,programId]);
+      WITH created AS (
+      INSERT INTO projects(tenant_id,name,program_id)
+      VALUES($1,$3,$4) RETURNING id
+    ), seeded_owner AS (
+      INSERT INTO project_members(project_id,user_id,role)
+      SELECT id,$2,'owner' FROM created RETURNING project_id
+    )
+    SELECT id FROM created`,[tenantId,owning,name,programId]);
     return rows[0].id;
   };
   const visible=await create('Visible',tenant,admin,program);
@@ -43,7 +49,7 @@ try{
   const outside=await create('Other tenant secret',another,stranger,null);
   await pool.query(`
     INSERT INTO project_members(project_id,user_id,role)
-    VALUES($1,$2,'member'),($3,$4,'owner')`,[visible,member,outside,stranger]);
+    VALUES($1,$2,'member'),($3,$4,'owner') ON CONFLICT DO NOTHING`,[visible,member,outside,stranger]);
   await pool.query(`INSERT INTO project_departments(tenant_id,project_id,department_id)
     VALUES($1,$2,$3)`,[tenant,visible,dep]);
   const asAdmin=await getTenantStructure(tenant,admin);

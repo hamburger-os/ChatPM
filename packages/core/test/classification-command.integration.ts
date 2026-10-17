@@ -30,8 +30,14 @@ try{
     INSERT INTO departments(tenant_id,name) VALUES($1,'Other dept') RETURNING id
   `,[another])).rows[0].id;
   const pid=(await pool.query<{id:string}>(`
-    INSERT INTO projects(tenant_id,owner_id,name) VALUES($1,$2,'Classification')
-    RETURNING id`,[tenant,admin])).rows[0].id;
+    WITH created AS (
+      INSERT INTO projects(tenant_id,name)
+      VALUES($1,'Classification') RETURNING id
+    ), seeded_owner AS (
+      INSERT INTO project_members(project_id,user_id,role)
+      SELECT id,$2,'owner' FROM created RETURNING project_id
+    )
+    SELECT id FROM created`,[tenant,admin])).rows[0].id;
   const input:ClassificationInput={
     idempotencyKey:randomUUID(),expectedRevision:1,
     departmentId:dep,programId:null,portfolioId:null,

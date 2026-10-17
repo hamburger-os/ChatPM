@@ -1694,7 +1694,9 @@ try{
   assert.equal(transferred.data.previousOwnerId,uid);
   assert.equal(transferred.data.ownershipRevision,2);
   const transferredProject=await db.query(
-    'SELECT owner_id,ownership_revision FROM projects WHERE id=$1',[pid]);
+    `SELECT pm.user_id AS owner_id,p.ownership_revision FROM projects p
+     JOIN project_members pm ON pm.project_id=p.id AND pm.role='owner'
+     WHERE p.id=$1`,[pid]);
   assert.equal(transferredProject.rows[0].owner_id,second.data.user.id);
   assert.equal(transferredProject.rows[0].ownership_revision,2);
   const firstOwners=await db.query(
