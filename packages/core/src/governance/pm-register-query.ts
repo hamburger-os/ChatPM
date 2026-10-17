@@ -36,7 +36,7 @@ export function listPmRegisters(projectId:string,actorId:string){
 }
 
 /** Historical read and entity existence share the locked membership snapshot. */
-export function readPmIssueHistory(
+export async function readPmIssueHistory(
   projectId:string,issueId:string,actorId:string,beforeVersion?:number,
 ){
   validateHistoryCursor(beforeVersion);
@@ -60,7 +60,7 @@ export function readPmIssueHistory(
   });
 }
 
-export function readPmChangeImplementationHistory(
+export async function readPmChangeImplementationHistory(
   projectId:string,changeId:string,actorId:string,beforeVersion?:number,
 ){
   validateHistoryCursor(beforeVersion);
