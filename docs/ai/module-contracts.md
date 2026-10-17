@@ -342,3 +342,10 @@ Docker 工作流为验证多账号 HTTP/Origin/Cookie 人为设置 `REGISTRATION
 运维 HTTP 层仅接受登录身份及 UUID/Zod DTO，不自行执行权限 SQL、运维数据查询或命令执行器。Core 中 readOutboxSummary/readDeadEvents 必须在一个 REPEATABLE READ 事务内先 lockProjectAccess，验证 operations.manage，再用同一 DbClient 调用 outboxSummary/deadEvents。非项目 Owner、失效组织成员或跨项目请求不得取得统计与死信数据。
 
 retryDeadEvent 唯一使用现有 executePmCommand：当前授权、dead_at 非空、未完成、同项目、行锁、manual_retry_revision 递增、审计/领域事件/Outbox/Receipt 原子提交。重放同键命令不触发第二次恢复，任何新命令不可恢复健康事件。新增 Core 集成与架构静态守卫，API/Worker 仍需全域模块边界审查。
+
+## 报表 Core 唯一命令与读取契约（ADR-072）
+
+- `reporting/report-services.ts` 唯一拥有项目报告的读/人工生成/发布的模块级服务入口；`apps/api/src/report-routes.ts` 只校验身份、UUID、Zod DTO。
+- `listProjectReports(projectId,actorId)` 必须使用同一 REPEATABLE READ 事务与 `lockProjectAccess(db,...)`，先锁住当前 TenantMember/ProjectMember 再读取报告。组织成员身份、项目 Manager/Observer 身份不意味着报告写权限，但有效项目成员可只读。
+- `requestProjectReport` 与 `publishProjectReport` 复用 `executePmCommand` 当前授权、原有 command kind/receipt 幂等、Audit/DomainEvent/Outbox 与报告修订版本。继续使用 `generateReport` 单快照和原本的发布乐观版本条件，禁止在路由或其他进程再建平行写入 SQL。
+- 发布后 Report 正文必须不可变。相同 key/payload 重试只回放旧回执；新 key + 旧修订拒绝。跨租户、跨项目及被撤权成员的读取和写入必须失败。CI 需对真实 PostgreSQL 和编译 API 验证以上契约。
