@@ -152,8 +152,10 @@ try{
     ()=>readPmIssueHistory(project,issue,observer),
     ()=>readPmChangeImplementationHistory(project,change,observer),
   ])await assert.rejects(action(),/项目不存在或无权限/);
-  await pool.query('DELETE FROM project_members WHERE project_id=$1 AND user_id=$2',
-    [project,owner]);
+  // The last owner role is immutable as a persisted project invariant.
+  // Revoking tenant membership still instantly removes effective access.
+  await pool.query('DELETE FROM tenant_members WHERE tenant_id=$1 AND user_id=$2',
+    [tenant,owner]);
   assert.equal((await listMemberProjects(owner)).projects.length,0);
   await assert.rejects(readPmIssueHistory(project,issue,owner),
     /项目不存在或无权限/);
