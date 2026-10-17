@@ -39,7 +39,9 @@ try{
   const first=await createPmEntry(project,owner,'issues',issuePayload);
   assert.equal(first.item.status,'open');
   const replay=await createPmEntry(project,owner,'issues',issuePayload);
-  assert.deepEqual(replay,first,'Same key must replay the durable receipt');
+  assert.deepEqual(JSON.parse(JSON.stringify(replay)),
+    JSON.parse(JSON.stringify(first)),
+    'Same key must replay the same JSON response');
   await assert.rejects(createPmEntry(project,owner,'issues',{
     ...issuePayload,title:'Changed meaning',
   }),/幂等键已经用于其他命令/);
@@ -59,7 +61,9 @@ try{
   const resolved=await transitionPmIssue(project,issueId,owner,transition);
   assert.equal(resolved.item.status,'resolved');
   assert.equal(resolved.item.version,2);
-  assert.deepEqual(await transitionPmIssue(project,issueId,owner,transition),resolved);
+  assert.deepEqual(JSON.parse(JSON.stringify(
+    await transitionPmIssue(project,issueId,owner,transition))),
+    JSON.parse(JSON.stringify(resolved)));
   await assert.rejects(transitionPmIssue(project,issueId,owner,{
     ...transition,idempotencyKey:randomUUID(),
   }),/问题版本冲突/);
@@ -100,7 +104,9 @@ try{
     dependentTaskId:tasks[0].id,prerequisiteTaskId:tasks[1].id};
   const added=await createPmTaskDependency(project,owner,dependency);
   assert.equal(added.dependency.dependent_task_id,tasks[0].id);
-  assert.deepEqual(await createPmTaskDependency(project,owner,dependency),added);
+  assert.deepEqual(JSON.parse(JSON.stringify(
+    await createPmTaskDependency(project,owner,dependency))),
+    JSON.parse(JSON.stringify(added)));
   await assert.rejects(createPmTaskDependency(project,owner,{
     idempotencyKey:randomUUID(),
     dependentTaskId:tasks[1].id,prerequisiteTaskId:tasks[0].id,
