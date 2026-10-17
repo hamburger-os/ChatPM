@@ -5,7 +5,7 @@ import { processClarification } from '../clarification.ts';
 import { isDuplicateActiveTask } from '../task-progress.ts';
 import { projectAnalysisContext } from '../project-context.ts';
 import { resolveProjectModel } from '../project-model.ts';
-import { claimEvents, finishEvent, failEvent, assertEventClaim, type EventRow } from '../outbox.ts';
+import { claimEvents, finishEvent, failEvent, assertEventClaim, withEventLeaseHeartbeat, type EventRow } from '../outbox.ts';
 
 type AnalysisResult={kind:'extract'|'clarify'|'reply';status:'proposal'|'no_change'|'clarified'|'replied';modelName?:string};
 async function recordAnalysis(event:EventRow,kind:'extract'|'clarify'|'reply',
@@ -171,7 +171,7 @@ export async function processEvents() {
         await finishEvent(event);
         continue;
       }
-      const result=await runAnalysis(event);
+      const result=await withEventLeaseHeartbeat(event,()=>runAnalysis(event));
       if(result && event.message_id)
         await recordAnalysis(event,result.kind,result.status,result.modelName);
       await finishEvent(event);
