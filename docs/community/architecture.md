@@ -186,3 +186,9 @@ English: Project details, progress and proposal lists now check current tenant a
 中文：项目列表现在只显示当前同时具有组织和项目成员资格的项目，查询由 Project Core 统一维护。项目治理中的问题状态变更历史、变更实施历史、任务依赖和正式登记簿都在同一事务内校验当前成员资格并读取数据，撤权后的新请求不能使用旧鉴权结果。历史仍按每页 50 条和既有版本游标返回，观察者可只读，跨项目记录不展示。原有 API 与业务数据不变；这不代表全部 PM 写入命令或生产环境已经验收。
 
 English: The project navigation lists only projects where the user currently belongs to both the tenant and project; Project Core owns this visibility query. Issue transition history, change implementation history, task dependencies, and formal PM registers recheck current membership within the same database transaction used to retrieve their contents. New requests after revocation cannot rely on an earlier permission check. History retains its existing 50-record pages and version cursors; observers retain read-only access and cross-project records remain inaccessible. Existing APIs and project facts are unchanged; all PM write commands and production deployment still require separate acceptance.
+
+### 正式 PM 命令归属 / Core-owned formal PM commands
+
+中文：正式项目治理中的目标、里程碑、交付物、问题、决策、变更申请与任务依赖，以及交付物改派、提交和独立验收、问题状态变化和重大变更的审批/实施，现由同一个 Core 业务层负责。网页调用的地址和返回结构保持不变；服务器继续即时检查当前人员权限、版本与责任分离，并在同一数据库事务内记录业务更改、审计、事件和幂等回执。AI 只提供候选与证据，不能自行确认成果。企业身份、全部其他模块重构和实际生产环境仍需独立验收。
+
+English: Formal project management creation (goals, milestones, deliverables, issues, decisions, change requests and task dependencies) and the deliverable, issue and change lifecycles are now owned by Core command services. Existing HTTP endpoints and response shapes remain unchanged. Current membership, role grants, version checks and separation of duties still govern every write; business changes, audits, domain events and idempotency receipts commit together. AI findings remain proposals and evidence rather than automatic acceptance. Enterprise identity, the remaining modules and real production acceptance are separate work.

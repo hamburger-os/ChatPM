@@ -247,3 +247,7 @@ GET /projects/:id/outbox/summary 和 /dead 现委托 operations/outbox-admin.ts�
 ## ADR-075 · 项目导航与 PM 历史只读边界（2026-10-17）
 
 项目列表的唯一成员可见性 SQL 已从 `project-routes.ts` 移至 Project Core；PM 六张登记簿、问题状态历史、变更实施历史及任务依赖列表共用 `withProjectRead` 当前租户与项目成员授权快照。历史分页上限和错误规范由领域查询与 HTTP DTO 共同约束。补充真实 PostgreSQL 跨租户、分页、撤权集成与静态架构守卫，并纳入 Product CI。未改变任何正式业务写入或数据库 Schema。PM 写入命令、其他 HTTP 领域查询、真实负载和 #48/#49 全域重构仍未完成，不因本次合并关闭整体 Epic。
+
+## ADR-076 · 正式 PM 登记簿命令归属（2026-10-17）
+
+原 `pm-routes.ts` 的八类业务命令已集中在 `governance/pm-register-commands.ts`，继续复用同一个 `executePmCommand`，包括目标/里程碑/交付物/Issue/Decision/Change 创建、交付物改派/提交/独立验收、Issue 处理、重大变更审批/实施及任务依赖。创建 Schema 与固定 SQL 目录规格也移至 Core，路由不再直接持有正式 PM SQL、领域事件或回执。新增 Core PostgreSQL 直接调用、幂等/权限/版本/事件审计回归及 API 边界静态守卫，接入 Product CI。此切片不修改数据库迁移或正式用户接口；#48/#49 的其它领域与 Project Owner 双来源仍需后续收敛，不等于所有 V2 Epic 已完成。

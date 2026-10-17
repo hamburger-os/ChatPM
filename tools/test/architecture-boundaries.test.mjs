@@ -309,3 +309,27 @@ test('project AI and review reads cannot split API authorization from domain SQL
   assert.equal((review.match(/withProjectRead\(/g)||[]).length,2);
   assert.equal((project.match(/'ai\.audit\.read'/g)||[]).length,3);
 });
+
+test('all formal PM mutations stay in the single Core command owner',()=>{
+  const api=readFileSync(new URL('../../apps/api/src/pm-routes.ts',import.meta.url),'utf8');
+  const core=readFileSync(new URL('../../packages/core/src/governance/pm-register-commands.ts',import.meta.url),'utf8');
+  const commands=[
+    'createPmEntry','reassignPmDeliverable','submitPmDeliverable',
+    'reviewPmDeliverable','transitionPmIssue','decidePmChange',
+    'updatePmChangeImplementation','createPmTaskDependency',
+  ];
+  for(const command of commands){
+    assert.ok(api.includes(command+'('),'API must delegate '+command);
+    assert.ok(core.includes('export function '+command+'('),'Core must own '+command);
+  }
+  assert.doesNotMatch(api,/executePmCommand\(|\b(?:INSERT INTO|UPDATE|DELETE FROM|SELECT)\b|db\.query\s*\(/i,
+    'PM route must never mutate domain tables or create separate receipts');
+  assert.doesNotMatch(api,/lockTaskDependencyGraph|type PmMutation|type DbClient/);
+  assert.equal((core.match(/return executePmCommand\(/g)||[]).length,8);
+  assert.match(core,/lockTaskDependencyGraph\(db,projectId\)/);
+  assert.match(core,/project_issue_transitions/);
+  assert.match(core,/project_change_implementation_history/);
+  assert.match(core,/assertProject\(role,'pm.submit',\{isAssignee:true\}\)/);
+  assert.match(core,/input\.decision==='complete'\?'pm.accept':'pm.plan'/);
+  assert.match(core,/projectId,actorId:user,idempotencyKey:input\.idempotencyKey/);
+});
