@@ -180,3 +180,9 @@ English: Project chat now supports SSE updates using committed PostgreSQL messag
 中文：项目详情、进度与候选列表在同一 PostgreSQL 事务中核验当前组织和项目成员身份并读取数据。只有项目负责人可以读取 AI 授权状态、模型调用审计和分析记录，普通成员与观察者不能通过直接请求 API 绕开角色权限。现有接口和返回字段保持不变，撤权后的新查询不能继续使用旧权限结果。这不表示全部 API 已完成模块拆分，也不代替真实生产部署和安全验收。
 
 English: Project details, progress and proposal lists now check current tenant and project membership within the same PostgreSQL transaction that reads the data. Only a project owner can read AI authorization, model invocation audits and analysis runs; members and observers cannot bypass that role by calling the API directly. Existing endpoints and response fields are unchanged, and reads after revocation cannot reuse stale permissions. Other API boundaries and real production security acceptance remain unfinished.
+
+### 项目导航与 PM 历史读取 / Project navigation and PM history reads
+
+中文：项目列表现在只显示当前同时具有组织和项目成员资格的项目，查询由 Project Core 统一维护。项目治理中的问题状态变更历史、变更实施历史、任务依赖和正式登记簿都在同一事务内校验当前成员资格并读取数据，撤权后的新请求不能使用旧鉴权结果。历史仍按每页 50 条和既有版本游标返回，观察者可只读，跨项目记录不展示。原有 API 与业务数据不变；这不代表全部 PM 写入命令或生产环境已经验收。
+
+English: The project navigation lists only projects where the user currently belongs to both the tenant and project; Project Core owns this visibility query. Issue transition history, change implementation history, task dependencies, and formal PM registers recheck current membership within the same database transaction used to retrieve their contents. New requests after revocation cannot rely on an earlier permission check. History retains its existing 50-record pages and version cursors; observers retain read-only access and cross-project records remain inaccessible. Existing APIs and project facts are unchanged; all PM write commands and production deployment still require separate acceptance.

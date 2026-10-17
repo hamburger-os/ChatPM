@@ -1,3 +1,4 @@
+import {pool} from './db.ts';
 import {withProjectRead} from './identity/project-access.ts';
 
 /** Project details and owner-only AI audit reads share their authorization snapshot. */
@@ -36,4 +37,19 @@ export function listProjectAiRuns(projectId:string,actorId:string){
       ORDER BY created_at DESC LIMIT 40`,[projectId]);
     return {runs:rows};
   });
+}
+
+/** The membership and tenant joins are the sole visibility rule for a
+ * user's project navigation. A single SQL snapshot prevents split checks.
+ */
+export async function listMemberProjects(actorId:string){
+  const {rows}=await pool.query(`
+    SELECT p.id,p.name,p.timezone,p.ai_enabled,p.work_start,p.work_end,
+      p.cooldown_hours,p.settings_revision,p.owner_id,p.ownership_revision,pm.role
+    FROM projects p
+    JOIN project_members pm ON pm.project_id=p.id
+    JOIN tenant_members tm ON tm.tenant_id=p.tenant_id AND tm.user_id=pm.user_id
+    WHERE pm.user_id=$1 ORDER BY p.created_at DESC
+  `,[actorId]);
+  return {projects:rows};
 }

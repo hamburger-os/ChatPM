@@ -1,6 +1,6 @@
 import type {FastifyInstance,FastifyRequest} from 'fastify';
 import {z} from 'zod';
-import {pool} from '../../../packages/core/src/db.ts';
+import {listMemberProjects} from '../../../packages/core/src/project-queries.ts';
 import {createProjectCommand} from '../../../packages/core/src/project-creation.ts';
 
 const uuid=z.string().uuid();
@@ -17,15 +17,7 @@ const createInput=z.object({
 export function registerProjectRoutes(app:FastifyInstance,
   authenticated:(req:FastifyRequest)=>Promise<string>):void{
   app.get('/projects',async req=>{
-    const userId=await authenticated(req);
-    const {rows}=await pool.query(`
-      SELECT p.id,p.name,p.timezone,p.ai_enabled,p.work_start,p.work_end,
-        p.cooldown_hours,p.settings_revision,p.owner_id,p.ownership_revision,pm.role
-      FROM projects p JOIN project_members pm ON pm.project_id=p.id
-      JOIN tenant_members tm ON tm.tenant_id=p.tenant_id AND tm.user_id=pm.user_id
-      WHERE pm.user_id=$1 ORDER BY p.created_at DESC
-    `,[userId]);
-    return {projects:rows};
+    return listMemberProjects(await authenticated(req));
   });
   app.post('/projects',async(req,reply)=>{
     const actorId=await authenticated(req);

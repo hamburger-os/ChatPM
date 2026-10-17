@@ -151,19 +151,40 @@ test('human-approved progress and proposal decisions are owned by Core',()=>{
   assert.match(risk,/export async function createRiskRecord/);
 });
 
-test('formal PM register reads use one authorized database snapshot',()=>{
+test('formal PM read models use the sole Core membership snapshot',()=>{
   const api=readFileSync(new URL('../../apps/api/src/pm-routes.ts',import.meta.url),'utf8');
   const query=readFileSync(new URL('../../packages/core/src/governance/pm-register-query.ts',import.meta.url),'utf8');
-  const start=api.indexOf("app.get('/projects/:projectId/pm'");
-  const end=api.indexOf("app.post('/projects/:projectId/pm/:kind'",start);
-  assert.ok(start>=0&&end>start);
-  const block=api.slice(start,end);
-  assert.match(block,/listPmRegisters\(projectId,actorId\)/);
-  assert.doesNotMatch(block,/pool\.query|SELECT|FROM project_members/);
-  assert.match(query,/SET TRANSACTION ISOLATION LEVEL REPEATABLE READ/);
-  assert.match(query,/lockProjectAccess\(db,projectId,actorId\)/);
-});
+  const projectRoute=readFileSync(new URL('../../apps/api/src/project-routes.ts',import.meta.url),'utf8');
+  const projectQuery=readFileSync(new URL('../../packages/core/src/project-queries.ts',import.meta.url),'utf8');
+  const access=readFileSync(new URL('../../packages/core/src/identity/project-access.ts',import.meta.url),'utf8');
 
+  for(const [opening,closing,method] of [
+    ["app.get('/projects/:projectId/pm'","app.post('/projects/:projectId/pm/:kind'","listPmRegisters"],
+    ["app.get('/projects/:projectId/pm/issues/:itemId/history'","const decisionSchema","readPmIssueHistory"],
+    ["app.get('/projects/:projectId/pm/changes/:itemId/implementation/history'","const dependencySchema","readPmChangeImplementationHistory"],
+    ["app.get('/projects/:projectId/pm/dependencies'","app.post('/projects/:projectId/pm/dependencies'","listPmTaskDependencies"],
+  ]){
+    const start=api.indexOf(opening);
+    const end=api.indexOf(closing,start);
+    assert.ok(start>=0&&end>start,'Expected PM GET route '+opening);
+    const route=api.slice(start,end);
+    assert.ok(route.includes(method+'('),'PM GET must delegate to Core '+method);
+    assert.doesNotMatch(route,/pool\.query|db\.query|\bSELECT\b|\bFROM\b/i);
+  }
+  assert.equal((query.match(/withProjectRead\(/g)||[]).length,4);
+  assert.match(access,/SET TRANSACTION ISOLATION LEVEL REPEATABLE READ/);
+  assert.match(access,/lockProjectAccess\(db,projectId,actorId\)/);
+  assert.match(query,/issue_version<COALESCE\(\$3::int,2147483647\)/);
+  assert.match(query,/change_version<COALESCE\(\$3::int,2147483647\)/);
+  assert.match(api,/max\(2147483647\)/);
+  const getStart=projectRoute.indexOf("app.get('/projects'");
+  const postStart=projectRoute.indexOf("app.post('/projects'",getStart);
+  assert.ok(getStart>=0&&postStart>getStart);
+  const navigation=projectRoute.slice(getStart,postStart);
+  assert.match(navigation,/listMemberProjects\(await authenticated\(req\)\)/);
+  assert.doesNotMatch(navigation,/pool\.query|\bSELECT\b/i);
+  assert.match(projectQuery,/JOIN tenant_members tm/);
+});
 test('platform AI model mutations reauthorize admin within the business transaction',()=>{
   const route=readFileSync(new URL('../../apps/api/src/admin-model-routes.ts',import.meta.url),'utf8');
   const access=readFileSync(new URL('../../packages/core/src/identity/system-access.ts',import.meta.url),'utf8');
