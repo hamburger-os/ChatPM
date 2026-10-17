@@ -85,6 +85,49 @@ const reused=await request('/api/auth/invitations/claim',{
 });
 assert.equal(reused.status,403,'Invite can only be accepted once');
 
+// Prove Next's same-origin proxy forwards a live SSE body incrementally
+// instead of buffering a never-ending stream or applying the 30s JSON timeout.
+const createStreamProject=await request('/api/projects',{
+  method:'POST',headers:{...headers,cookie},body:JSON.stringify({
+    idempotencyKey:randomUUID(),name:'SSE proxy smoke',tenantId,timezone:'Asia/Shanghai',
+  }),
+});
+assert.equal(createStreamProject.status,201);
+const streamProjectId=(await createStreamProject.json()).project.id;
+const unauthorizedStream=await request('/api/projects/'+streamProjectId+'/messages/events?after=0',{
+  headers:{cookie:inviteCookie},
+});
+assert.equal(unauthorizedStream.status,404,'Tenant membership cannot subscribe to another project');
+const streamAbort=new AbortController();
+const streamTimeout=setTimeout(()=>streamAbort.abort(),15000);
+try{
+  const events=await request('/api/projects/'+streamProjectId+'/messages/events?after=0',{
+    headers:{cookie},signal:streamAbort.signal,
+  });
+  assert.equal(events.status,200,'Next proxy must forward SSE handshake');
+  assert.match(events.headers.get('content-type')||'',/text\/event-stream/);
+  const sent=await request('/api/projects/'+streamProjectId+'/messages',{
+    method:'POST',headers:{...headers,cookie},body:JSON.stringify({
+      content:'Proxy event delivery',nonce:randomUUID(),
+    }),
+  });
+  assert.equal(sent.status,201);
+  const reader=events.body.getReader();
+  const decoder=new TextDecoder();
+  let received='';
+  while(!received.includes('Proxy event delivery')){
+    const frame=await reader.read();
+    assert.equal(frame.done,false,'SSE proxy must not close before message delivery');
+    received+=decoder.decode(frame.value,{stream:true});
+    assert.ok(received.length<20000,'SSE proxy sent unbounded data');
+  }
+  assert.match(received,/event: message/);
+  assert.match(received,/id: [0-9]+/);
+}finally{
+  clearTimeout(streamTimeout);
+  streamAbort.abort();
+}
+
 const forbidden=await request('/api/auth/logout',{
   method:'POST',headers:{origin:'https://malicious.example',cookie}
 });

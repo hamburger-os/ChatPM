@@ -243,3 +243,26 @@ test('Reporting API delegates reads and report command state to Core',()=>{
   assert.equal((service.match(/executePmCommand\(\{/g)||[]).length,2,
     'Both report mutations must reuse the same durable receipt runtime');
 });
+
+test('Conversation cursor and SSE stream use one current-membership read service',()=>{
+  const api=readFileSync(new URL('../../apps/api/src/server.ts',import.meta.url),'utf8');
+  const stream=readFileSync(new URL('../../apps/api/src/message-stream-routes.ts',import.meta.url),'utf8');
+  const query=readFileSync(new URL('../../packages/core/src/conversation/message-queries.ts',import.meta.url),'utf8');
+  const proxy=readFileSync(new URL('../../apps/web/app/api/[...path]/route.ts',import.meta.url),'utf8');
+  const page=readFileSync(new URL('../../apps/web/app/page.tsx',import.meta.url),'utf8');
+  assert.match(api,/return listProjectMessages\(projectId,actorId,query\)/);
+  assert.match(query,/SET TRANSACTION ISOLATION LEVEL REPEATABLE READ/);
+  assert.match(query,/lockProjectAccess\(db,projectId,actorId\)/);
+  assert.match(query,/ORDER BY m\.seq/);
+  assert.match(stream,/req\.headers\['last-event-id'\]/);
+  assert.match(stream,/await authenticated\(req\)/);
+  assert.match(stream,/await listProjectMessages\(projectId,actorId/);
+  assert.match(stream,/after=Number\(m\.seq\)/);
+  assert.match(stream,/reply\.raw\.once\('close',cleanup\)/);
+  assert.match(stream,/reply\.raw\.once\('drain',done\)/);
+  assert.match(proxy,/eventStream \? response\.body : await response\.arrayBuffer\(\)/);
+  assert.match(proxy,/signal: eventStream \? request\.signal : AbortSignal\.timeout\(30000\)/);
+  assert.match(proxy,/'last-event-id'/);
+  assert.match(page,/new EventSource\('/);
+  assert.match(page,/setHistoryMore\(page\.hasMore\)/);
+});

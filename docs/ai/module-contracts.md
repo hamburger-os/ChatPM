@@ -21,7 +21,7 @@
 
 - `apps/api/src/server.ts`：Fastify HTTP、身份与租户、项目、成员、消息、任务、候选、风险、报告。后续按领域拆路由/应用服务。
 - `apps/worker/src/worker.ts`：消费消息事件、AI 单消息候选提取和显式澄清、站内提醒、报告定时创建。
-- `apps/web/app/page.tsx`：Next.js 单页客户端；消息短轮询；完整历史分页和实时推送尚未实现。
+- `apps/web/app/page.tsx`：Next.js 单页客户端；消息 SSE 与后台暂停/30 秒 REST 对账、历史反向分页已经接入；多实例推送和移动端 E2E 仍未完成。
 - `packages/core/src/`：PostgreSQL 事务、会话、消息序号、模型、澄清、跟进策略、Outbox、报告和迁移。
 
 ## 核心命令与权限
@@ -349,3 +349,11 @@ retryDeadEvent 唯一使用现有 executePmCommand：当前授权、dead_at 非�
 - `listProjectReports(projectId,actorId)` 必须使用同一 REPEATABLE READ 事务与 `lockProjectAccess(db,...)`，先锁住当前 TenantMember/ProjectMember 再读取报告。组织成员身份、项目 Manager/Observer 身份不意味着报告写权限，但有效项目成员可只读。
 - `requestProjectReport` 与 `publishProjectReport` 复用 `executePmCommand` 当前授权、原有 command kind/receipt 幂等、Audit/DomainEvent/Outbox 与报告修订版本。继续使用 `generateReport` 单快照和原本的发布乐观版本条件，禁止在路由或其他进程再建平行写入 SQL。
 - 发布后 Report 正文必须不可变。相同 key/payload 重试只回放旧回执；新 key + 旧修订拒绝。跨租户、跨项目及被撤权成员的读取和写入必须失败。CI 需对真实 PostgreSQL 和编译 API 验证以上契约。
+ 
+## Conversation SSE 与 durable cursor 契约（ADR-073）
+
+- 消息写入继续由 `insertMessage` 的 PostgreSQL 项目 advisory 事务锁分配唯一 `messages.seq`，不新增临时事件流水、Redis 序号或第二套权限来源；Event ID 必须等于已提交的 `message.seq`。
+- `listProjectMessages(projectId,actorId,{after?,before?,limit?})` 在 REPEATABLE READ 单事务先锁住当前 TenantMember/ProjectMember 再查询当前项目，默认最新 200、最大 200 条，`after` 向前和 `before` 向后分页互斥，均按 seq 升序输出；返回 `hasMore` 与边界 cursor。失效身份与跨项目读必须拒绝。
+- `GET /projects/:id/messages/events` 仅 Cookie/Bearer Session 与当前项目权限可开流，`Last-Event-ID` 优先于 URL after，输出 `id: seq` 和 `event: message`，每轮重新验证 Session、上述 Core 项目访问；登出/撤权立即在下一轮断开。流必须限时定期扫描、心跳、背压、单用户连接数量和 socket close 清理。SSE 是送达加速，不是持久事实或 exactly-once 推送。
+- Next `/api` 对 SSE 使用 `response.body` 直接返回、转发 `last-event-id`，不走非 SSE 的 `AbortSignal.timeout(30000)` 或 `arrayBuffer`；Web 用 EventSource 断线续传、消息 ID 去重/seq 排序、后台关闭、30 秒 REST 对账；历史页面使用 `before`。
+- 验收：Core 真实 PostgreSQL 翻页/越权/撤权、编译版 API Event Stream/Last-Event-ID/登出、Next 代理架构守卫与生产构建。真实移动端、代理/共享 NAT、大规模连接及多实例广播需单独验证。

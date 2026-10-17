@@ -1,7 +1,7 @@
 # 聊天、消息与可靠事件
 
 ## 消息主流程
-**当前流程：** 成员发送消息 → 服务端校验项目成员权限与输入 → PostgreSQL 同事务写入 Message + OutboxEvent → 返回已持久化状态 → Web 通过 `after=seq` 增量轮询 → Worker 在项目启用 AI 后处理分析。当前没有 Room 实体和实时广播。
+**当前流程：** 成员发送消息 → 服务端校验项目成员权限与输入 → PostgreSQL 同事务写入 Message + OutboxEvent → 返回已持久化状态 → Web 通过有序 `after=seq` 消息增量与 SSE 加速实时接收 → Worker 在项目启用 AI 后处理分析。仍没有独立 Room 实体、外部渠道广播和已认证的移动端实机体验。
 
 **未来实时推送：** 即使 SSE/WebSocket 断线，客户端也必须按项目提交顺序游标补拉；推送仅加速通知，不作为可靠消息存储。
 
@@ -21,7 +21,7 @@ AI 不需要回复每条消息：优先合并短时间连续对话、识别有�
 
 消息写入使用项目级事务 advisory lock，确保增量游标的提交顺序；`client_nonce` 防止重复写入。请求按项目权限过滤，首次拉取最近 200 条，随后按 `after` 增量读取。
 
-Outbox 是至少一次投递：UUID claim token 防止过期消费者回写、失败指数退避、死信隔离和受权重试。未知事件类型应显式失败并告警，不能被静默标记成功。尚无完整的双向历史分页、WebSocket/SSE 和附件。
+Outbox 是至少一次投递：UUID claim token 防止过期消费者回写、失败指数退避、死信隔离和受权重试。未知事件类型应显式失败并告警，不能被静默标记成功。现有 Core 已支持 `before=seq` 的历史反向翻页与 `after=seq` 的前向有界读取；SSE 基于持久消息序号恢复但仍由服务端按 2.5 秒轮询 DB 提供事件。尚无推送 fanout、WebSocket、附件和真实移动端验收。
 
 ## ADR-025 · 小团队轮询预算与实时升级门槛（2026-10-14）
 
@@ -33,4 +33,14 @@ Outbox 是至少一次投递：UUID claim token 防止过期消费者回写、�
 
 ## ADR-065 · 用户消息事务授权与单一写入入口
 
-用户发言必须通过 Conversation Core 的 `postUserMessage`；当前组织与项目成员锁、`message.write` 权限、项目级序号锁、Message、Outbox 和最小审计都在一个 PostgreSQL 事务内。相同作者/内容/nonce 的重试返回原结果而不重复产生事件，内容或作者不同则 409；撤权后的旧重试也必须重新授权。Worker 的 AI/提醒系统消息使用受控 `insertMessage`，不能冒充 HTTP 用户身份。SSE、删除和消息编辑仍未实现。
+用户发言必须通过 Conversation Core 的 `postUserMessage`；当前组织与项目成员锁、`message.write` 权限、项目级序号锁、Message、Outbox 和最小审计都在一个 PostgreSQL 事务内。相同作者/内容/nonce 的重试返回原结果而不重复产生事件，内容或作者不同则 409；撤权后的旧重试也必须重新授权。Worker 的 AI/提醒系统消息使用受控 `insertMessage`，不能冒充 HTTP 用户身份。已增加基于消息序号的 SSE 流与 REST 对账；删除和消息编辑仍未实现。
+ 
+## ADR-073 · 消息有序 SSE、历史翻页与权限撤销（2026-10-17）
+
+**设计原因：** 原有 5 秒 Web 轮询在弱网络/长时间后台恢复时无法直接即时显示，且列表仅能取得最近 200 条，缺少反向翻页；现有 Next.js `/api` 代理原本对所有响应使用 30 秒超时和 `arrayBuffer()`，直接追加 SSE 会被代理缓冲。消息唯一正式来源仍为 `messages` 表，原项目级 advisory 事务写入锁保证 `seq` 按提交顺序推进，不能将内存广播当成事实游标。
+
+**选型：** 保留单体 API 与现有表，无需 Kafka/Redis/额外消息流水。Conversation Core `listProjectMessages` 在单个 REPEATABLE READ 事务锁住当前 TenantMember/ProjectMember，按整数序号有界读取（首次最近 200 条、`after` 向前、`before` 向后），附带 `hasMore` 供 Web 分页。SSE 接口 `GET /projects/:id/messages/events` 在响应首字节前验证会话和项目访问；使用已提交的 `message.seq` 作为事件 ID，断线优先解析 `Last-Event-ID`，循环读取正式库、在每一批前重查 Session 和项目成员，被撤权或登出后断开。服务端每 2.5 秒检查新消息，最多每轮 4×100 条，有背压与 keep-alive、关闭清理，并限制单用户单进程最多 3 条连接。Web 同源代理只对 SSE 流使用 `response.body` 与请求取消信号，普通 API 仍维持超时和缓存禁用；浏览器自动恢复、后台暂停，30 秒对账及离线 fallback 补拉。历史翻页不改变正式消息和 AI 候选关联。
+
+**为什么不选：** WebSocket/独立实时服务增加第二套权限/消息投递体系；本轮也不引入未验证的 PG LISTEN/NOTIFY 分发链路。服务端 DB 轮询仅是中小团队过渡方案，连接数和吞吐随在线用户线性增长；面向大规模部署必须补压测，再据证据考虑基于 PostgreSQL 通知的进程级广播，仍以 seq 持久游标恢复。双用户/共享 NAT、真实 iOS Safari/Android Chrome、移动端安全区、代理链缓冲与生产网络断流未实测，Issue #40 保持开放。
+
+**验证重点：** 真实 PostgreSQL 历史/增量翻页、跨项目与组织撤权，HTTP SSE 首次/断线 `Last-Event-ID` /登出终止/非法游标，Next 代理代码禁止 SSE 缓冲，Web 中断和去重语义；最终需 PR 最新完整 CI 与审查门槛。

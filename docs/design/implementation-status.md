@@ -233,3 +233,9 @@ GET /projects/:id/outbox/summary 和 /dead 现委托 operations/outbox-admin.ts�
 原 `apps/api/src/report-routes.ts` 的报告列表和 create/publish 领域 SQL 已移入 `packages/core/src/reporting/report-services.ts`。GET 从“路由先授权，再换连接读取”改为同一 REPEATABLE READ 事务中的 `lockProjectAccess` 与报告查询，防止权限撤销导致过时读取。两个 POST 依旧由一个 `executePmCommand` 完成当前 Tenant+Project Owner 授权、Receipt/Event/Audit/Outbox，继续调用同一 `generateReport` 和原有报告状态/version SQL。Fastify 只作身份获取与 Zod/UUID 参数解析。
 
 新增 PostgreSQL Core 集成覆盖授权隔离、发布与已发布不变、同 key 回放、新 key 旧版本拒绝、撤权；架构守卫防止路由重获 SQL 所有权，并纳入 CI。此为 #49 与 #48 的正式 Reporting 边界切片，不表示整个 V2、报告平台功能、生产部署或真实模型验收完成。
+ 
+## ADR-073 · Conversation SSE 与有界历史消息翻页（2026-10-17）
+
+新增 `conversation/message-queries.ts`：项目最新消息、提交序号 `after`、反向历史 `before` 统一在 REPEATABLE READ/当前租户+项目成员行锁中读取，任何权限撤销不允许下一批读取。Fastify 增加 `/projects/:id/messages/events`，发送 `id: message.seq` 的 SSE；支持 Last-Event-ID、心跳、流量背压、最多 3 条并发用户连接与登出/撤权后连接终止。Next 同源代理不再为 SSE 使用 30 秒固定超时/整包读取，Web 用 EventSource + 去重有序合并 + 30 秒 REST 对账，后台暂停并开放历史翻页。
+
+测试：Core PostgreSQL 游标/撤权、编译版 API Smoke 的 SSE 授权/续传/登出终止、架构边界与 Next/Web 构建；仅描述真实 CI 成功后代码可用性。尚缺多实例通知模型、共享网关压测、真实移动设备 E2E 与公网反向代理的 SSE 流式验收，#40 保持开放。

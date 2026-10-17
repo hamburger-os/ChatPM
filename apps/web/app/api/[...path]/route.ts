@@ -9,10 +9,12 @@ async function proxy(request: NextRequest, {params}: Context): Promise<Response>
     return Response.json({error:'Invalid internal API URL'}, {status:503});
 
   const {path} = await params;
+  const eventStream=request.method==='GET'&&path.length===4&&
+    path[0]==='projects'&&path[2]==='messages'&&path[3]==='events';
   const url = new URL('/' + path.map(encodeURIComponent).join('/'), upstream);
   url.search = request.nextUrl.search;
   const headers = new Headers();
-  for (const name of ['accept','authorization','content-type','cookie','origin']) {
+  for (const name of ['accept','authorization','content-type','cookie','origin','last-event-id']) {
     const value = request.headers.get(name);
     if (value !== null) headers.set(name, value);
   }
@@ -22,17 +24,17 @@ async function proxy(request: NextRequest, {params}: Context): Promise<Response>
       method: request.method, headers,
       body: hasBody ? Buffer.from(await request.arrayBuffer()) : undefined,
       redirect: 'manual', cache: 'no-store',
-      signal: AbortSignal.timeout(30000),
+      signal: eventStream ? request.signal : AbortSignal.timeout(30000),
     });
     const resultHeaders = new Headers();
-    for (const name of ['content-type','cache-control','location']) {
+    for (const name of ['content-type','cache-control','location','x-accel-buffering']) {
       const value = response.headers.get(name);
       if (value) resultHeaders.set(name, value);
     }
     for (const cookie of response.headers.getSetCookie())
       resultHeaders.append('set-cookie', cookie);
     resultHeaders.set('cache-control', 'no-store');
-    return new Response(await response.arrayBuffer(), {
+    return new Response(eventStream ? response.body : await response.arrayBuffer(), {
       status: response.status, headers: resultHeaders,
     });
   } catch {

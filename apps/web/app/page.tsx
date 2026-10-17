@@ -38,11 +38,17 @@ export default function Home(){
   const [showDetails,setShowDetails]=useState(true);
   const [mobileWork,setMobileWork]=useState(false);
   const [messages,setMessages]=useState<Message[]>([]);
+  const [historyCursor,setHistoryCursor]=useState<string|null>(null);
+  const [historyMore,setHistoryMore]=useState(false);
+  const [historyBusy,setHistoryBusy]=useState(false);
   const [chat,setChat]=useState('');
   const [working,setWorking]=useState(false);
   const [notice,setNotice]=useState('');
   const bottom=useRef<HTMLDivElement>(null);
+  const skipNextAutoScroll=useRef(false);
   const cursor=useRef(0);
+  const selectedRef=useRef<string|null>(null);
+  selectedRef.current=selected;
   const createIntent=useRef<{fingerprint:string;key:string}|null>(null);
   const sendIntent=useRef<{projectId:string;content:string;nonce:string}|null>(null);
   const current=projects.find(x=>x.id===selected)||null;
@@ -94,33 +100,113 @@ export default function Home(){
     return ()=>{active=false;};
   },[auth]);
   useEffect(()=>{
-    if(!selected||view!=='projects')return;
-    let active=true;cursor.current=0;setMessages([]);
-    async function update(){
-      const x=await request<{messages:Message[]}>('/projects/'+selected+'/messages?after='+cursor.current);
-      if(!active)return;
-      if(x.messages.length){
-        cursor.current=Math.max(cursor.current,...x.messages.map(m=>Number(m.seq)));
-        setMessages(old=>{
-          const known=new Set(old.map(m=>m.id));
-          return [...old,...x.messages.filter(m=>!known.has(m.id))].slice(-1500);
-        });
-      }
-    }
+    if(!selected||view!=='projects'||auth!=='ready')return;
+    const projectId=selected;
+    let active=true;
+    let stream:EventSource|null=null;
+    let streamOpen=false;
     let inFlight=false;
-    const poll=async()=>{
-      if(!active||document.hidden||inFlight)return;
+    let lastReconcile=0;
+    let initialized=false;
+    cursor.current=0;
+    setHistoryCursor(null);setHistoryMore(false);
+    setMessages([]);
+
+    function receive(incoming:Message[]){
+      if(!active||!incoming.length)return;
+      const valid=incoming.filter(m=>Number.isSafeInteger(Number(m.seq)) &&
+        Number(m.seq)>0&&typeof m.id==='string');
+      if(!valid.length)return;
+      cursor.current=Math.max(cursor.current,...valid.map(m=>Number(m.seq)));
+      setMessages(old=>{
+        const existing=new Set(old.map(m=>m.id));
+        const newItems=valid.filter(m=>!existing.has(m.id));
+        return [...old,...newItems].sort((a,b)=>Number(a.seq)-Number(b.seq)).slice(-3000);
+      });
+    }
+    async function update(){
+      if(!active||inFlight||document.hidden)return;
       inFlight=true;
-      try{await update();}catch(e){if(active)setNotice(e instanceof Error?e.message:'消息刷新失败');}
-      finally{inFlight=false;}
+      try{
+        const requestedAfter=cursor.current;
+        const x=await request<{messages:Message[];hasMore:boolean}>(
+          '/projects/'+projectId+'/messages?after='+requestedAfter);
+        if(!initialized&&active){
+          initialized=true;
+          setHistoryCursor(x.messages[0]?.seq===undefined?null:String(x.messages[0].seq));
+          setHistoryMore(x.hasMore);
+        }
+        receive(x.messages);
+        lastReconcile=Date.now();
+      }catch(e){
+        if(active)setNotice(e instanceof Error?e.message:'消息刷新失败');
+      }finally{inFlight=false;}
+    }
+    function closeStream(){
+      streamOpen=false;
+      stream?.close();
+      stream=null;
+    }
+    function openStream(){
+      if(!active||document.hidden||stream)return;
+      stream=new EventSource('/api/projects/'+projectId+'/messages/events?after='+cursor.current,
+        {withCredentials:true});
+      stream.onopen=()=>{streamOpen=true;};
+      stream.onmessage=event=>{
+        try{receive([JSON.parse(event.data) as Message]);}
+        catch{/* Invalid event content is ignored; the REST reconciliation recovers gaps. */}
+      };
+      // EventSource reconnects with Last-Event-ID; REST remains a fallback.
+      stream.onerror=()=>{streamOpen=false;};
+    }
+    void update().finally(()=>{if(active)openStream();});
+    const timer=setInterval(()=>{
+      if(!active||document.hidden)return;
+      if(!stream||stream.readyState===EventSource.CLOSED){
+        closeStream();
+        openStream();
+      }
+      if(!streamOpen||Date.now()-lastReconcile>=30000)void update();
+    },5000);
+    const visible=()=>{
+      if(document.hidden)closeStream();
+      else{void update();openStream();}
     };
-    void poll();
-    const timer=setInterval(()=>void poll(),5000);
-    const visible=()=>{if(!document.hidden)void poll();};
     document.addEventListener('visibilitychange',visible);
-    return ()=>{active=false;clearInterval(timer);document.removeEventListener('visibilitychange',visible);};
-  },[selected,view]);
-  useEffect(()=>{if(view==='projects')bottom.current?.scrollIntoView({behavior:'smooth'});},[messages.length,view]);
+    return ()=>{
+      active=false;clearInterval(timer);closeStream();
+      document.removeEventListener('visibilitychange',visible);
+    };
+  },[selected,view,auth]);
+  useEffect(()=>{
+    if(view!=='projects')return;
+    if(skipNextAutoScroll.current){
+      skipNextAutoScroll.current=false;
+      return;
+    }
+    bottom.current?.scrollIntoView({behavior:'smooth'});
+  },[messages.length,view]);
+  async function loadOlderMessages(){
+    if(!selected||!historyCursor||!historyMore||historyBusy)return;
+    const projectId=selected;
+    setHistoryBusy(true);
+    try{
+      const page=await request<{messages:Message[];hasMore:boolean}>(
+        '/projects/'+projectId+'/messages?before='+historyCursor);
+      if(selectedRef.current!==projectId)return;
+      skipNextAutoScroll.current=true;
+      setMessages(old=>{
+        const seen=new Set<string>();
+        return [...page.messages,...old].filter(m=>{
+          if(seen.has(m.id))return false;
+          seen.add(m.id);return true;
+        }).sort((a,b)=>Number(a.seq)-Number(b.seq)).slice(-3000);
+      });
+      setHistoryCursor(page.messages[0]?.seq===undefined?null:String(page.messages[0].seq));
+      setHistoryMore(page.hasMore);
+    }catch(e){setNotice(e instanceof Error?e.message:'历史消息加载失败');}
+    finally{setHistoryBusy(false);}
+  }
   async function action(fn:()=>Promise<void>){
     setNotice('');setWorking(true);
     try{await fn();}catch(e){setNotice(e instanceof Error?e.message:'操作失败');}
@@ -307,6 +393,10 @@ export default function Home(){
             onClick={()=>setShowDetails(x=>!x)}>{showDetails?'收起详情 ◧':'展开详情 ◨'}</button>
         </header>
         {selected?<><div className="messages">
+          {historyMore&&<button className="secondary" type="button" disabled={historyBusy}
+            onClick={()=>void loadOlderMessages()}>
+            {historyBusy?'加载中…':'加载更早消息'}
+          </button>}
           {messages.map(m=><article key={m.id} className={'bubble '+(m.kind==='ai'?'ai':'')}>
             <div className="msg-header"><strong>{m.kind==='ai'?'✳ AI 项目经理':m.author||'项目成员'}</strong>
               <time>{new Date(m.created_at).toLocaleString('zh-CN')}</time></div>

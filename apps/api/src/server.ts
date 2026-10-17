@@ -27,6 +27,8 @@ import { createSession, hashPassword, readSession, revokeSession, verifyPassword
 import { syncFollowup } from '../../../packages/core/src/followup.ts';
 import { enforceRegistration,mayRegister } from '../../../packages/core/src/identity/registration-policy.ts';
 import { postUserMessage } from '../../../packages/core/src/conversation/user-message-command.ts';
+import { listProjectMessages } from '../../../packages/core/src/conversation/message-queries.ts';
+import { registerMessageStreamRoutes } from './message-stream-routes.ts';
 
 
 const port = serverConfig.API_PORT;
@@ -193,18 +195,13 @@ app.get('/projects/:id/ai/runs',async req=>{
 
 app.get('/projects/:id/messages',async req=>{
   const projectId=uuid.parse((req.params as {id:string}).id);
-  await member(await authenticated(req),projectId);
-  const query=z.object({after:z.coerce.number().int().min(0).default(0)}).parse(req.query);
-  const recent=query.after===0;
-  const sql=recent
-    ? `SELECT * FROM (SELECT m.id,m.seq,m.kind,m.content,m.client_nonce,m.created_at,m.author_id,
-       u.display_name AS author FROM messages m LEFT JOIN users u ON u.id=m.author_id
-       WHERE m.project_id=$1 ORDER BY m.seq DESC LIMIT 200) recent ORDER BY recent.seq ASC`
-    : `SELECT m.id,m.seq,m.kind,m.content,m.client_nonce,m.created_at,m.author_id,u.display_name AS author
-       FROM messages m LEFT JOIN users u ON u.id=m.author_id
-       WHERE m.project_id=$1 AND m.seq>$2 ORDER BY m.seq ASC LIMIT 200`;
-  const {rows}=await pool.query(sql,recent?[projectId]:[projectId,query.after]);
-  return {messages:rows};
+  const actorId=await authenticated(req);
+  const query=z.object({
+    after:z.coerce.number().int().min(0).safe().optional(),
+    before:z.coerce.number().int().positive().safe().optional(),
+  }).refine(v=>v.after===undefined||v.before===undefined,
+    {message:'after 与 before 不得同时使用'}).parse(req.query);
+  return listProjectMessages(projectId,actorId,query);
 });
 app.post('/projects/:id/messages',async(req,reply)=>{
   const projectId=uuid.parse((req.params as {id:string}).id);
@@ -240,6 +237,7 @@ registerGovernanceRoutes(app,authenticated);
 registerPmRoutes(app,authenticated);
 registerEvidenceRoutes(app,authenticated);
 registerTaskRoutes(app,authenticated);
+registerMessageStreamRoutes(app,authenticated);
 registerApprovalRoutes(app,authenticated);
 registerReportRoutes(app,authenticated);
 registerProjectGovernanceRoutes(app,authenticated);
