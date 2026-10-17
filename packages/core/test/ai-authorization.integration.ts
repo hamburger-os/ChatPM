@@ -10,7 +10,14 @@ try {
     ['auth-version-'+suffix+'@example.com'])).rows[0];
   const tenant=(await pool.query("INSERT INTO tenants(name) VALUES('Grant tests') RETURNING id")).rows[0];
   const project=(await pool.query(
-    "INSERT INTO projects(tenant_id,name,owner_id) VALUES($1,'AI grant test',$2) RETURNING id",
+    `WITH created AS (
+      INSERT INTO projects(tenant_id,name)
+      VALUES($1,'AI grant test') RETURNING id
+    ), seeded_owner AS (
+      INSERT INTO project_members(project_id,user_id,role)
+      SELECT id,$2,'owner' FROM created RETURNING project_id
+    )
+    SELECT id FROM created`,
     [tenant.id,user.id])).rows[0];
 
   assert.deepEqual(await readProjectAiAuthorization(project.id),{enabled:false,version:1});

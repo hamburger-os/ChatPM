@@ -27,17 +27,29 @@ try{
     VALUES($1,$2,'admin'),($1,$3,'member'),($4,$5,'admin')
   `,[tenant,owner,observer,foreign,outsider]);
   const {rows:mainRows}=await pool.query<{id:string}>(`
-    INSERT INTO projects(tenant_id,name,owner_id)
-    VALUES($1,'PM read project',$2) RETURNING id`,[tenant,owner]);
+    WITH created AS (
+      INSERT INTO projects(tenant_id,name)
+      VALUES($1,'PM read project') RETURNING id
+    ), seeded_owner AS (
+      INSERT INTO project_members(project_id,user_id,role)
+      SELECT id,$2,'owner' FROM created RETURNING project_id
+    )
+    SELECT id FROM created`,[tenant,owner]);
   const project=mainRows[0].id;
   const foreignProject=(await pool.query<{id:string}>(`
-    INSERT INTO projects(tenant_id,name,owner_id)
-    VALUES($1,'Secret PM project',$2) RETURNING id`,
+    WITH created AS (
+      INSERT INTO projects(tenant_id,name)
+      VALUES($1,'Secret PM project') RETURNING id
+    ), seeded_owner AS (
+      INSERT INTO project_members(project_id,user_id,role)
+      SELECT id,$2,'owner' FROM created RETURNING project_id
+    )
+    SELECT id FROM created`,
     [foreign,outsider])).rows[0].id;
   await pool.query(`
     INSERT INTO project_members(project_id,user_id,role)
     VALUES($1,$2,'owner'),($1,$3,'observer'),($4,$5,'owner')
-  `,[project,owner,observer,foreignProject,outsider]);
+   ON CONFLICT DO NOTHING`,[project,owner,observer,foreignProject,outsider]);
 
   const issue=(await pool.query<{id:string}>(`
     INSERT INTO project_issues(project_id,title,severity,created_by,version)

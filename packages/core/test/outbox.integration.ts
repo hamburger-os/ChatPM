@@ -16,7 +16,14 @@ try {
   const tenant=(await pool.query(
     `INSERT INTO tenants(name) VALUES('Outbox Test') RETURNING id`)).rows[0];
   const project=(await pool.query(
-    `INSERT INTO projects(tenant_id,name,owner_id) VALUES($1,'Retry test',$2) RETURNING id`,
+    `WITH created AS (
+      INSERT INTO projects(tenant_id,name)
+      VALUES($1,'Retry test') RETURNING id
+    ), seeded_owner AS (
+      INSERT INTO project_members(project_id,user_id,role)
+      SELECT id,$2,'owner' FROM created RETURNING project_id
+    )
+    SELECT id FROM created`,
     [tenant.id,user.id])).rows[0];
   const event=(await pool.query(
     `INSERT INTO outbox_events(project_id,kind) VALUES($1,'message.created') RETURNING id`,

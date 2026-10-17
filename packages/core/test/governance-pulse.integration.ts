@@ -33,8 +33,14 @@ try{
     [tenant])).rows[0].id;
   const project=async(name:string,programId:string|null,portfolioId:string|null)=>{
     const {rows}=await pool.query<{id:string}>(`
-      INSERT INTO projects(tenant_id,owner_id,name,program_id,portfolio_id)
-      VALUES($1,$2,$3,$4,$5) RETURNING id`,
+      WITH created AS (
+      INSERT INTO projects(tenant_id,name,program_id,portfolio_id)
+      VALUES($1,$3,$4,$5) RETURNING id
+    ), seeded_owner AS (
+      INSERT INTO project_members(project_id,user_id,role)
+      SELECT id,$2,'owner' FROM created RETURNING project_id
+    )
+    SELECT id FROM created`,
       [tenant,owner,name,programId,portfolioId]);
     return rows[0].id;
   };

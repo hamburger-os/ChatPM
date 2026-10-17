@@ -28,10 +28,16 @@ try{
   await pool.query("INSERT INTO tenant_members(tenant_id,user_id,role) VALUES($1,$2,'admin')",
     [tenant,uid]);
   const pid=(await pool.query<{id:string}>(`
-    INSERT INTO projects(tenant_id,name,owner_id)
-    VALUES($1,'Task command integration',$2) RETURNING id`,[tenant,uid])).rows[0].id;
+    WITH created AS (
+      INSERT INTO projects(tenant_id,name)
+      VALUES($1,'Task command integration') RETURNING id
+    ), seeded_owner AS (
+      INSERT INTO project_members(project_id,user_id,role)
+      SELECT id,$2,'owner' FROM created RETURNING project_id
+    )
+    SELECT id FROM created`,[tenant,uid])).rows[0].id;
   fixtureProjectId=pid;
-  await pool.query("INSERT INTO project_members(project_id,user_id,role) VALUES($1,$2,'owner')",
+  await pool.query("INSERT INTO project_members(project_id,user_id,role) VALUES($1,$2,'owner') ON CONFLICT DO NOTHING",
     [pid,uid]);
 
   const created=await createTask(pid,uid,{

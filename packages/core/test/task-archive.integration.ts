@@ -29,17 +29,29 @@ try{
       ($1,$5,'member'),($6,$7,'admin')`,
     [tenant,owner,manager,member,observer,otherTenant,outsider]);
   const pid=(await pool.query<{id:string}>(`
-    INSERT INTO projects(tenant_id,name,owner_id)
-    VALUES($1,'Archive registry',$2) RETURNING id`,[tenant,owner])).rows[0].id;
+    WITH created AS (
+      INSERT INTO projects(tenant_id,name)
+      VALUES($1,'Archive registry') RETURNING id
+    ), seeded_owner AS (
+      INSERT INTO project_members(project_id,user_id,role)
+      SELECT id,$2,'owner' FROM created RETURNING project_id
+    )
+    SELECT id FROM created`,[tenant,owner])).rows[0].id;
   projectId=pid;
   const otherProject=(await pool.query<{id:string}>(`
-    INSERT INTO projects(tenant_id,name,owner_id)
-    VALUES($1,'Unrelated registry',$2) RETURNING id`,
+    WITH created AS (
+      INSERT INTO projects(tenant_id,name)
+      VALUES($1,'Unrelated registry') RETURNING id
+    ), seeded_owner AS (
+      INSERT INTO project_members(project_id,user_id,role)
+      SELECT id,$2,'owner' FROM created RETURNING project_id
+    )
+    SELECT id FROM created`,
     [otherTenant,outsider])).rows[0].id;
   await pool.query(`
     INSERT INTO project_members(project_id,user_id,role)
     VALUES($1,$2,'owner'),($1,$3,'manager'),($1,$4,'member'),
-      ($1,$5,'observer'),($6,$7,'owner')`,
+      ($1,$5,'observer'),($6,$7,'owner') ON CONFLICT DO NOTHING`,
     [pid,owner,manager,member,observer,otherProject,outsider]);
   async function makeTask(status:'todo'|'done'|'cancelled'){
     return (await pool.query<{id:string}>(`

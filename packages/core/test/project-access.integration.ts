@@ -13,9 +13,19 @@ const {rows:users}=await pool.query(
 const {rows:tenants}=await pool.query(
   "INSERT INTO tenants(name) VALUES('Role locking test') RETURNING id");
 const actorId=users[0].id as string,tenantId=tenants[0].id as string;
-const {rows:projects}=await pool.query(
-  "INSERT INTO projects(tenant_id,name,owner_id) VALUES($1,'Role lock test',$2) RETURNING id",
-  [tenantId,actorId]);
+// Keep an actual owner while the test exercises a manager being promoted.
+const seedOwner=(await pool.query<{id:string}>(
+  "INSERT INTO users(email,display_name,password_hash) VALUES($1,'Role owner','unused') RETURNING id",
+  ['role-owner-'+marker+'@example.com'])).rows[0].id;
+const {rows:projects}=await pool.query(`
+  WITH created AS (
+    INSERT INTO projects(tenant_id,name)
+    VALUES($1,'Role lock test') RETURNING id
+  ), seeded_owner AS (
+    INSERT INTO project_members(project_id,user_id,role)
+    SELECT id,$2,'owner' FROM created RETURNING project_id
+  )
+  SELECT id FROM created`,[tenantId,seedOwner]);
 const projectId=projects[0].id as string;
 await pool.query(
   "INSERT INTO tenant_members(tenant_id,user_id,role) VALUES($1,$2,'admin')",
@@ -75,8 +85,14 @@ try{
   for(const action of ['members.manage','report.manage','settings.manage',
     'operations.manage'] as const)
     assert.throws(()=>assertProject(current.role,action),/没有执行该操作的权限/);
+  // Transfer authority atomically; the partial unique index and deferred
+  // exactly-one-owner constraint forbid a committed gap or two owners.
+  await b.query('BEGIN');
+  await b.query("UPDATE project_members SET role='manager' WHERE project_id=$1 AND user_id=$2",
+    [projectId,seedOwner]);
   await b.query("UPDATE project_members SET role='owner' WHERE project_id=$1 AND user_id=$2",
     [projectId,actorId]);
+  await b.query('COMMIT');
   await a.query('BEGIN');
   const ownerAccess=await lockProjectAccess(a,projectId,actorId);
   assert.equal(ownerAccess.role,'owner');

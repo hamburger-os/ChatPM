@@ -386,3 +386,11 @@ retryDeadEvent 唯一使用现有 executePmCommand：当前授权、dead_at 非�
 - Owner 移交必须独立业务版本（`ownership_revision`）、目标当前有效组织/项目成员、前任变 manager 且仅能以 `replayAction='read'` 重放原成功回执；不允许以此获得新的 Owner 操作。AI 项目开关仅在真实变更时递增版本、模型未配置时拒绝开启，不能以设置请求绕过平台系统管理员模型配置。
 
 **容量约束补充：** `resource-allocation.ts` 的新资源分配只允许仍属于当前租户和项目、且 `pm.role<>'observer'` 的执行成员；必须 `FOR SHARE OF p,pm,tm` 与身份角色降级 `FOR UPDATE` 串行化。历史/已取消资源允许保留审计，不因观察者权限自动重写过去的计划。
+
+## ADR-078 · 项目负责人唯一身份事实
+
+- `project_members` 中唯一 `role='owner'` 是项目负责人的**唯一持久业务身份**，`projects` 只有 `ownership_revision` 用于乐观版本。不允许再添加 `projects.owner_id`、Owner 镜像列、双向同步触发器，或依赖缓存的身份决策。
+- `project-creation.ts` 在同一根命令事务中先创建 Project、再创建唯一 Owner 项目成员并提交事件/审计/回执；`project-queries.ts` 的详情、导航必须 JOIN 当前 `role='owner'`，仅以查询别名派生 API `owner_id`。
+- `identity/project-governance.ts` 转让负责人只操作两条成员 Role 和独立 `projects.ownership_revision`；原始操作者必须当下为 Owner 且有当前租户成员关系，目标必须当下具备组织+项目成员资格；移交后的旧负责人只可读其**相同幂等键**的已提交成功回执。
+- 新 migration 严格验证旧身份字段匹配才删除，DB 部分唯一索引保证最多一名 Owner，两个延期约束触发器保证提交时最少一名。无数据对账证据不得在正式旧库自动修复或跳过失败。
+- 工程测试必须覆盖无 Owner、双 Owner、直接降级、原子移交、并发版本、只读可见性、项目删除级联、重新部署迁移重跑；不得依赖未提交 DB 状态中的临时 Owner 空窗。

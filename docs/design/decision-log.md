@@ -453,3 +453,15 @@
 **验收。** 真实 PostgreSQL 在 Core 层验证观察者/陌生人/跨租户隔离、名单撤权、成员新增同键回放与 payload 冲突、五类未了责任对降级和删除均阻断、清除责任后状态变更与 Owner 移交、设置更新版本/无效工作时间、旧负责人只能重放原移交，以及每次成功 Command 仅有一条 Receipt/Event/Audit。增加静态边界守卫禁止 HTTP 路由再持有成员业务 SQL。CI 的最终 Head 必须经过 Product/Docs/Native/Docker/Security 全项通过和 /review。
 
 **/review 补充：观察者分配的跨模块竞态。** 检查现有 `resource-allocation.ts` 发现其只验证项目/组织成员存在，没有检查 `pm.role`，造成成员被降级为 observer 后仍能收到新的计划资源。当前在组织资源命令已有的 Tenant advisory 事务锁和 `FOR SHARE OF p,pm,tm` 上补充 `pm.role<>'observer'`，使它和项目身份的行锁序列化，并显式拒绝观察者分配。真实 PostgreSQL 测试在角色降级后由组织命令路径模拟分配并断言 400/无新增有效配置；此处不引入新的容量池或策略缓存。
+
+## ADR-078 · Project Owner 严格单一事实源（2026-10-17）
+
+**问题与权威选择。** 正式项目负责人的 ID 同时存于 `projects.owner_id` 与 `project_members.role='owner'`。移交需在应用代码内依序更新两处，任何绕开 HTTP 的 SQL 都可造成永久漂移；Role 授权和 Owner 身份也会出现分歧。不保留两份数据、触发器自动同步镜像或遗留兼容端点。项目的 Owner 权威记录为 `project_members` 中且仅有一名 `role='owner'` 的有效项目成员；`projects.ownership_revision` 仅是独立乐观并发版本，不包含重复身份。
+
+**一次性严格迁移。** 新增 `028_project_owner_single_authority.sql`；在事务中先验证每个旧项目的 `projects.owner_id` 与 owner 项目成员完全一致；不一致即抛出 `PROJECT_OWNER_MIGRATION_REQUIRES_RECONCILIATION`，终止并回滚整份 migration，**不猜测负责人、不自动修改历史、也不吞掉异构数据**。校验通过后删除 `projects.owner_id`，复用 `020_owner_transfer_revision.sql` 的 `uq_one_owner_per_project` 部分唯一索引保证**最多一名** Owner；新增 PostgreSQL DEFERRABLE INITIALLY DEFERRED 约束触发器，要求每个已存在项目在**提交时至少一名** Owner。这样项目创建可先插项目、再插 owner 成员；负责人移交可先降旧负责人、再升新负责人，并在同一事务提交，任何独立 SQL 导致无 Owner 的提交都会被数据库拒绝。删除项目时忽略随 FK 级联删除的 Owner 行，防止误阻合法卸载。
+
+**读写与并发。** Project Core 的创建命令仍以租户作用域 CommandReceipt 创建项目，在**同一事务**插入唯一 Owner 项目成员、领域事件、审计和 Outbox；返回的 `owner_id` 只是在接口结果里由刚创建的 Owner 成员身份派生，不是第二份数据库字段。详情、导航从 `project_members.role='owner'` JOIN 派生 `owner_id`。移交命令按当前身份行锁 + 项目行锁校验 `ownership_revision`，原子降旧 Owner、升新 Owner、推进版本；保留原事件 kind、幂等回执、旧负责人 `replayAction='read'` 与完整审计。AI、部门、项目集和组合关系不授予隐式 Owner 资格。
+
+**取舍与风险。** PostgreSQL 检查维持两个独立约束（一个部分唯一索引、一个提交时存在性约束），避免镜像列或另外的身份真相。既有安装中如果确实存在不一致旧数据，应先停写、备份，在隔离库人工按正式审计决策修复旧 Owner 成员关系，再重跑迁移；不在迁移里创建伪造权限。被组织撤销成员资格的人可以保留 Owner 历史角色但**所有访问仍由当前 tenant_members + project_members 双重认证拒绝**；完整管理员责任接管流程另行设计，不能靠自动重分配绕过审计。
+
+**验证与门禁。** 真实 PostgreSQL 验证 schema 列已消失、无 Owner 创建失败、直接降级/删除唯一 Owner 失败、第二 Owner 违反索引、一次事务成功移交、并发版本/旧命令重放以及合法级联删除；所有旧测试项目夹具在一条 SQL 中原子建立唯一 Owner，避免无效项目；compiled API smoke + Web build + Windows/Linux/Docker/Security/Docs 最终 Head CI 通过。此切片**不等同** #48 所有 PM 正式领域、#49 Worker 故障、#50 AI 和 #51 实机生产完整验收。

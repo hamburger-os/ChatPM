@@ -257,3 +257,7 @@ GET /projects/:id/outbox/summary 和 /dead 现委托 operations/outbox-admin.ts�
 项目成员 GET 和成员增删改、Owner 迁移、项目设置的业务实现从 Fastify `project-governance-routes.ts` 移至 Identity Core `project-governance.ts`。GET 复用当前 Tenant/Project 成员锁与一事务快照；写入仍走唯一 `executePmCommand`。观察者降级和移除共用五种未完成责任检查（Task、Deliverable、Allocation、Risk、Change），消除重复 SQL，同时保留原 HTTP DTO、授权及审计/事件语义。真实 PostgreSQL 回归和静态架构门禁接入 Product CI。这不消除 `projects.owner_id` 的重复事实，也不表示其它 API/Worker 或生产实机已验收；#48/#49 保持开放。
 
 **补充：** 资源分配的 Core 入口现拒绝观察者，沿用组织事务 advisory 锁和项目/组织成员行共享锁，与降级/移除保持同一成员事实源。纳入 PostgreSQL 回归及架构守卫。
+
+## ADR-078 · 项目负责人单一事实源（2026-10-17）
+
+`project_members.role='owner'` 为唯一持久身份；`028_project_owner_single_authority.sql` 首先拒绝和旧 `projects.owner_id` 不一致的数据，成功后移除重复列，并以既有 Owner 唯一索引加延期提交约束保持每项目恰好一名 Owner。项目创建/详情/列表/Owner 移交 Core 已从该成员角色导出负责人 ID、保留独立 `ownership_revision` 以及同事务 CommandReceipt/Event/Audit/Outbox。接口可继续返回派生的 `owner_id`，但 DB 不保存第二份。真实 PostgreSQL Owner 约束、并发/移交/角色禁止和普通 API smoke 纳入 CI。实际生产旧库的异机备份/数据对账仍属于 #51，遇到迁移前置不一致必须中止并人工协调，不可标称全量平滑迁移。

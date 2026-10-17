@@ -46,7 +46,14 @@ try{
   const tenant=(await pool.query(
     "INSERT INTO tenants(name) VALUES('AI mock tenant') RETURNING id")).rows[0];
   const project=(await pool.query(
-    "INSERT INTO projects(tenant_id,name,owner_id,ai_enabled) VALUES($1,'AI mocked project',$2,TRUE) RETURNING id",
+    `WITH created AS (
+      INSERT INTO projects(tenant_id,name,ai_enabled)
+      VALUES($1,'AI mocked project',TRUE) RETURNING id
+    ), seeded_owner AS (
+      INSERT INTO project_members(project_id,user_id,role)
+      SELECT id,$2,'owner' FROM created RETURNING project_id
+    )
+    SELECT id FROM created`,
     [tenant.id,user.id])).rows[0];
   const provider=(await pool.query(`INSERT INTO ai_provider_connections
     (name,base_url,api_style,api_key_ciphertext,enabled)
