@@ -185,12 +185,14 @@ test('formal PM read models use the sole Core membership snapshot',()=>{
   assert.doesNotMatch(navigation,/pool\.query|\bSELECT\b/i);
   assert.match(projectQuery,/JOIN tenant_members tm/);
 });
-test('platform AI model mutations reauthorize admin within the business transaction',()=>{
+test('platform AI reads, writes and model probe cooldown reauthorize current admin',()=>{
   const route=readFileSync(new URL('../../apps/api/src/admin-model-routes.ts',import.meta.url),'utf8');
   const access=readFileSync(new URL('../../packages/core/src/identity/system-access.ts',import.meta.url),'utf8');
-  assert.equal((route.match(/systemAdminTransaction\(actor,async db=>/g)||[]).length,7);
-  assert.match(route,/systemAdminTransaction\(actor,db=>db\.query/);
-  assert.doesNotMatch(route,/transaction\(async db=>|pool\.query/);
+  // 7 business writes/cooldown + 3 sensitive reads, all scoped to the same
+  // Core boundary; no stale HTTP preflight or second unscoped pool read.
+  assert.equal((route.match(/systemAdminTransaction\(actor,async db=>/g)||[]).length,10);
+  assert.match(route,/const check=await db\.query\(`INSERT INTO ai_model_checks/);
+  assert.doesNotMatch(route,/transaction\(async db=>|pool\.query|requireSystemAdmin\(/);
   assert.match(access,/SELECT is_system_admin FROM users WHERE id=\$1 FOR SHARE/);
   assert.match(access,/transaction\(async db/);
 });
@@ -485,4 +487,29 @@ test('invitation emails use same locked Core tenant admin read grant as organiza
   assert.match(access,/FOR SHARE/);
   assert.match(access,/SET TRANSACTION ISOLATION LEVEL REPEATABLE READ/);
   assert.match(invitations,/organizationCommand\(/);
+});
+
+
+test('platform model metadata and credentials only read under current admin transaction',()=>{
+  const route=readFileSync(new URL('../../apps/api/src/admin-model-routes.ts',import.meta.url),'utf8');
+  const model=readFileSync(new URL('../../packages/core/src/project-model.ts',import.meta.url),'utf8');
+  const access=readFileSync(new URL('../../packages/core/src/identity/system-access.ts',import.meta.url),'utf8');
+  assert.match(route,/listProviders\(db\)/);
+  assert.match(route,/const value=modelSchema\.parse\(req\.body\);[\s\S]*?const saved=await saveModelConfig\(db,null,value\)/);
+  assert.match(route,/listModelConfigs\(db\)/);
+  assert.match(route,/resolveProviderCatalogConfig\(id,db\)/);
+  assert.match(route,/resolveModelConfig\(id,true,db\)/);
+  assert.doesNotMatch(route,/requireSystemAdmin|await admin\(req\)/,
+    'Prechecked administrator rights must not be reused for credential reads');
+  assert.match(route,/const \{config,mode\}=await systemAdminTransaction\(actor,async db=>/);
+  assert.match(model,/export async function listProviders\(db:DbClient\)/);
+  assert.match(model,/export async function listModelConfigs\(db:DbClient\)/);
+  assert.match(model,/resolveProviderCatalogConfig\(id:string,db:DbClient\)/);
+  assert.match(access,/SELECT is_system_admin FROM users WHERE id=\$1 FOR SHARE/);
+  assert.ok((route.match(/systemAdminTransaction\(/g)||[]).length>=11,
+    'All platform model routes must recheck the current admin grant');
+  const call=route.indexOf('const started=Date.now();');
+  const end=route.indexOf('const {config,mode}=await systemAdminTransaction(actor,async db=>');
+  assert.ok(end>=0&&call>end,
+    'DB grant/cooldown finishes before the external model call');
 });

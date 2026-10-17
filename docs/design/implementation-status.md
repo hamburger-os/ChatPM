@@ -281,3 +281,7 @@ GET /projects/:id/outbox/summary 和 /dead 现委托 operations/outbox-admin.ts�
 ## ADR-083 · Invitation 管理敏感读取权限收敛（2026-10-17）
 
 `GET /tenants/:tenantId/invitations` 原 HTTP 先 `requireTenant` 后 `pool.query`，两次连接之间可发生管理员撤权；已改为 Identity Core `listTenantInvitations`。全部组织管理员敏感 GET 现在复用唯一 `identity/tenant-admin-read.ts` 的 REPEATABLE READ + 当前成员 `FOR SHARE` 事务权限核验（邀请名单、组织成员、资源分配）。POST 签发/撤销只依据 `organizationCommand` 同事务权限与幂等结果，不再在 HTTP 中增加可过期的业务预校验。真实 PostgreSQL 并发撤权、跨租户、邮箱/令牌敏感性与非管理员拒绝加入原邀请码集成测试。未引入新表、影子授权或兼容层，真实公网注册策略与邀请码防滥用仍属 #39 开放验收。
+
+## ADR-084 · 平台模型凭据读取单一管理员授权边界（2026-10-17）
+
+模型提供商 GET、模型清单 GET、目录发现时的凭据取得，以及模型 quick/full 测试读取与计费冷却，统一在现有 `systemAdminTransaction` 内检查当前系统总管理员并使用同一 DbClient；模型出站 HTTP(S) 请求只在事务提交后发出。`listProviders/listModelConfigs/resolveProviderCatalogConfig` 的公共业务函数要求调用者传入 `DbClient`，不再绕过受权连接使用默认 pool；平台模型管理 HTTP 去除重复 `requireSystemAdmin` 预检。真实 PostgreSQL 读敏感信息/撤权锁回归和架构守卫加入 Product CI。原模型密钥加密、不向前端返回密钥、请求冷却及模型网络 SSRF 策略保持。不代表已完成全项目 API/Worker 边界、模型真实流量/账单或 QNAP/Win11/Linux 生产验收。

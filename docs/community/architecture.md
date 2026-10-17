@@ -238,3 +238,9 @@ English: When a self-hosted model uses `http://host.docker.internal:<port>`, ope
 中文：邀请名单包含收件人的邮箱和状态，只有该组织**当前**管理员能查看。服务端会在同一数据库事务内校验并锁定管理员成员关系、读取邀请记录；已被撤权的管理员不能利用请求时间差继续查看名单。成员名单、资源配置及邀请名单使用同一授权事实源，不保存第二套角色缓存。邀请码仅在签发时返回一次，邀请列表不展示可恢复的邀请码或摘要。正式公网部署仍需额外对邀请、滥用和邮箱泄露进行安全审查。
 
 English: Invitation metadata contains sensitive recipient email addresses. The server verifies and locks the **current** tenant administrator membership in the same database transaction as the list query, preventing read-after-revocation through a stale HTTP precheck. Tenant membership and resource administration reuse that same authorization boundary. Lists never expose invitation bearer codes or token digests. Production invitation abuse, public-network and mail-delivery tests remain separate acceptance gates.
+
+### 系统模型管理员单一授权边界 / Platform model administration
+
+中文：只有当前系统总管理员能够查看模型供应商、模型设置、取得模型目录连接凭据或执行测试。这些查询在同一数据库事务内锁定管理员权限，不再依赖 HTTP 之前做过的权限检查。模型测试会在授权事务内取得设置并记录调用冷却，但真正的外部模型网络请求只在事务结束后发起，避免占住数据库连接。供应商列表只展示是否有密钥，不暴露明文 API Key；项目成员不能自行修改系统模型配置。
+
+English: Platform AI provider/model metadata and catalog credentials are read only while a live system-admin grant is checked and locked in one Core transaction. Model test settings and cooldown are committed together, then external model HTTP happens **after** the transaction closes. Lists return public metadata and key-presence flags, never provider secrets. This does not by itself certify live WAN egress, API-key rotation, vendor billing or production deployment.

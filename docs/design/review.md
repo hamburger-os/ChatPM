@@ -388,3 +388,13 @@ CI 须验证 PostgreSQL 游标 200 条边界、25 条更早记录、跨项目与
 以 #109 已合并后 `main` `db624a2` 为基线，复查所有邀请管理员路由及现有 ADR-079 的组织成员敏感读取。发现 GET /tenants/:tenantId/invitations 在 HTTP 先 `requireTenant(admin)` 后跨连接 `pool.query`，若管理员在此期间撤权，将暴露当前不再授权的邀请邮箱；POST 签发/撤销也有不必要的旧角色预检查（真实写授权已由 `organizationCommand` 同事务重做）。本 PR 提取原共享查询为 `identity/tenant-admin-read.ts` 单源授权助手，三类组织敏感 GET 与邀请元数据均在同一 REPEATABLE READ DB 快照及 `FOR SHARE` 当前管理员行锁内执行；HTTP 只有 Session/UUID/DTO。签发/撤销保留原命令 receipt、审计、邀请 digest 与单次接受，取消重复 HTTP 预检查，未创建新兼容路径。
 
 测试覆盖管理/普通/跨租户读取、密文摘要不泄露、管理员撤权行锁竞态导致拒绝、撤权后无读/写权限，已有邀请单次接受/重复领取/过期/撤销与 Fastify API Smoke/原生/Docker 也必须通过。静态架构守卫保护唯一权限 helper 与路由薄边界；CI/审查清零后方可合并。该 PR 不声称 #39 公网注册风控、#41 QNAP/IPv6 真实网络、#51 生产安装/备份恢复验收完整完成。
+
+## ADR-084 · 总管理员模型配置/凭据读取一致性 /review（2026-10-17）
+
+从 #110 合并后主干 `797f966` 全面检查管理员模型管理 Fastify、Core 模型目录、Project 模型解析、注册与组织管理员事务授权。发现 GET /admin/ai/providers、GET /admin/ai/models、POST /admin/ai/providers/:id/discover 先 `requireSystemAdmin` 再 `pool.query`；POST /admin/ai/models/:id/test 在计费冷却的管理员授权事务外已先读取、解密模型 API Key。此权限检查与读取的跨连接 TOCTOU 窗口不符合先前 ADR-079/083 单源事务权限设计。
+
+方案统一沿用已有 `systemAdminTransaction`，给三个受保护查询函数显式传入 DbClient，移除模型 HTTP 多余 `requireSystemAdmin`。目录探测与模型 quick/full 测试只在**完成**管理员授权数据库事务后发出远程调用，不持有锁过外部等待；模型调用仍受安全 HTTP/DNS 解析及额度策略约束。所有模型写操作保留原同事务审计和权限锁，未增加 DB 表或向前端开放模型配置。实测包括非管理员拒绝、当前授权读与降权互斥、管理员降权后的列表/密钥读取拒绝、密钥不出现在 DTO、模型配置读取与 30 秒冷却原子、静态架构守卫、原正式模型/Web/API/Worker/Win/Linux/Docker/Security 回归。合并时以最新 Head 五组 CI 全绿、审查线程零和 main 未漂移为门禁。
+
+**保留风险：** 已授权模型测试在数据库事务关闭后开始真实网络请求，调用期间发生撤权不能撤销已经在传输中的 HTTP 请求；正式生产需要独立的可信出口网络隔离、密钥轮换/吊销、账单上限、真实模型/代理流量测试与值班机制。#39/#49/#50/#51 的未完成事项不因本切片合并而关闭。
+
+**CI /review 修复：** 第一轮静态架构守卫仍断言旧 7 次管理员业务事务，新增的三个敏感读使其过时；已升级为检查 10 个受控事务入口及模型测试的冷却写入。编译 API 冒烟进一步发现非管理员传入不完整模型 POST 参数时错误码由原 403 退化成 400，根因是 Zod 校验抢在 Core 当前授权之前；现把模型写请求体与探针 mode 的 Zod 校验放入授权事务内（并保持外部模型网络调用在事务结束后），恢复拒绝优先的安全约束，并由原 Smoke 固化。

@@ -1,7 +1,6 @@
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import { systemAdminTransaction } from '../../../packages/core/src/identity/system-access.ts';
-import { requireSystemAdmin } from '../../../packages/core/src/permissions.ts';
 import {
   deleteModelConfig,deleteProvider,importModelConfigs,listModelConfigs,listProviders,
   resolveModelConfig,resolveProviderCatalogConfig,saveModelConfig,saveProvider,
@@ -33,17 +32,14 @@ const modelSchema=z.object({
 
 export function registerAdminModelRoutes(app:FastifyInstance,
   authenticated:(req:FastifyRequest)=>Promise<string>):void{
-  const admin=async(req:FastifyRequest)=>{
-    const actor=await authenticated(req);
-    await requireSystemAdmin(actor);
-    return actor;
-  };
   app.get('/admin/ai/providers',async req=>{
-    await admin(req);return {providers:await listProviders()};
+    const actor=await authenticated(req);
+    return systemAdminTransaction(actor,async db=>({providers:await listProviders(db)}));
   });
   app.post('/admin/ai/providers',async(req,reply)=>{
-    const actor=await admin(req),value=providerSchema.parse(req.body);
+    const actor=await authenticated(req);
     const provider=await systemAdminTransaction(actor,async db=>{
+      const value=providerSchema.parse(req.body);
       const saved=await saveProvider(db,null,value);
       await db.query(`INSERT INTO system_audit_entries(actor_id,action,target_id,metadata)
         VALUES($1,'ai.provider_created',$2,$3)`,
@@ -53,9 +49,9 @@ export function registerAdminModelRoutes(app:FastifyInstance,
     return reply.code(201).send({provider});
   });
   app.put('/admin/ai/providers/:id',async req=>{
-    const actor=await admin(req),id=uuid.parse((req.params as {id:string}).id);
-    const value=providerSchema.parse(req.body);
+    const actor=await authenticated(req),id=uuid.parse((req.params as {id:string}).id);
     const provider=await systemAdminTransaction(actor,async db=>{
+      const value=providerSchema.parse(req.body);
       const saved=await saveProvider(db,id,value);
       await db.query(`INSERT INTO system_audit_entries(actor_id,action,target_id,metadata)
         VALUES($1,'ai.provider_updated',$2,$3)`,[actor,id,JSON.stringify({
@@ -66,7 +62,7 @@ export function registerAdminModelRoutes(app:FastifyInstance,
     return {provider};
   });
   app.delete('/admin/ai/providers/:id',async req=>{
-    const actor=await admin(req),id=uuid.parse((req.params as {id:string}).id);
+    const actor=await authenticated(req),id=uuid.parse((req.params as {id:string}).id);
     const removed=await systemAdminTransaction(actor,async db=>{
       const related=await db.query('SELECT 1 FROM ai_model_configs WHERE provider_id=$1 LIMIT 1',[id]);
       if(related.rowCount)denied(409,'请先移除该供应商的模型');
@@ -80,9 +76,10 @@ export function registerAdminModelRoutes(app:FastifyInstance,
   });
 
   app.post('/admin/ai/providers/:id/discover',async req=>{
-    await admin(req);
+    const actor=await authenticated(req);
     const id=uuid.parse((req.params as {id:string}).id);
-    const connection=await resolveProviderCatalogConfig(id);
+    const connection=await systemAdminTransaction(actor,db=>
+      resolveProviderCatalogConfig(id,db));
     // Catalog metadata fetches are admin-only and non-billable. Permit an
     // immediate repeat after completion; UI prevents simultaneous clicks.
     try{return await discoverProviderModels(connection);}
@@ -104,15 +101,15 @@ export function registerAdminModelRoutes(app:FastifyInstance,
     }
   });
   app.post('/admin/ai/models/import',async(req,reply)=>{
-    const actor=await admin(req);
-    const input=z.object({
-      providerId:uuid,
-      models:z.array(z.object({
-        id:z.string().trim().min(1).max(150).regex(/^[^\r\n]+$/),
-        name:z.string().trim().min(1).max(100).optional(),
-      }).strict()).min(1).max(50),
-    }).strict().parse(req.body);
+    const actor=await authenticated(req);
     const result=await systemAdminTransaction(actor,async db=>{
+      const input=z.object({
+        providerId:uuid,
+        models:z.array(z.object({
+          id:z.string().trim().min(1).max(150).regex(/^[^\r\n]+$/),
+          name:z.string().trim().min(1).max(100).optional(),
+        }).strict()).min(1).max(50),
+      }).strict().parse(req.body);
       const imported=await importModelConfigs(db,input.providerId,input.models);
       await db.query(`INSERT INTO system_audit_entries(actor_id,action,target_id,metadata)
         VALUES($1,'ai.models_imported',$2,$3)`,[actor,input.providerId,
@@ -123,11 +120,13 @@ export function registerAdminModelRoutes(app:FastifyInstance,
   });
 
   app.get('/admin/ai/models',async req=>{
-    await admin(req);return {models:await listModelConfigs()};
+    const actor=await authenticated(req);
+    return systemAdminTransaction(actor,async db=>({models:await listModelConfigs(db)}));
   });
   app.post('/admin/ai/models',async(req,reply)=>{
-    const actor=await admin(req),value=modelSchema.parse(req.body);
+    const actor=await authenticated(req);
     const model=await systemAdminTransaction(actor,async db=>{
+      const value=modelSchema.parse(req.body);
       const saved=await saveModelConfig(db,null,value);
       await db.query(`INSERT INTO system_audit_entries(actor_id,action,target_id,metadata)
         VALUES($1,'ai.model_created',$2,$3)`,[actor,saved.id,JSON.stringify({
@@ -137,9 +136,9 @@ export function registerAdminModelRoutes(app:FastifyInstance,
     return reply.code(201).send({model});
   });
   app.put('/admin/ai/models/:id',async req=>{
-    const actor=await admin(req),id=uuid.parse((req.params as {id:string}).id);
-    const value=modelSchema.parse(req.body);
+    const actor=await authenticated(req),id=uuid.parse((req.params as {id:string}).id);
     const model=await systemAdminTransaction(actor,async db=>{
+      const value=modelSchema.parse(req.body);
       const saved=await saveModelConfig(db,id,value);
       await db.query(`INSERT INTO system_audit_entries(actor_id,action,target_id,metadata)
         VALUES($1,'ai.model_updated',$2,$3)`,[actor,id,JSON.stringify({
@@ -150,7 +149,7 @@ export function registerAdminModelRoutes(app:FastifyInstance,
     return {model};
   });
   app.delete('/admin/ai/models/:id',async req=>{
-    const actor=await admin(req),id=uuid.parse((req.params as {id:string}).id);
+    const actor=await authenticated(req),id=uuid.parse((req.params as {id:string}).id);
     const deleted=await systemAdminTransaction(actor,async db=>{
       const removed=await deleteModelConfig(db,id);
       if(removed)await db.query(`INSERT INTO system_audit_entries(actor_id,action,target_id)
@@ -161,17 +160,24 @@ export function registerAdminModelRoutes(app:FastifyInstance,
     return {ok:true};
   });
   app.post('/admin/ai/models/:id/test',async req=>{
-    const actor=await admin(req);
+    const actor=await authenticated(req);
     const id=uuid.parse((req.params as {id:string}).id);
-    const mode=z.object({mode:z.enum(['quick','full']).default('quick')})
-      .strict().parse(req.body??{}).mode;
-    const config=await resolveModelConfig(id,true).catch(()=>denied(400,'模型配置不可用'));
-    // Tests invoke a billable model. Preserve the per-model test cooldown.
-    const check=await systemAdminTransaction(actor,db=>db.query(`INSERT INTO ai_model_checks(model_config_id,last_test_at)
-      VALUES($1,NOW()) ON CONFLICT(model_config_id) DO UPDATE SET
-      last_test_at=NOW() WHERE ai_model_checks.last_test_at<NOW()-INTERVAL '30 seconds'
-      RETURNING model_config_id`,[id]));
-    if(!check.rowCount)denied(429,'每个模型最多每 30 秒测试一次，以避免误触发计费调用');
+    // Credential resolution AND the billable-call cooldown are protected by
+    // the current platform-admin row lock in ONE DB transaction. Never hold
+    // a PostgreSQL connection across the external model network request.
+    const {config,mode}=await systemAdminTransaction(actor,async db=>{
+      const mode=z.object({mode:z.enum(['quick','full']).default('quick')})
+        .strict().parse(req.body??{}).mode;
+      const config=await resolveModelConfig(id,true,db)
+        .catch(()=>denied(400,'模型配置不可用'));
+      const check=await db.query(`INSERT INTO ai_model_checks(model_config_id,last_test_at)
+        VALUES($1,NOW()) ON CONFLICT(model_config_id) DO UPDATE SET
+        last_test_at=NOW() WHERE ai_model_checks.last_test_at<NOW()-INTERVAL '30 seconds'
+        RETURNING model_config_id`,[id]);
+      if(!check.rowCount)denied(429,
+        '每个模型最多每 30 秒测试一次，以避免误触发计费调用');
+      return {config,mode};
+    });
     const started=Date.now();
     const identity=modelAuditIdentity(config);
     const codeFor=(error:unknown):string=>{
