@@ -39,15 +39,21 @@ BEGIN
 
   -- Moving a project_member row to a different project must not orphan
   -- its old project, even if the new project already has an owner.
-  IF TG_TABLE_NAME='project_members' AND TG_OP='UPDATE'
-     AND OLD.project_id IS DISTINCT FROM NEW.project_id
-     AND EXISTS(SELECT 1 FROM projects WHERE id=OLD.project_id)
-     AND NOT EXISTS(
-       SELECT 1 FROM project_members
-       WHERE project_id=OLD.project_id AND role='owner'
-     ) THEN
-    RAISE EXCEPTION 'PROJECT_OWNER_REQUIRED for project %',OLD.project_id
-      USING ERRCODE='23514';
+  -- TG_OP conditions cannot safely reference OLD in a project INSERT
+  -- trigger; PL/pgSQL may evaluate a compound boolean expression eagerly.
+  IF TG_TABLE_NAME='project_members' THEN
+    IF TG_OP='UPDATE' THEN
+      IF OLD.project_id IS DISTINCT FROM NEW.project_id THEN
+        IF EXISTS(SELECT 1 FROM projects WHERE id=OLD.project_id)
+          AND NOT EXISTS(
+            SELECT 1 FROM project_members
+            WHERE project_id=OLD.project_id AND role='owner'
+          ) THEN
+          RAISE EXCEPTION 'PROJECT_OWNER_REQUIRED for project %',OLD.project_id
+            USING ERRCODE='23514';
+        END IF;
+      END IF;
+    END IF;
   END IF;
   RETURN NULL;
 END $$;
