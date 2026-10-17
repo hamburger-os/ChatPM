@@ -88,7 +88,7 @@ try{
   assert.equal(later.report.content,first.report.content,
     'Published snapshot is immutable even if current tasks change');
   for(const kind of ['report.generation_requested.v1','report.published.v1']){
-    const counts=await pool.query<{events:number;receipts:number}>(`
+    const counts:{rows:Array<{events:number;receipts:number}>}=await pool.query(`
       SELECT (SELECT COUNT(*)::int FROM domain_events
         WHERE project_id=$1 AND kind=$2) AS events,
       (SELECT COUNT(*)::int FROM command_receipts
