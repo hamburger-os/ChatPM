@@ -477,3 +477,13 @@
 **权限和并发边界。** 组织管理员自降级/他降级保留已有“至少一名管理员”规则，唯一成功的角色变更可在本人降为普通成员后凭相同 idempotencyKey **仅重放已完成回执**；新命令依旧拒绝。资源容量按日期边界、跨项目 100% 上限、非 observer 项目成员、项目/租户作用域与组织命令串行化进行校验，删除历史分配仅标取消，不能覆盖历史来源。
 
 **验证与遗留范围。** 静态架构守卫禁止 Fastify 组织路由直接持有业务 SQL 或 `organizationCommand`；真实 PostgreSQL 覆盖管理员可见性、跨租户禁止、部门与组合/项目集及 FK、成员加入、部门责任、资源超配/取消、组织角色降级及最后管理员保护、回执重放/冲突与审计数量；最新 Head 五项 CI 成功后才合并。不代表 #49 其它 API/Worker 或 #43 PMP 收益治理、#39 实网安全、#51 实机发布已完成。
+
+## ADR-080 · Worker 按执行通道独立健康度与诊断告警（2026-10-17）
+
+**缺陷。** 独立的 events/reminders/reports Worker 执行通道原本都更新同一条 `worker_health(name='default')`。只要提醒通道成功，last_success_at 即刷新，导致 Outbox/AI 通道持续失败、报告通道长时间没有成功时，`doctor` 仍可能返回 healthy。运维信号与实际执行所有权不一致，掩盖了关键告警。
+
+**唯一状态源。** 使用现有 PostgreSQL `worker_health` 表，新增不可回退迁移 `029_worker_lane_health.sql`，删除旧 default 遥测记录并将 name CHECK 约束改为 `events|reminders|reports`。不增建第二套健康表，也不保留 default 兼容写入。每条通道完成一次实际 tick 时独立写入 last_seen_at/last_success_at/last_failure_at；成功不会清除历史失败时间，诊断时通过最后成功/失败先后决定是否仍有当前故障。事务和 Worker 业务效果不依赖健康写入成功；即使 DB 遥测失败也只产生脱敏告警，不改变正式业务状态。
+
+**诊断策略。** 唯一可执行阈值规则存放 `tools/ops/doctor.mjs`：events/reminders 最后心跳 180 秒、成功 300 秒，reports 最后心跳/成功 900 秒（报告扫描计划约每 300 秒）。缺失任意通道行、最近 tick 失败、成功过期、心跳过期均输出机器可解析的明确 lane 告警码，并将 doctor 进程置非零退出码。原 Outbox 逾期、死信、API、DB/迁移检测保持。Linux 沿用已存在的 `chatpm-doctor.timer` 5 分钟检测；Windows 新增 LocalService 低权限 `install-doctor-task.ps1` 同频执行。该任务本身只写诊断退出码/操作系统日志，**不会自动向邮箱、IM 或公网 webhook 发送通知**，需要企业监控对非零检查结果及任务长期未运行单独建立通知路由/升级策略。
+
+**理由与边界。** 保留 API/Worker/Web 三进程和单 PostgreSQL；不将告警写成聊天消息/AI 候选、也不在内网 Worker 随机调用未验证的公网 webhook（避免凭据泄漏与 SSRF）。故障注入测试验证一条通道失败、另外两条成功不再掩盖故障；成功恢复、陈旧心跳、缺失记录、数据库 CHECK 和 CLI 规则各自可复现。通道遥测不是 per-pod 活跃探针；多实例/模型上游网络真实超时、外部 PagerDuty/邮件/IM 送达、通知去重升级、压测 SLA 仍需独立 #4/#49/#51 验收。

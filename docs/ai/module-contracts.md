@@ -402,3 +402,10 @@ retryDeadEvent 唯一使用现有 executePmCommand：当前授权、dead_at 非�
 - 组织角色变更降为 member 时，禁止撤销最后一位管理员；完成的同键原回执允许旧管理员重放（`replayAccess:'member'`），任何全新管理命令仍必须当前管理员。此前有权限的 UI 状态不授权异步请求。
 - `recordResourceAllocation` 仍控制真实百分比容量、项目当前执行成员资格、日期窗口以及跨项目超额；取消操作仅标记审计字段。Portfolio/Program 仅是战略/协同结构，组织管理员及部门 Lead 权限不意味着所有项目聊天室内容访问。
 - Product CI 加入直接调用 Core 的真实 Postgres 测试与静态边界；保留其它服务的原 API Smoke、Web、Docker/native/security/文档完整门禁。
+
+## ADR-080 · Worker 分通道健康监测职责
+
+- `operations/worker-heartbeat.ts` 唯一保存三条 Worker lane 的独立最近完成/成功/失败遥测状态；`WorkerLane='events'|'reminders'|'reports'` 由调度器使用，不再存在会被健康通道覆盖的 `default` 行。
+- `tools/ops/doctor.mjs` 唯一持有 lane 告警阈值，周期性通过同一 PostgreSQL 状态表评估每个 lane；events/reminders 180 秒心跳/300 秒成功，reports 900 秒。无行、陈旧或失败应产生确定错误码和非零退出，不写业务事实。
+- Worker `dispatch` 捕获 lane 真实执行结果后以 `recordWorkerHeartbeat(lane,succeeded)` 报告，遥测写失败不得导致 Lane 业务重放；AI/Outbox 对业务结果仍以 claim fencing、幂等与独立业务事务为准。
+- 任何新的监控接入须读取 Doctor 的退出码/结构化码，而非第二次直接查询同一表建立重复阈值源；企业级远程告警通知、去重和升级渠道需要专门的可信出口与实测。

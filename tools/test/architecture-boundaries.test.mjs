@@ -23,7 +23,7 @@ function assertWorkerBootstrapBoundary(source){
   assert.match(source,/dispatch\('reports',/, 'Reporting lane must dispatch independently');
   assert.match(source,/Promise\.allSettled\(\[\.\.\.inFlight\.values\(\)\]\)/,
     'Shutdown must drain every active lane');
-  assert.match(source,/recordWorkerHeartbeat\(succeeded\)/,
+  assert.match(source,/recordWorkerHeartbeat\(lane,succeeded\)/,
     'Operational heartbeat must not be discarded');
   assert.match(source,/await pool\.end\(\)/,'Graceful shutdown must close the database pool');
 }
@@ -405,4 +405,24 @@ test('tenant governance HTTP delegates all administrative writes and scoped read
   assert.match(queries,/SET TRANSACTION ISOLATION LEVEL REPEATABLE READ/);
   assert.match(queries,/FOR SHARE/);
   assert.equal((queries.match(/return withTenantAdminRead\(/g)||[]).length,2);
+});
+
+
+test('worker telemetry has independent persistent lanes and fail-closed doctor',()=>{
+  const policy=readFileSync(new URL('../../packages/core/sql/029_worker_lane_health.sql',import.meta.url),'utf8');
+  const heartbeat=readFileSync(new URL('../../packages/core/src/operations/worker-heartbeat.ts',import.meta.url),'utf8');
+  const doctor=readFileSync(new URL('../../tools/ops/doctor.mjs',import.meta.url),'utf8');
+  assert.match(policy,/DELETE FROM worker_health WHERE name='default'/);
+  assert.match(policy,/name IN \('events','reminders','reports'\)/);
+  assert.match(heartbeat,/export type WorkerLane='events'\|'reminders'\|'reports'/);
+  assert.match(heartbeat,/INSERT INTO worker_health\(name/);
+  assert.match(heartbeat,/ON CONFLICT\(name\)/);
+  assert.doesNotMatch(heartbeat,/VALUES\('default'/);
+  assert.match(worker,/recordWorkerHeartbeat\(lane,succeeded\)/);
+  for(const lane of ['events','reminders','reports']){
+    assert.match(doctor,new RegExp(lane+':\\{heartbeat:'));
+  }
+  assert.match(doctor,/LAST_TICK_FAILED/);
+  assert.match(doctor,/DATABASE_NOT_MIGRATED/);
+  assert.match(doctor,/parseWorkerLanes\(heartbeat\.rows\)/);
 });

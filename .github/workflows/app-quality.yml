@@ -55,6 +55,8 @@ jobs:
         run: npm run db:migrate
       - name: Verify migrations are repeatable
         run: npm run db:migrate
+      - name: Independent Worker lane health and fail-closed diagnostics integration
+        run: node --import tsx tools/test/worker-health.integration.mjs
       - name: First-account bootstrap token and race integration
         run: node --import tsx packages/core/test/bootstrap.integration.ts
       - name: Single authoritative project owner and migration constraints
