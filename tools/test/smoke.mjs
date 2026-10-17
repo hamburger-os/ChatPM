@@ -1788,8 +1788,78 @@ try{
   assert.equal(reopenFormerMember.status,400,'Reopening must reject a revoked assignee');
   const revokedMember=await api('/projects/'+pid+'/messages',{cookie:cookieB});
   assert.equal(revokedMember.status,404,'Removed member must lose access immediately');
+  // Real HTTP SSE must not buffer its response, must resume from the committed
+  // cursor, and must stop when the signed server-side session is revoked.
+  const streamProject=await api('/projects',{method:'POST',body:{
+    name:'SSE recovery '+randomUUID().slice(0,8),tenantId,
+    timezone:'Asia/Shanghai',idempotencyKey:randomUUID(),
+  }});
+  assert.equal(streamProject.status,201);
+  const streamId=streamProject.data.project.id;
+  const forbiddenStream=await fetch(host+'/projects/'+streamId+'/messages/events?after=0',{
+    headers:{Cookie:cookieB},
+  });
+  assert.equal(forbiddenStream.status,404,'Other projects cannot subscribe to event streams');
+  const malformedStream=await fetch(host+'/projects/'+streamId+'/messages/events?after=NaN',{
+    headers:{Cookie:cookieA},
+  });
+  assert.equal(malformedStream.status,400);
+  async function nextSseMessage(reader){
+    const decoder=new TextDecoder();
+    let pending='';
+    while(true){
+      const frameEnd=pending.indexOf('\n\n');
+      if(frameEnd>=0){
+        const frame=pending.slice(0,frameEnd);
+        pending=pending.slice(frameEnd+2);
+        const data=frame.split('\n').find(line=>line.startsWith('data: '));
+        if(data)return JSON.parse(data.slice(6));
+        continue;
+      }
+      const part=await reader.read();
+      if(part.done)throw new Error('SSE stream ended before delivering a message');
+      pending+=decoder.decode(part.value,{stream:true});
+    }
+  }
+  async function subscribe(headers){
+    const controller=new AbortController();
+    const timeout=setTimeout(()=>controller.abort(),12000);
+    const response=await fetch(host+'/projects/'+streamId+'/messages/events?after=0',{
+      headers:{Cookie:cookieA,...headers},signal:controller.signal,
+    });
+    assert.equal(response.status,200,'SSE must complete authorized handshake');
+    assert.match(response.headers.get('content-type')||'',/text\/event-stream/);
+    return {controller,timeout,reader:response.body.getReader()};
+  }
+  const streamOne=await subscribe({});
+  const sseFirst=await api('/projects/'+streamId+'/messages',{
+    method:'POST',body:{content:'SSE first message',nonce:randomUUID()},
+  });
+  assert.equal(sseFirst.status,201);
+  const firstEvent=await nextSseMessage(streamOne.reader);
+  assert.equal(firstEvent.content,'SSE first message');
+  assert.equal(firstEvent.id,sseFirst.data.message.id);
+  clearTimeout(streamOne.timeout);streamOne.controller.abort();
+  const streamTwo=await subscribe({'Last-Event-ID':String(firstEvent.seq)});
+  const sseSecond=await api('/projects/'+streamId+'/messages',{
+    method:'POST',body:{content:'SSE resumed message',nonce:randomUUID()},
+  });
+  assert.equal(sseSecond.status,201);
+  const resumed=await nextSseMessage(streamTwo.reader);
+  assert.equal(resumed.content,'SSE resumed message',
+    'Last-Event-ID must override the original URL cursor');
+  assert.ok(Number(resumed.seq)>Number(firstEvent.seq));
+  const history=await api('/projects/'+streamId+'/messages?before='+resumed.seq);
+  assert.equal(history.status,200);
+  assert.equal(history.data.messages.length,1);
+  assert.equal(history.data.messages[0].id,firstEvent.id);
+
   const loggedOut=await api('/auth/logout',{method:'POST'});
   assert.equal(loggedOut.status,200);
+  // The stream must cease even without a client-initiated disconnect.
+  const stopped=await streamTwo.reader.read();
+  assert.equal(stopped.done,true,'SSE must terminate after logout');
+  clearTimeout(streamTwo.timeout);streamTwo.controller.abort();
   const revokedSession=await api('/me');
   assert.equal(revokedSession.status,401,'Logout must revoke the server-side session');
   console.log('API smoke tests passed: tenant selection, revocable sessions, membership, ordering, idempotency, AI review, outbox and reports.');
