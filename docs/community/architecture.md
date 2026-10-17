@@ -198,3 +198,7 @@ English: Formal project management creation (goals, milestones, deliverables, is
 中文：成员列表、人员加入、角色升降、移除、负责人移交和项目设置现在都由 Identity Core 统一处理，而不是在 HTTP 路由重复定义业务规则。成员名单和当前权限在同一个数据库事务中核验；项目负责人将成员降级为观察者或移除前，系统会统一检查未完成任务、待验收交付物、有效资源安排、未关闭风险和正在实施的变更。正式变更仍产生同事务审计、领域事件和幂等回执；负责人移交保留版本与责任分离。其它组织治理、生产设备和负责人字段的进一步单源化仍需独立验收。
 
 English: Project membership reads, invitations, role changes, removal, ownership transfer, and project settings now use a single Identity Core service rather than duplicating business SQL in HTTP routes. Membership visibility and current authorization are checked within the same database transaction. Demoting a member to observer or removing them applies the same guard for unfinished tasks, unaccepted deliverables, active resource allocations, unresolved risks, and implementing changes. Changes remain auditable, versioned and idempotent. Other organization governance, production devices and elimination of the remaining stored owner-field duplication are separate acceptance tasks.
+
+中文补充：被降级为观察者后，不仅不能继续承担未完成工作，也不能从组织资源安排入口重新获得新的执行容量；当前组织和项目成员及角色会在数据库事务中再次校验。
+
+English addendum: An observer may not receive a new active resource allocation through the organization capacity planner. Both current tenant/project membership and the non-observer role are rechecked under database locks; historical cancelled allocations remain available for audit.

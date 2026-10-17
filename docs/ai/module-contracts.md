@@ -384,3 +384,5 @@ retryDeadEvent 唯一使用现有 executePmCommand：当前授权、dead_at 非�
 - 成员 GET 经 `withProjectRead(...,'read',...)` 同一 REPEATABLE READ 事务和当前 TenantMember/ProjectMember 行锁返回。旧权不能用于撤权后的新请求，跨项目和跨组织不可读取名单。
 - 五个写入继续走 `executePmCommand` 的授权/审计/命令回执/领域事件/Outbox 原子提交。成员变成 observer 或被移除前，统一检测有效 Task、Deliverable、Allocation、Risk、Change 责任；当前目标成员行 FOR UPDATE，新增任务/移交写入应锁同一成员行，防止并发越权后出现无人能处理的责任。
 - Owner 移交必须独立业务版本（`ownership_revision`）、目标当前有效组织/项目成员、前任变 manager 且仅能以 `replayAction='read'` 重放原成功回执；不允许以此获得新的 Owner 操作。AI 项目开关仅在真实变更时递增版本、模型未配置时拒绝开启，不能以设置请求绕过平台系统管理员模型配置。
+
+**容量约束补充：** `resource-allocation.ts` 的新资源分配只允许仍属于当前租户和项目、且 `pm.role<>'observer'` 的执行成员；必须 `FOR SHARE OF p,pm,tm` 与身份角色降级 `FOR UPDATE` 串行化。历史/已取消资源允许保留审计，不因观察者权限自动重写过去的计划。

@@ -342,3 +342,5 @@ CI 须验证 PostgreSQL 游标 200 条边界、25 条更早记录、跨项目与
 /review 必须核对：每个 GET/POST/PATCH/DELETE 只委托一次 Core；观察者/跨项目/撤权不可读取成员名单或变更成员；角色从 member 降级及移除必须使用相同的五项未清责任判定；有效任务、交付物、风险、变更与资源的状态约束不能因共用查询丢失；旧 Owner 的幂等重放须与新 Owner 权限严格分离；设置的 AI 禁用与时段无效输入不能留下假的审计/事件。真实 PostgreSQL 直接调用、HTTP Smoke、Schema migration 双跑、Static boundary、TypeScript、Web 和五组最终 SHA CI 均为合并门禁。
 
 **剩余待做（不以本 PR 关闭）：** #48 的 Owner 冗余存储/全域正式聚合统一、#49 组织治理及其它路由/Worker 故障注入、#39 真实模型出站安全、#4 主动告警、#50 模型 Evidence/Playbook、#43 跨项目收益容量、#51 实机迁移和备份，以及 #18/#19/#20/#41 的原生/公网/签名发行验证。不能因单一 Core 重构声称全部完工或生产就绪。
+
+**新增缺陷与验证：** 本轮横向检查 `resource-allocation.ts`，确认原来的项目资格只判断成员存在，遗漏观察者角色，可能在降级后再次安排执行资源。已收紧为非 observer，并复用既有 Tenant advisory + Target ProjectMember FOR SHARE，避免与角色 FOR UPDATE 并发逃逸。PostgreSQL 集成应在角色降级后实际尝试新的组织资源分配并断言拒绝，静态守卫必须长期保留此谓词。未得到最新 Head CI 成功以前不视作通过。

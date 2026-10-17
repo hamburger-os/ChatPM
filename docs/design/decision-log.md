@@ -451,3 +451,5 @@
 **设计取舍。** 不创建抽象基类、双轨接口或平行事实表；仍保留现有 `projects.owner_id/ownership_revision` 及成员 `role='owner'` 的双重存储现状，此问题需要另行统一而非借 HTTP 重构悄悄修改历史数据库。共享责任检查不会把完成的任务或已验收交付物当作悬空任务，历史记录不被物理删除。所有权限最终以 Core + PostgreSQL 当前成员关系为准，组织/项目管理员关系不自动扩大到其它项目。HTTP 只解析 UUID、Zod DTO 和 Session。
 
 **验收。** 真实 PostgreSQL 在 Core 层验证观察者/陌生人/跨租户隔离、名单撤权、成员新增同键回放与 payload 冲突、五类未了责任对降级和删除均阻断、清除责任后状态变更与 Owner 移交、设置更新版本/无效工作时间、旧负责人只能重放原移交，以及每次成功 Command 仅有一条 Receipt/Event/Audit。增加静态边界守卫禁止 HTTP 路由再持有成员业务 SQL。CI 的最终 Head 必须经过 Product/Docs/Native/Docker/Security 全项通过和 /review。
+
+**/review 补充：观察者分配的跨模块竞态。** 检查现有 `resource-allocation.ts` 发现其只验证项目/组织成员存在，没有检查 `pm.role`，造成成员被降级为 observer 后仍能收到新的计划资源。当前在组织资源命令已有的 Tenant advisory 事务锁和 `FOR SHARE OF p,pm,tm` 上补充 `pm.role<>'observer'`，使它和项目身份的行锁序列化，并显式拒绝观察者分配。真实 PostgreSQL 测试在角色降级后由组织命令路径模拟分配并断言 400/无新增有效配置；此处不引入新的容量池或策略缓存。

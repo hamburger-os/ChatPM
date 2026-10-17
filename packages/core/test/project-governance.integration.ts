@@ -5,6 +5,8 @@ import {
   listProjectMembers,addProjectMember,changeProjectMemberRole,
   removeProjectMember,transferProjectOwnership,updateProjectSettings,
 } from '../src/identity/project-governance.ts';
+import {transaction} from '../src/db.ts';
+import {recordResourceAllocation} from '../src/resource-allocation.ts';
 
 const suffix=randomUUID();
 async function newUser(label:string):Promise<string>{
@@ -128,6 +130,19 @@ try{
     {idempotencyKey:randomUUID(),role:'observer'}),/成员已处于目标角色/);
   assert.ok((await listProjectMembers(project,member)).members
     .some(x=>x.id===member&&x.role==='observer'));
+  await assert.rejects(transaction(async db=>{
+    await db.query('SELECT pg_advisory_xact_lock(hashtextextended($1,0))',
+      ['tenant-governance:'+tenant]);
+    return recordResourceAllocation(db,{
+      tenantId:tenant,projectId:project,userId:member,percentage:25,
+      startDate:'2026-10-17',endDate:'2026-10-23',
+    });
+  }),/资源只能分配给本组织内当前可承担执行责任的项目成员/,
+  'Observer must not regain active allocation after demotion');
+  const allocationsAfterDemotion=await pool.query(
+    'SELECT 1 FROM resource_allocations WHERE project_id=$1 AND user_id=$2 AND cancelled_at IS NULL',
+    [project,member]);
+  assert.equal(allocationsAfterDemotion.rowCount,0);
   const removed=await removeProjectMember(project,member,owner,
     {idempotencyKey:randomUUID()});
   assert.deepEqual(removed,{ok:true});

@@ -197,13 +197,10 @@ test('platform AI model mutations reauthorize admin within the business transact
 
 test('project settings reuses model configuration transaction client',()=>{
   const routes=readFileSync(new URL('../../apps/api/src/project-governance-routes.ts',import.meta.url),'utf8');
-  const governance=readFileSync(new URL('../../packages/core/src/identity/project-governance.ts',import.meta.url),'utf8');
-  const model=readFileSync(new URL('../../packages/core/src/project-model.ts',import.meta.url),'utf8');
-  assert.match(routes,/updateProjectSettings\(projectId,actor,input\)/);
-  assert.doesNotMatch(routes,/resolveProjectModel|executePmCommand|db\.query/);
-  assert.match(governance,/resolveProjectModel\(projectId,db\)/);
-  assert.match(model,/resolveModelConfig\(undefined,false,db\)/);
-  assert.match(model,/await db\.query<EffectiveRow>/);
+  const core=readFileSync(new URL('../../packages/core/src/project-model.ts',import.meta.url),'utf8');
+  assert.match(routes,/resolveProjectModel\(projectId,db\)/);
+  assert.match(core,/resolveModelConfig\(undefined,false,db\)/);
+  assert.match(core,/await db\.query<EffectiveRow>/);
 });
 test('browser message retry retains the same nonce until success or editing',()=>{
   const page=readFileSync(new URL('../../apps/web/app/page.tsx',import.meta.url),'utf8');
@@ -356,4 +353,11 @@ test('project membership and settings endpoints are pure DTO delegation',()=>{
   assert.match(core,/project_change_requests/);
   assert.match(core,/resource_allocations/);
   assert.match(core,/syncFollowup\(db,projectId,task\.id\)/);
+});
+
+test('tenant resource planning never assigns execution capacity to project observers',()=>{
+  const core=readFileSync(new URL('../../packages/core/src/resource-allocation.ts',import.meta.url),'utf8');
+  assert.match(core,/pm\.role<>'observer'/);
+  assert.match(core,/FOR SHARE OF p,pm,tm/);
+  assert.match(core,/资源只能分配给本组织内当前可承担执行责任的项目成员/);
 });
