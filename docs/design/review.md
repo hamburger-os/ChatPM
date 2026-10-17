@@ -414,3 +414,11 @@ CI 须验证 PostgreSQL 游标 200 条边界、25 条更早记录、跨项目与
 采用单一 `OUTBOX_HEALTH_SQL` 对未处理数据进行只读 PostgreSQL 聚合：未领取且超时才 `OUTBOX_OVERDUE`；未续期逾十分钟 `OUTBOX_STALLED_CLAIM`；正可执行且此前失败达十件 `OUTBOX_RETRY_READY_PRESSURE`；死信原样告警，缺少指标 `OUTBOX_TELEMETRY_INVALID`。阈值放在唯一 `OUTBOX_QUEUE_THRESHOLDS`，避免在 SQL、测试和部署脚本内各定义一次不同的诊断规则；正式 Outbox lease TTL 不变，故障恢复仍由 Worker 负责。真实 PostgreSQL 测试直接执行相同 SQL：心跳生效的旧事件不误报，日预算推迟/已处理不误报，真实未领取逾期、超时租约、十条 429 待重试、死信分别分流，清理后恢复。原完整 Outbox 故障与授权集成、Ops 单元、架构守卫、Docker、Native 和安全扫描都纳入最新 Head 验收。
 
 **未宣称：** 未来的线下压测 SLA、失败率时间窗、跨实例混沌故障注入、模型真实限流与故障时密钥处理、任务调度器长期停止运行告警和外部邮箱/IM/PagerDuty 送达。#4/#49/#51 的这些生产验收仍开放。
+
+## ADR-087 · 实时 SSE 半开流与连接名额 /review（2026-10-18）
+
+在 #113 已合并主干 `a077a5a` 上复核 `apps/api/src/message-stream-routes.ts`、Next 同源流式代理、Web EventSource 重连及编译 API Smoke。现有连接最大 3 条/用户、会话每次推送重验、项目内容分页、游标/Last-Event-ID 和 close 时清理机制都合理；发现 `raw.write(chunk)===false` 时原 Promise 仅监听 `drain` 或 `close`，如果客户端不读却迟迟无 TCP FIN、服务器也不再发 drain，Promise 永远不完成，`pump` busy 且用户连接名额无法自动回收。移动网络和共享 NAT 环境下将放大连接饥饿，不能以浏览器端重连代替服务器清理。
+
+修复把慢写等待抽到唯一 `writeSseFrame`，10 秒有界 deadline，清理 drain/close 监听器与 timeout。客户端 close 或截止均令路由释放 `activeStreams`、关闭流与定时器并销毁 socket；成功 drain 继续按原数据库序号发送和更新 cursor。Ping 拒绝写入亦有 catch 防止漏掉未处理 rejection。新增 fake stream 的即时、异步 drain、远端 close、半开超时、监听器清理回归，静态架构检查固定泄漏防护，原 API Smoke 的真实 Last-Event-ID、跨项目拒绝、注销关闭和 Docker/Web/Native 五组 CI 须最新 Head 通过、未解决审查线程为 0、主干无漂移才合并。无需新服务、数据库迁移或历史兼容端点。
+
+**剩余：** 流背压截止不提供消息已读回执，不证明每个移动网络断线客户端丢包为零；移动真实设备、浏览器长时间后台、反向代理超时与压测资源预算以及跨实例全局 SSE 配额、录像/实机 CI 仍为 #40/#51 未完成验收。

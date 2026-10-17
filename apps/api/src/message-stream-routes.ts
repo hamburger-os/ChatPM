@@ -1,4 +1,5 @@
 import type {FastifyInstance,FastifyRequest} from 'fastify';
+import type {ServerResponse} from 'node:http';
 import {z} from 'zod';
 import {listProjectMessages} from '../../../packages/core/src/conversation/message-queries.ts';
 
@@ -6,6 +7,36 @@ const uuid=z.string().uuid();
 // Process-local connection budget only; Message data and permissions remain in PostgreSQL.
 const activeStreams=new Map<string,number>();
 const MAX_USER_STREAMS=3;
+export const SSE_DRAIN_TIMEOUT_MS=10_000;
+
+/** Bounded backpressure: slow or half-open clients must never retain a stream
+ * slot forever. A timeout returns false, and the route destroys the socket.
+ * No message cursor advances before the corresponding write is accepted.
+ */
+export async function writeSseFrame(
+  socket:Pick<ServerResponse,'write'|'once'|'off'>,
+  frame:string,timeoutMs=SSE_DRAIN_TIMEOUT_MS,
+):Promise<boolean>{
+  if(socket.write(frame))return true;
+  return new Promise(resolve=>{
+    let settled=false;
+    const done=(ok:boolean)=>{
+      if(settled)return;
+      settled=true;
+      clearTimeout(deadline);
+      socket.off('drain',onDrain);
+      socket.off('close',onClose);
+      resolve(ok);
+    };
+    const onDrain=()=>done(true);
+    const onClose=()=>done(false);
+    const deadline=setTimeout(()=>done(false),timeoutMs);
+    deadline.unref();
+    socket.once('drain',onDrain);
+    socket.once('close',onClose);
+  });
+}
+
 const cursor=z.string().regex(/^(?:0|[1-9][0-9]{0,15})$/).transform(v=>{
   const parsed=Number(v);
   if(!Number.isSafeInteger(parsed))throw Object.assign(
@@ -60,17 +91,12 @@ export function registerMessageStreamRoutes(
 
     async function write(chunk:string):Promise<boolean>{
       if(!active)return false;
-      if(!reply.raw.write(chunk)){
-        // Respect HTTP backpressure instead of unbounded buffering of chat.
-        await new Promise<void>(resolve=>{
-          const done=()=>{
-            reply.raw.off('drain',done);
-            reply.raw.off('close',done);
-            resolve();
-          };
-          reply.raw.once('drain',done);
-          reply.raw.once('close',done);
-        });
+      if(!await writeSseFrame(reply.raw,chunk)){
+        // Includes close and drain deadline: reclaim the per-user stream
+        // budget even when the peer stops reading without a TCP FIN.
+        cleanup();
+        reply.raw.destroy();
+        return false;
       }
       return active;
     }
@@ -104,7 +130,10 @@ export function registerMessageStreamRoutes(
     }
     timer=setInterval(()=>void pump(),2500);
     ping=setInterval(()=>{
-      if(active&&!busy)void write(': keep-alive\n\n');
+      if(active&&!busy)void write(': keep-alive\n\n').catch(()=>{
+        cleanup();
+        reply.raw.destroy();
+      });
     },15000);
     timer.unref();
     ping.unref();

@@ -293,3 +293,7 @@ GET /projects/:id/outbox/summary 和 /dead 现委托 operations/outbox-admin.ts�
 ## ADR-086 · Outbox 私有诊断：活动租约与真正积压区分（2026-10-18）
 
 `tools/ops/doctor.mjs` 的单一队列聚合和阈值区分待执行超时（只含未领取事件）、十分钟不续期的 stalled claim、已到期的待重试压力和既存死信；合法 heartbeat 中的长耗时 AI 调用与预约的次日预算重试不再误报为排队逾期。返回 `overdueEvents`、`stalledClaims`、`retryReadyEvents`、`readyEvents`、`deadLetters` 与确定机器错误码。缺失计数 fail closed；未修改正式 Worker claim/续期/发布栅栏、DB 结构或产品权限。新增真实 PostgreSQL 队列状态对照、纯评价/静态守卫和 Product CI；远程运维通知、故障率趋势、服务中断注入与生产 SLA 依旧开放。
+
+## ADR-087 · SSE 半开慢客户端背压超时（2026-10-18）
+
+`message-stream-routes.ts` 的 `writeSseFrame` 将 `ServerResponse.write(false)` 后等待 `drain/close` 限定为 10 秒；超时与远端 close 都清理监听器、释放每用户连接预算并销毁 socket；心跳写异常也不会成为未处理 Promise rejection。消息仍由正式 PostgreSQL seq、项目授权读与 `Last-Event-ID` 恢复；无第二套业务消息缓存。新增单元 fake stream / 静态架构与 CI，原 HTTP SSE 恢复、授权、注销测试维持。真机移动端、边缘代理与持续压测仍是 #40 的未完成部分。

@@ -545,3 +545,22 @@ test('Doctor Outbox alert predicates distinguish active claims from queued and s
   assert.match(outbox,/renewEventLease\(event\)/);
   assert.match(ci,/tools\/test\/outbox-queue-health\.integration\.mjs/);
 });
+
+
+test('SSE stream has bounded backpressure and releases per-user slots on slow peer',()=>{
+  const stream=readFileSync(new URL('../../apps/api/src/message-stream-routes.ts',import.meta.url),'utf8');
+  const ci=readFileSync(new URL('../../.github/workflows/app-quality.yml',import.meta.url),'utf8');
+  assert.match(stream,/export const SSE_DRAIN_TIMEOUT_MS=10_000/);
+  assert.match(stream,/export async function writeSseFrame\(/);
+  assert.match(stream,/socket\.once\('drain',onDrain\)/);
+  assert.match(stream,/socket\.once\('close',onClose\)/);
+  assert.match(stream,/const deadline=setTimeout\(\(\)=>done\(false\),timeoutMs\)/);
+  assert.match(stream,/clearTimeout\(deadline\)/);
+  assert.match(stream,/socket\.off\('drain',onDrain\)/);
+  assert.match(stream,/socket\.off\('close',onClose\)/);
+  assert.match(stream,/if\(!await writeSseFrame\(reply\.raw,chunk\)\)\{\s+cleanup\(\);\s+reply\.raw\.destroy\(\)/);
+  assert.match(stream,/if\(count<=1\)activeStreams\.delete\(actorId\)/);
+  assert.match(stream,/ping=setInterval\(/);
+  assert.match(stream,/void write\(': keep-alive\\n\\n'\)\.catch/);
+  assert.match(ci,/tools\/test\/sse-backpressure\.test\.mjs/);
+});
