@@ -407,3 +407,9 @@
 **取舍。** 保留所有既有 URL、Zod DTO、回应形状、已发布迁移、`reports` 数据和 Worker 定期报告路径；不建兼容层、不引入 Reporting 表镜像、任务外的消息历史推断或新的工作流引擎。此次仍沿用已有 `report.generation_requested.v1` 事件对已发布报告的人工重新生成请求记账语义，未擅改其正式契约。大规模历史分页、报告内容版本化编辑、PDF 导出和真实跨平台实测仍属于后续工作。
 
 **验收。** 同 PR 增加真实 PostgreSQL 对 Owner/Manager/Observer/跨 Tenant、重试、冲突、发布后不可变、撤权和版本化 Receipt/Event 的验证，配合 API Smoke、全套 CI、文档检查；未执行的生产验收不标记完成。
+ 
+## ADR-073 · SSE 只加速持久消息序号而非另建事件事实（2026-10-17）
+
+采用当前 `messages.seq` 和项目级 advisory 提交顺序作为唯一事件游标，不引入第二套投递队列。新增 Conversation Core 当前成员锁定的同事务消息读模型（最近 200 条、`after` 增量、`before` 历史页），Fastify SSE 使用 `Last-Event-ID` / `id: seq`，每轮重检 Session 与 Tenant/Project 授权，失败立即结束流；最多 4 批×100 条、2.5 秒扫描、15 秒 keep-alive、连接/背压清理和进程内用户连接上限。Next `/api` 对流直接转发而不一次性缓冲，Web 持续 EventSource/后台暂停/REST 30 秒对账，支持读取更早历史。任何重连、弱网络丢事件都从持久序号补拉。
+
+此方案适合中小项目，服务器仍为每连接定期查询 DB，不声称已完成多实例广播/大规模连接压测/真实移动设备或反向代理公网验收；未解决 #40 的所有验收前保持开放。
