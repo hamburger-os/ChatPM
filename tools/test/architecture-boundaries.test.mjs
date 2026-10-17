@@ -344,7 +344,7 @@ test('project membership and settings endpoints are pure DTO delegation',()=>{
     'removeProjectMember','transferProjectOwnership','updateProjectSettings'];
   for(const name of methods){
     assert.ok(api.includes(name+'('),'HTTP must delegate '+name);
-    assert.ok(core.includes('export function '+name+'('),'Identity Core owns '+name);
+    assert.match(core,new RegExp('export (?:async )?function '+name+'\\('),'Identity Core owns '+name);
   }
   assert.doesNotMatch(api,/\bSELECT\b|\bINSERT\s+INTO\b|\bUPDATE\s+\w+|\bDELETE\s+FROM\b|(?:pool|db)\.query\s*\(|executePmCommand\s*\(/i);
   assert.equal((core.match(/return executePmCommand\(/g)||[]).length,5);
