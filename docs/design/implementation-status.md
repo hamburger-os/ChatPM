@@ -269,3 +269,7 @@ GET /projects/:id/outbox/summary 和 /dead 现委托 operations/outbox-admin.ts�
 ## ADR-080 · Worker lane 独立诊断（2026-10-17）
 
 旧 `worker_health.default` 无法识别独立 AI/Outbox、提醒、报告任一通道失效。已通过新的 `029_worker_lane_health.sql` 约束迁移为三个独立状态、Worker 按 lane 记录成功/失败、Doctor 对各通道单独核验心跳和成功时效及最近失败。缺失记录默认告警，恢复不需要清空历史失败字段。现有 Linux 定时诊断继续生效，新增 Windows LocalService 五分钟周期任务安装脚本；真实 PostgreSQL 模拟其中一条通道失败/恢复/停更，并纳入 Product CI/架构测试。该诊断能触发**操作系统任务非零退出**，但不包含外部邮件或 IM 通知送达、不等于生产主动通知与故障注入全部完成。#4/#49/#51 保持开放。
+
+## ADR-081 · Account Identity Core（2026-10-17）
+
+注册资格、用户/租户初始创建、登录密码校验、个人资料与所属租户列表迁移至 `identity/account-services.ts` 统一业务入口，原 `server.ts` 对应五个路由只保留 DTO/session/cookie 逻辑。沿用原 `registration-policy.ts` bootstrap 锁、默认关闭公众自由注册的生产策略及现有 Session 服务，未新增 DB 字段、镜像权限或兼容端点。真实 PostgreSQL 身份注册/登录/撤权/跨租户隔离、静态架构守卫与原 compiled HTTP Smoke 已进入 Product CI。剩余 #49 Worker/其它 API 边界与 #39 公网安全/生产身份风控仍不视作完成。

@@ -366,3 +366,11 @@ CI 须验证 PostgreSQL 游标 200 条边界、25 条更早记录、跨项目与
 从合并后的 `main` `db5021d` 完整检查 Worker/Outbox/Doctor。发现 Worker 三条 independent lane 都调用 `recordWorkerHeartbeat(succeeded)`，聚合写 `worker_health('default')`；因此事件/AI/Outbox 失败后，提醒频繁成功会覆盖最近成功时间，造成健康误报。已修改 Worker 使用唯一 `WorkerLane` 类型，心跳在 PostgreSQL 中按 lane 独立；`029_worker_lane_health.sql` 显式删除旧共享遥测，禁止旧行。Doctor 仍在同一受控本地运维入口读取，按 lane 阈值与最后失败时间分别产出错误码。既有 Linux 计划任务保留，Windows 增加单独 LocalService 诊断任务安装脚本（绝不嵌密钥）。
 
 /review 验证：某通道失败、其它通道健康时需 unhealthy；失败后独立成功恢复需 healthy；陈旧/缺失 lane 必须 fail closed；重复迁移 checksum、Worker 架构 guard、真实 PostgreSQL 记录、Unit Ops、构建、Docker 及 Windows/Linux 检查最新 SHA 均成功、零未解决审查线程才合并。后台 AI 模型实际提供商、多 Worker 崩溃竞态、外部告警通道和生产任务调度实机运行尚无完成证据，#4/#49/#51 不得关闭。
+
+## ADR-081 · 账户注册、登录、组织导航边界 /review（2026-10-17）
+
+以已合并主干 #107 的提交 `086efe0` 为新基线，复核 `server.ts` 后发现账户自注册事务、密码验证、注册资格、当前账号资料与租户导航仍由 HTTP 持有业务 SQL。现将五个入口下沉 `identity/account-services.ts` 复用唯一 RegistrationPolicy、Security 密码逻辑和 PostgreSQL；API 只保留 Zod/认证 Cookie/Origin/限流，不新设兼容 API、缓存在先 RBAC、用户角色镜像或第二事务管理器。认证失败返回先前 401 与相同中文信息；注册仍以唯一 bootstrap 锁及数据库 email UNIQUE 防竞态，用户/组织/管理员原子写入。
+
+**验收门禁。** 真实数据库 Core 测试核验正确与错误密码、密码 hash 不进入公开返回、重复邮箱事务回滚、跨组织不可见、用户总管理员状态当前值、组织资格撤销后导航消失；历史 bootstrap 并发 race 测试、前端同源 Cookie/Origin、编译 API Smoke 与全部五组 CI 保留。静态架构守卫禁止新业务查询回流 HTTP。未得到最新 Head Product、Docs、Native、Docker、Security 全绿、主干未漂移和审查线程 0 之前不合并。
+
+**尚未解决：** #49 其它领域 API/Worker 故障、#39 QNAP/IPv6 公网网络及注册风控、#50 AI 能力审批与真实模型、#51 Win11/Linux 实机及迁移恢复。模块收敛不代表所有需求已实现或可直接投入生产。

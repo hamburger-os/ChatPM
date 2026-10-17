@@ -487,3 +487,13 @@
 **诊断策略。** 唯一可执行阈值规则存放 `tools/ops/doctor.mjs`：events/reminders 最后心跳 180 秒、成功 300 秒，reports 最后心跳/成功 900 秒（报告扫描计划约每 300 秒）。缺失任意通道行、最近 tick 失败、成功过期、心跳过期均输出机器可解析的明确 lane 告警码，并将 doctor 进程置非零退出码。原 Outbox 逾期、死信、API、DB/迁移检测保持。Linux 沿用已存在的 `chatpm-doctor.timer` 5 分钟检测；Windows 新增 LocalService 低权限 `install-doctor-task.ps1` 同频执行。该任务本身只写诊断退出码/操作系统日志，**不会自动向邮箱、IM 或公网 webhook 发送通知**，需要企业监控对非零检查结果及任务长期未运行单独建立通知路由/升级策略。
 
 **理由与边界。** 保留 API/Worker/Web 三进程和单 PostgreSQL；不将告警写成聊天消息/AI 候选、也不在内网 Worker 随机调用未验证的公网 webhook（避免凭据泄漏与 SSRF）。故障注入测试验证一条通道失败、另外两条成功不再掩盖故障；成功恢复、陈旧心跳、缺失记录、数据库 CHECK 和 CLI 规则各自可复现。通道遥测不是 per-pod 活跃探针；多实例/模型上游网络真实超时、外部 PagerDuty/邮件/IM 送达、通知去重升级、压测 SLA 仍需独立 #4/#49/#51 验收。
+
+## ADR-081 · 账户身份与租户导航统一归属 Identity Core（2026-10-17）
+
+**问题。** Fastify `server.ts` 在路由直接写账户创建、密码验证、注册状态、用户个人信息和组织列表 SQL；此前项目、组织治理已经各归 Core，身份根命令仍留在 HTTP 入口，形成模块边界例外，权限与注册逻辑容易被后续路由复制。
+
+**选择。** 新建单一 `identity/account-services.ts`，负责 `getRegistrationStatus`、`registerAccount`、`authenticateAccount`、`getAccountProfile`、`listAccountTenants`。注册命令保持 `enforceRegistration` 的唯一 bootstrap PostgreSQL advisory transaction lock，按现有 `REGISTRATION_MODE` 和部署者单一 `BOOTSTRAP_TOKEN` 规则执行；User、Tenant、TenantMember(admin) 在同一事务插入，任何用户名冲突回滚全部。核心密码 hash/verify 继续使用既有 `security.ts`；不新建重复凭据存储、不持久化明文、不将注册秘钥返回客户端。登录返回 id/email/display_name，不回传 password_hash；系统管理员状态在用户记录的同一次读取里获得；租户导航按当前 `tenant_members.user_id` 实时查询，不给跨租户用户缓存身份许可。
+
+**HTTP 边界与取舍。** Fastify 仅负责 Zod DTO、Cookie 设定、会话验证、Origin 与原速率限制；无需改变已有 URL、状态码或公开 response shape。创建 Session/登出仍调用现有 `security.ts`，不在本次引入认证微服务、第二个 RBAC、额外登录缓存、后门注册模式或旧接口兼容层。保留现有账户创建“新用户自动有自己组织”的 open/bootstrap 策略；生产默认 bootstrap、首次创建后关闭，额外人员需经过邀请闭环。跨组织项目成员资格/系统管理员的正式写操作仍由当前 DB 事务授权；个人资料仅 UI 信号，不构成管理员命令许可。
+
+**测试。** 真实 PostgreSQL 验证原子注册、密码哈希与正确/错误登录、重复邮箱不可创建第二租户、个人总管理员身份当前值、跨租户不可导航、组织成员撤销即时隐藏及后续改角色恢复可见；现有 bootstrap 并发测试、HTTP Auth/Cookie/CSRF/注册限流/邀请、Docker 与原生构建保留。静态守卫禁止 HTTP 账户路由恢复业务 SQL、hash 与注册事务。剩余 #49 其它 API 模块边界、系统强密码/多因素认证、正式生产环境安全与性能验收另行处理，不在本 PR 假定全部完成。
