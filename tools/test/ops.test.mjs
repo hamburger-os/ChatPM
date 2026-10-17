@@ -112,6 +112,7 @@ test('existing PostgreSQL volume blocks missing or placeholder credentials', () 
 });
 
 import { parseRestoreArgs } from '../ops/restore.mjs';
+import { postgresClientEnvironment } from '../ops/postgres-env.mjs';
 import { readFileSync } from 'node:fs';
 
 test('restore refuses operation without both explicit confirmations', () => {
@@ -119,6 +120,42 @@ test('restore refuses operation without both explicit confirmations', () => {
   assert.throws(() => parseRestoreArgs(['backup.dump', '--confirm-replace']), /--confirm-services-stopped/);
   assert.throws(() => parseRestoreArgs(['nonexistent.dump','--confirm-replace','--confirm-services-stopped']),
     /Backup file not found/);
+});
+
+test('native backup and restore share one PostgreSQL subprocess environment parser', () => {
+  const input = {
+    DATABASE_URL: 'postgresql://backup:s%40cr%3Aet@db.example:5544/pm?sslmode=require',
+    PGHOST: 'stale-host', PGPORT: '1234', PGUSER: 'stale-user',
+    PGPASSWORD: 'stale-password', PGDATABASE: 'stale-db',
+    UNRELATED: 'preserved',
+  };
+  const result = postgresClientEnvironment(input);
+  assert.deepEqual({
+    host: result.PGHOST, port: result.PGPORT, user: result.PGUSER,
+    password: result.PGPASSWORD, database: result.PGDATABASE,
+    sslmode: result.PGSSLMODE,
+  }, {
+    host: 'db.example', port: '5544', user: 'backup',
+    password: 's@cr:et', database: 'pm', sslmode: 'require',
+  });
+  assert.equal(result.UNRELATED, 'preserved');
+  assert.equal(Object.hasOwn(result, 'DATABASE_URL'), false);
+  assert.equal(input.PGHOST, 'stale-host', 'input must remain unchanged');
+  const native = {
+    PGHOST: '127.0.0.1', PGUSER: 'chatpm',
+    PGDATABASE: 'chatpm', PGPORT: '5432',
+  };
+  assert.deepEqual(postgresClientEnvironment(native), native);
+});
+
+test('shared PostgreSQL environment rejects invalid or incomplete credentials', () => {
+  assert.throws(() => postgresClientEnvironment({ DATABASE_URL: 'http://example.com/db' }),
+    /Expected PostgreSQL DATABASE_URL/);
+  assert.throws(() => postgresClientEnvironment({ PGHOST: 'localhost', PGUSER: 'chatpm' }),
+    /Configure DATABASE_URL or PGHOST/);
+  const result = postgresClientEnvironment({ DATABASE_URL: 'postgres://u:p@localhost/db' });
+  assert.equal(result.PGPORT, '5432');
+  assert.equal(result.PGDATABASE, 'db');
 });
 
 test('Web binds loopback natively and exposes container networking only when explicitly selected', () => {
