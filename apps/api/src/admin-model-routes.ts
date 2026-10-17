@@ -2,9 +2,13 @@ import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import { systemAdminTransaction } from '../../../packages/core/src/identity/system-access.ts';
 import {
-  deleteModelConfig,deleteProvider,importModelConfigs,listModelConfigs,listProviders,
-  resolveModelConfig,resolveProviderCatalogConfig,saveModelConfig,saveProvider,
+  listModelConfigs,listProviders,resolveProviderCatalogConfig,
 } from '../../../packages/core/src/project-model.ts';
+import {
+  createPlatformProvider,updatePlatformProvider,deletePlatformProvider,
+  importPlatformModels,createPlatformModel,updatePlatformModel,
+  deletePlatformModel,preparePlatformModelTest,
+} from '../../../packages/core/src/identity/platform-model-commands.ts';
 import { discoverProviderModels } from '../../../packages/core/src/model-catalog.ts';
 import { callStructuredLLM, modelAuditIdentity, probeModelText } from '../../../packages/core/src/llm-transport.ts';
 
@@ -12,23 +16,6 @@ const uuid=z.string().uuid();
 const denied=(code:number,message:string):never=>{
   throw Object.assign(new Error(message),{statusCode:code});
 };
-const providerSchema=z.object({
-  name:z.string().trim().min(1).max(100),
-  baseUrl:z.string().url().max(2048),
-  style:z.enum(['responses','chat-completions']),
-  enabled:z.boolean(),
-  apiKey:z.string().min(1).max(5000).regex(/^[^\r\n]+$/).optional(),
-}).strict();
-const modelSchema=z.object({
-  name:z.string().trim().min(1).max(100),
-  model:z.string().trim().min(1).max(150),
-  providerId:uuid,
-  reasoning:z.enum(['auto','none','low','medium','high','max']),
-  reasoningFormat:z.enum(['none','responses-effort','chat-completions-effort']),
-  maxOutputTokens:z.number().int().min(512).max(131072),
-  contextChars:z.number().int().min(2000).max(250000),
-  enabled:z.boolean(),isDefault:z.boolean(),
-}).strict();
 
 export function registerAdminModelRoutes(app:FastifyInstance,
   authenticated:(req:FastifyRequest)=>Promise<string>):void{
@@ -38,41 +25,16 @@ export function registerAdminModelRoutes(app:FastifyInstance,
   });
   app.post('/admin/ai/providers',async(req,reply)=>{
     const actor=await authenticated(req);
-    const provider=await systemAdminTransaction(actor,async db=>{
-      const value=providerSchema.parse(req.body);
-      const saved=await saveProvider(db,null,value);
-      await db.query(`INSERT INTO system_audit_entries(actor_id,action,target_id,metadata)
-        VALUES($1,'ai.provider_created',$2,$3)`,
-        [actor,saved.id,JSON.stringify({name:saved.name,style:saved.style})]);
-      return saved;
-    });
+    const provider=await createPlatformProvider(actor,req.body);
     return reply.code(201).send({provider});
   });
   app.put('/admin/ai/providers/:id',async req=>{
     const actor=await authenticated(req),id=uuid.parse((req.params as {id:string}).id);
-    const provider=await systemAdminTransaction(actor,async db=>{
-      const value=providerSchema.parse(req.body);
-      const saved=await saveProvider(db,id,value);
-      await db.query(`INSERT INTO system_audit_entries(actor_id,action,target_id,metadata)
-        VALUES($1,'ai.provider_updated',$2,$3)`,[actor,id,JSON.stringify({
-        name:saved.name,style:saved.style,enabled:saved.enabled,secretChanged:Boolean(value.apiKey),
-      })]);
-      return saved;
-    });
-    return {provider};
+    return {provider:await updatePlatformProvider(actor,id,req.body)};
   });
   app.delete('/admin/ai/providers/:id',async req=>{
     const actor=await authenticated(req),id=uuid.parse((req.params as {id:string}).id);
-    const removed=await systemAdminTransaction(actor,async db=>{
-      const related=await db.query('SELECT 1 FROM ai_model_configs WHERE provider_id=$1 LIMIT 1',[id]);
-      if(related.rowCount)denied(409,'请先移除该供应商的模型');
-      const ok=await deleteProvider(db,id);
-      if(ok)await db.query(`INSERT INTO system_audit_entries(actor_id,action,target_id)
-        VALUES($1,'ai.provider_deleted',$2)`,[actor,id]);
-      return ok;
-    });
-    if(!removed)denied(404,'供应商不存在');
-    return {ok:true};
+    return deletePlatformProvider(actor,id);
   });
 
   app.post('/admin/ai/providers/:id/discover',async req=>{
@@ -102,20 +64,7 @@ export function registerAdminModelRoutes(app:FastifyInstance,
   });
   app.post('/admin/ai/models/import',async(req,reply)=>{
     const actor=await authenticated(req);
-    const result=await systemAdminTransaction(actor,async db=>{
-      const input=z.object({
-        providerId:uuid,
-        models:z.array(z.object({
-          id:z.string().trim().min(1).max(150).regex(/^[^\r\n]+$/),
-          name:z.string().trim().min(1).max(100).optional(),
-        }).strict()).min(1).max(50),
-      }).strict().parse(req.body);
-      const imported=await importModelConfigs(db,input.providerId,input.models);
-      await db.query(`INSERT INTO system_audit_entries(actor_id,action,target_id,metadata)
-        VALUES($1,'ai.models_imported',$2,$3)`,[actor,input.providerId,
-        JSON.stringify({...imported,count:input.models.length})]);
-      return imported;
-    });
+    const result=await importPlatformModels(actor,req.body);
     return reply.code(201).send(result);
   });
 
@@ -125,59 +74,21 @@ export function registerAdminModelRoutes(app:FastifyInstance,
   });
   app.post('/admin/ai/models',async(req,reply)=>{
     const actor=await authenticated(req);
-    const model=await systemAdminTransaction(actor,async db=>{
-      const value=modelSchema.parse(req.body);
-      const saved=await saveModelConfig(db,null,value);
-      await db.query(`INSERT INTO system_audit_entries(actor_id,action,target_id,metadata)
-        VALUES($1,'ai.model_created',$2,$3)`,[actor,saved.id,JSON.stringify({
-        name:saved.name,model:saved.model,providerId:saved.providerId})]);
-      return saved;
-    });
+    const model=await createPlatformModel(actor,req.body);
     return reply.code(201).send({model});
   });
   app.put('/admin/ai/models/:id',async req=>{
     const actor=await authenticated(req),id=uuid.parse((req.params as {id:string}).id);
-    const model=await systemAdminTransaction(actor,async db=>{
-      const value=modelSchema.parse(req.body);
-      const saved=await saveModelConfig(db,id,value);
-      await db.query(`INSERT INTO system_audit_entries(actor_id,action,target_id,metadata)
-        VALUES($1,'ai.model_updated',$2,$3)`,[actor,id,JSON.stringify({
-        model:saved.model,providerId:saved.providerId,
-        enabled:saved.enabled,isDefault:saved.isDefault})]);
-      return saved;
-    });
-    return {model};
+    return {model:await updatePlatformModel(actor,id,req.body)};
   });
   app.delete('/admin/ai/models/:id',async req=>{
     const actor=await authenticated(req),id=uuid.parse((req.params as {id:string}).id);
-    const deleted=await systemAdminTransaction(actor,async db=>{
-      const removed=await deleteModelConfig(db,id);
-      if(removed)await db.query(`INSERT INTO system_audit_entries(actor_id,action,target_id)
-        VALUES($1,'ai.model_deleted',$2)`,[actor,id]);
-      return removed;
-    });
-    if(!deleted)denied(404,'模型不存在');
-    return {ok:true};
+    return deletePlatformModel(actor,id);
   });
   app.post('/admin/ai/models/:id/test',async req=>{
     const actor=await authenticated(req);
     const id=uuid.parse((req.params as {id:string}).id);
-    // Credential resolution AND the billable-call cooldown are protected by
-    // the current platform-admin row lock in ONE DB transaction. Never hold
-    // a PostgreSQL connection across the external model network request.
-    const {config,mode}=await systemAdminTransaction(actor,async db=>{
-      const mode=z.object({mode:z.enum(['quick','full']).default('quick')})
-        .strict().parse(req.body??{}).mode;
-      const config=await resolveModelConfig(id,true,db)
-        .catch(()=>denied(400,'模型配置不可用'));
-      const check=await db.query(`INSERT INTO ai_model_checks(model_config_id,last_test_at)
-        VALUES($1,NOW()) ON CONFLICT(model_config_id) DO UPDATE SET
-        last_test_at=NOW() WHERE ai_model_checks.last_test_at<NOW()-INTERVAL '30 seconds'
-        RETURNING model_config_id`,[id]);
-      if(!check.rowCount)denied(429,
-        '每个模型最多每 30 秒测试一次，以避免误触发计费调用');
-      return {config,mode};
-    });
+    const {config,mode}=await preparePlatformModelTest(actor,id,req.body);
     const started=Date.now();
     const identity=modelAuditIdentity(config);
     const codeFor=(error:unknown):string=>{

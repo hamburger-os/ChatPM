@@ -285,3 +285,7 @@ GET /projects/:id/outbox/summary 和 /dead 现委托 operations/outbox-admin.ts�
 ## ADR-084 · 平台模型凭据读取单一管理员授权边界（2026-10-17）
 
 模型提供商 GET、模型清单 GET、目录发现时的凭据取得，以及模型 quick/full 测试读取与计费冷却，统一在现有 `systemAdminTransaction` 内检查当前系统总管理员并使用同一 DbClient；模型出站 HTTP(S) 请求只在事务提交后发出。`listProviders/listModelConfigs/resolveProviderCatalogConfig` 的公共业务函数要求调用者传入 `DbClient`，不再绕过受权连接使用默认 pool；平台模型管理 HTTP 去除重复 `requireSystemAdmin` 预检。真实 PostgreSQL 读敏感信息/撤权锁回归和架构守卫加入 Product CI。原模型密钥加密、不向前端返回密钥、请求冷却及模型网络 SSRF 策略保持。不代表已完成全项目 API/Worker 边界、模型真实流量/账单或 QNAP/Win11/Linux 生产验收。
+
+## ADR-085 · 平台 AI 模型正式管理命令收敛（2026-10-17）
+
+供应商创建/编辑/删除、模型批量导入/创建/编辑/删除、quick/full 模型测试的权限+冷却准备已从 Fastify 管理路由归入 `identity/platform-model-commands.ts`，复用单一 `systemAdminTransaction`、原 provider/model 存储模型、AES-GCM 密钥和正式 `system_audit_entries`。同一个 Core Zod input contract 保证非管理员先 403，不再通过异常字段探测模型配置规则。HTTP 仅负责身份、参数、返回和经批准的模型网络探针；没有第二份审计、权限缓存或兼容路径。真实 PostgreSQL 模型管理/审计/权限/冷却回归进入 Product CI。#49 剩余业务与 Worker 边界、真实模型厂商/密钥吊销、公网部署验收仍是独立开放项。

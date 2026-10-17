@@ -244,3 +244,9 @@ English: Invitation metadata contains sensitive recipient email addresses. The s
 中文：只有当前系统总管理员能够查看模型供应商、模型设置、取得模型目录连接凭据或执行测试。这些查询在同一数据库事务内锁定管理员权限，不再依赖 HTTP 之前做过的权限检查。模型测试会在授权事务内取得设置并记录调用冷却，但真正的外部模型网络请求只在事务结束后发起，避免占住数据库连接。供应商列表只展示是否有密钥，不暴露明文 API Key；项目成员不能自行修改系统模型配置。
 
 English: Platform AI provider/model metadata and catalog credentials are read only while a live system-admin grant is checked and locked in one Core transaction. Model test settings and cooldown are committed together, then external model HTTP happens **after** the transaction closes. Lists return public metadata and key-presence flags, never provider secrets. This does not by itself certify live WAN egress, API-key rotation, vendor billing or production deployment.
+
+### 模型供应商与模型管理正式命令 / Core-owned AI model administration
+
+中文：系统总管理员可以维护 AI 供应商与模型、导入供应商列表及发起模型连通性测试。所有正式操作现在由 Identity Core 的同一管理命令服务处理，先校验当前管理员身份、再验证请求和执行数据库事务，并同步记录不可遗漏的系统审计。后端仅存储加密 API Key，页面不会返回密钥；模型测试受 30 秒冷却保护，真正网络请求在事务外执行。普通项目成员只使用管理员配置且获项目授权的模型，不自行设置供应商。
+
+English: Platform provider/model create, edit, delete, import and connection-test preparation are owned by one Core command service. Current system-admin authorization, strict DTO validation, mutations, the existing audit trail and model-test cooldown share a database transaction. Secrets are encrypted and never returned in public management DTOs; external provider HTTP runs after the transaction commits. Full enterprise authentication, vendor billing and production egress certification remain separate validation tasks.

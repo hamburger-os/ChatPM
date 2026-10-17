@@ -436,3 +436,10 @@ retryDeadEvent 唯一使用现有 executePmCommand：当前授权、dead_at 非�
 - `project-model.ts` 中 `listProviders(db)`、`listModelConfigs(db)`、`resolveProviderCatalogConfig(id,db)` 要求一个已经通过 `systemAdminTransaction` 检查的 `DbClient`；受保护的列表只输出公开 provider/model DTO。仅系统管理员管理入口能在同一事务中取得解密的目录密钥，普通项目成员不能通过 URL 指定连接目标。
 - quick/full 模型连接测试的配置读取与 30 秒 `ai_model_checks` 冷却更新必须处于**同一个**授权事务；事务完成后才允许访问网络模型，避免持有授权行锁或数据库连接等待外部 DNS/HTTP。此限制不替换项目 Worker 的既有 Project 模型解析事务。
 - 禁止引入模型管理用第二套 RBAC 缓存、明文密钥落库或 UI 中可见的 API Key；目前后端的模型出站仍由唯一 `model-egress.ts` 执行 DNS/SSRF 防护，Docker 本机模型仍受 ADR-082 精确网关 PIN 规则约束。
+
+## ADR-085 · 系统模型正式命令 Owner
+
+- `identity/platform-model-commands.ts` 是系统模型供应商/模型 CRUD、导入与模型测试准备共八类业务操作的**唯一**所有者；其受控 Zod schema 是平台模型写入的单一输入规则来源。模型 HTTP 路由不可再直接调用 `saveProvider`、`saveModelConfig`、`importModelConfigs` 或编写 `system_audit_entries`/冷却 SQL。
+- 八类操作的业务代码只能在 `systemAdminTransaction` 下运行：锁当前 `users.is_system_admin`，拒权先于校验 body，然后 Core 调用 `project-model.ts` 的标准 DB 存储方法并写一次系统审计。模型批量导入保留既有重复模型 skip 语义；provider 不可删除仍有模型的连接；写入失败不得生成成功审计或明文凭据日志。
+- `preparePlatformModelTest` 仅返回当前授权下经过冷却核验的配置与 quick/full mode；真实目录、文本与结构化模型的出站 HTTP 必须在事务关闭后由路由调用已有安全传输。模型密钥仅存在服务端内存及加密 DB，不能在 UI、响应或审计中出现。
+- 未来模型管理命令应扩展此一个 Core 模块及其事务/审计集成测试，不能在路由新加一套业务写 SQL、管理员权限镜像或新的密钥存储。
