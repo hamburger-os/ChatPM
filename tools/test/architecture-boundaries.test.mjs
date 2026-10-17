@@ -333,3 +333,24 @@ test('all formal PM mutations stay in the single Core command owner',()=>{
   assert.match(core,/input\.decision==='complete'\?'pm.accept':'pm.plan'/);
   assert.match(core,/projectId,actorId:user,idempotencyKey:input\.idempotencyKey/);
 });
+
+test('project membership and settings endpoints are pure DTO delegation',()=>{
+  const api=readFileSync(new URL('../../apps/api/src/project-governance-routes.ts',import.meta.url),'utf8');
+  const core=readFileSync(new URL('../../packages/core/src/identity/project-governance.ts',import.meta.url),'utf8');
+  const methods=['listProjectMembers','addProjectMember','changeProjectMemberRole',
+    'removeProjectMember','transferProjectOwnership','updateProjectSettings'];
+  for(const name of methods){
+    assert.ok(api.includes(name+'('),'HTTP must delegate '+name);
+    assert.ok(core.includes('export function '+name+'('),'Identity Core owns '+name);
+  }
+  assert.doesNotMatch(api,/\b(?:SELECT|INSERT|UPDATE|DELETE|FROM)\b|(?:pool|db)\.query\s*\(|executePmCommand\s*\(/i);
+  assert.equal((core.match(/return executePmCommand\(/g)||[]).length,5);
+  assert.equal((core.match(/await assertNoActiveResponsibilities\(db,projectId,target,/g)||[]).length,2);
+  assert.match(core,/return withProjectRead\(projectId,actorId,'read'/);
+  assert.match(core,/FOR UPDATE/);
+  assert.match(core,/replayAction:'read'/);
+  assert.match(core,/ownership_revision=ownership_revision\+1/);
+  assert.match(core,/project_change_requests/);
+  assert.match(core,/resource_allocations/);
+  assert.match(core,/syncFollowup\(db,projectId,task\.id\)/);
+});

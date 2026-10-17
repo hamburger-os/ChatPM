@@ -441,3 +441,13 @@
 **保持的不变量。** 项目/组织成员撤权保护与角色 `pm.plan`/`pm.submit`/`pm.accept`/`pm.approve` 仍由后端管控；交付物必须由当前责任人提交，独立审核者验收；Issue 状态只能合法切换并留下历史备注；重大 Change 不允许申请人自批，批准不等于实施完成，需不同有效责任人及项目原始消息的实施证据；任务依赖保持项目级锁、跨项目拒绝、循环拒绝和完成前置约束；同一意图的幂等键重放不得产生新事件。人工审核仍不授权 AI 直接更改正式状态。
 
 **取舍与验收。** 当前代码保留完整 REST 路径、状态码、返回结构、事件 kind、数据库字段和历史，且无需历史兼容层。真实 PostgreSQL 直接调用 Core 验证创建、幂等、权限、验收、Issue 历史、依赖环与 Receipt/Event/Audit 原子数量；静态守卫阻止 Fastify 再直接调用 `executePmCommand` 或持有正式 PM SQL。原编译版 API Smoke、Web、native、Docker 和 Security 全套以 PR 最新 Head 验收。并不声称 Owner 模型单源、全域 API/Worker SQL、企业生产迁移及实机环境已经完成。
+
+## ADR-077 · 项目成员、Owner 移交和设置的 Identity Core 所有权（2026-10-17）
+
+**问题。** `project-governance-routes.ts` 仍在 Fastify 层实现成员新增、角色降级、移除、Owner 移交、项目设置的 `executePmCommand` 及领域 SQL；GET /projects/:id/members 先经 pool 授权，再用独立连接读取名单，存在成员/组织撤权窗口。降级为 observer 与移除前的五类有效责任核验各实现一份，改动其中一处可能造成不一致的权限回归。
+
+**决定。** `identity/project-governance.ts` 唯一拥有项目成员及设置读写实现；GET 使用既有 `withProjectRead` REPEATABLE READ + `lockProjectAccess` 的当前组织/项目成员 FOR SHARE 快照；五个写入调用同一 `executePmCommand`，保持 `members.manage/settings.manage` 当前权限、Receipt/Audit/DomainEvent/Outbox 事务、原事件 kind 和 Owner 移交旧负责人只读重放语义。新增 `assertNoActiveResponsibilities`，在目标项目成员行 FOR UPDATE 锁保护下，同一条 SQL 检查未完成 Task、待验收 Deliverable、未取消且未过期资源分配、未关闭 Risk、实施中的 Change；降级/移除复用同一拒绝判定，保留原针对未完成任务的两种操作提示。
+
+**设计取舍。** 不创建抽象基类、双轨接口或平行事实表；仍保留现有 `projects.owner_id/ownership_revision` 及成员 `role='owner'` 的双重存储现状，此问题需要另行统一而非借 HTTP 重构悄悄修改历史数据库。共享责任检查不会把完成的任务或已验收交付物当作悬空任务，历史记录不被物理删除。所有权限最终以 Core + PostgreSQL 当前成员关系为准，组织/项目管理员关系不自动扩大到其它项目。HTTP 只解析 UUID、Zod DTO 和 Session。
+
+**验收。** 真实 PostgreSQL 在 Core 层验证观察者/陌生人/跨租户隔离、名单撤权、成员新增同键回放与 payload 冲突、五类未了责任对降级和删除均阻断、清除责任后状态变更与 Owner 移交、设置更新版本/无效工作时间、旧负责人只能重放原移交，以及每次成功 Command 仅有一条 Receipt/Event/Audit。增加静态边界守卫禁止 HTTP 路由再持有成员业务 SQL。CI 的最终 Head 必须经过 Product/Docs/Native/Docker/Security 全项通过和 /review。

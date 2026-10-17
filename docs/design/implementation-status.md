@@ -251,3 +251,7 @@ GET /projects/:id/outbox/summary 和 /dead 现委托 operations/outbox-admin.ts�
 ## ADR-076 · 正式 PM 登记簿命令归属（2026-10-17）
 
 原 `pm-routes.ts` 的八类业务命令已集中在 `governance/pm-register-commands.ts`，继续复用同一个 `executePmCommand`，包括目标/里程碑/交付物/Issue/Decision/Change 创建、交付物改派/提交/独立验收、Issue 处理、重大变更审批/实施及任务依赖。创建 Schema 与固定 SQL 目录规格也移至 Core，路由不再直接持有正式 PM SQL、领域事件或回执。新增 Core PostgreSQL 直接调用、幂等/权限/版本/事件审计回归及 API 边界静态守卫，接入 Product CI。此切片不修改数据库迁移或正式用户接口；#48/#49 的其它领域与 Project Owner 双来源仍需后续收敛，不等于所有 V2 Epic 已完成。
+
+## ADR-077 · Identity 项目治理与有效责任单一规则（2026-10-17）
+
+项目成员 GET 和成员增删改、Owner 迁移、项目设置的业务实现从 Fastify `project-governance-routes.ts` 移至 Identity Core `project-governance.ts`。GET 复用当前 Tenant/Project 成员锁与一事务快照；写入仍走唯一 `executePmCommand`。观察者降级和移除共用五种未完成责任检查（Task、Deliverable、Allocation、Risk、Change），消除重复 SQL，同时保留原 HTTP DTO、授权及审计/事件语义。真实 PostgreSQL 回归和静态架构门禁接入 Product CI。这不消除 `projects.owner_id` 的重复事实，也不表示其它 API/Worker 或生产实机已验收；#48/#49 保持开放。

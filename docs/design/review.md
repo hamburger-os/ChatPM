@@ -334,3 +334,11 @@ CI 须验证 PostgreSQL 游标 200 条边界、25 条更早记录、跨项目与
 本次审查将 `pm-routes.ts` 的八类变更全量与 `governance/pm-register-commands.ts` 逐项比对，核心要求：SQL 表名必须来自固定 Schema/字段规格，HTTP 不参与 CommandReceipt/DomainEvent/Outbox；所有写入继续使用唯一 `executePmCommand` 当前身份锁、幂等与审计事务。交付物改派后旧提交失效、提交人与审核人分离，Issue 不能无理由解决/重开，Change 审批不可自批且实施需要有效负责人真实项目消息证据，依赖防环路及已完成任务前置约束不能因重构消失。无 V1/V2 双命令、无旧路由兼容层、无新表。
 
 回归门禁：真实 PostgreSQL Core 集成 + 原编译版 API Smoke 保留业务和越权语义；静态测试确保 Fastify 不再拥有 `executePmCommand` 或直接 PM SQL；新 PR 最终 Head 的 Product/Docs/Windows+Linux/Docker/Security 五项全 success、Review threads 无阻断和 main 未漂移后才能 Squash Merge。此处是 #48/#49 的 PM 命令归属完成切片，**不是**全系统完工：Project Owner 双来源、组织部分查询、主动运维告警、多 Worker 故障、PMP 跨项目收益/容量、AI Playbook/真实评测、生产 HTTPS/Win11/QNAP/PITR/签名包/迁移均仍有独立门槛。
+
+## ADR-077 · /review 项目治理完整路由检查（2026-10-17）
+
+基线为主干 PR #103 合并提交 `c280798`。审查发现 `project-governance-routes.ts` 六个入口中五类写操作仍包含项目成员、Owner 和设置的业务 SQL，且成员列表使用 HTTP 单独授权再二次查询。通过将 SQL 所有权移交 `identity/project-governance.ts`，复用同一 `withProjectRead` 权限快照与 `executePmCommand` 事务边界，使 API 仅负责参数转换；没有改写任何已发布 migration、URL、返回结构或数据模型。
+
+/review 必须核对：每个 GET/POST/PATCH/DELETE 只委托一次 Core；观察者/跨项目/撤权不可读取成员名单或变更成员；角色从 member 降级及移除必须使用相同的五项未清责任判定；有效任务、交付物、风险、变更与资源的状态约束不能因共用查询丢失；旧 Owner 的幂等重放须与新 Owner 权限严格分离；设置的 AI 禁用与时段无效输入不能留下假的审计/事件。真实 PostgreSQL 直接调用、HTTP Smoke、Schema migration 双跑、Static boundary、TypeScript、Web 和五组最终 SHA CI 均为合并门禁。
+
+**剩余待做（不以本 PR 关闭）：** #48 的 Owner 冗余存储/全域正式聚合统一、#49 组织治理及其它路由/Worker 故障注入、#39 真实模型出站安全、#4 主动告警、#50 模型 Evidence/Playbook、#43 跨项目收益容量、#51 实机迁移和备份，以及 #18/#19/#20/#41 的原生/公网/签名发行验证。不能因单一 Core 重构声称全部完工或生产就绪。
