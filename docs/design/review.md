@@ -318,3 +318,13 @@ Risk 列表/历史读取迁入 `packages/core/src/risk/risk-queries.ts`，用同
 审查 Issue #40 与当前消息 API/Web，确认新 SSE 不能借已有服务端轮询而宣称完整实时方案：需以唯一 PostgreSQL 消息 seq 为游标，避免数据库事务尚未提交时漏序；所有历史/增量读必须在同事务重新锁定当前 Tenant+Project 身份；流初次和每一批都要核验 Session，支持 Last-Event-ID、有界补拉、慢客户端背压与断线清理；同源代理不得缓冲/强制 30 秒中断；Web 需保持弱网络补拉及后台暂停。此次选择中小团队可验证的 2.5 秒服务器轮询 SSE，不提前建 Redis/Kafka/多实例广播层；压力数据不足时不虚构吞吐。
 
 CI 须验证 PostgreSQL 游标 200 条边界、25 条更早记录、跨项目与撤权；编译版 Fastify SSE 第一次订阅、非法游标、Last-Event-ID 续传及登出终止；浏览器 SSE 使用和 Next 流式代理静态检查、生产 Web 构建。生产反向代理、移动端安全区、多人共享 NAT 与大规模长连实测仍未完成。全局 V2 状态：#39 模型公网安全，#43 项目集/组合收益，#48/#49 全域正式命令，#50 AI Playbook/真实模型评测，#51 迁移/灾备/实机，以及 #4 外部主动报警和 #18/#19/#20 原生/备份/签名验收保持开放。不得将此次 PR 视为全部交付。
+
+## ADR-075 · 最新主干增量 /review 与全局未关闭风险（2026-10-17）
+
+基线：#101 已合并的主干 `885a05f`。此次代码审查覆盖项目导航和正式 PM 读链路，发现 `pm-routes.ts` 仍有三个 HTTP 先查组织/项目成员、再用另一数据库连接读取历史/依赖的窗口，以及项目列表 SQL 与 Core 所有权分散。变更统一到 Core，沿用 `withProjectRead` 和单事务数据库授权；两个历史接口保留 50+1 页游标、明确 PostgreSQL int 范围。静态检查禁止 GET 路由恢复直接业务 SQL，PostgreSQL 测试必须覆盖可见实体、异项目目标、观察者、两层撤权、翻页与非法游标。是否真正通过以本 PR 最新 Head GitHub Actions 为准，未执行的运行环境测试不能填写通过。
+
+**整体架构选择仍成立：** Fastify/Next.js/PostgreSQL/独立 Worker 的模块化单体保持低部署复杂度；正式 Task/Risk/PM 事实只可由后端授权命令修改；AI 候选/证据不自动改变验收状态；Outbox 与事件持久化于同一数据库，不引入多套队列或无需求的微服务。不为了“拓展性”增加无实例支持的 Repository 框架或历史接口兼容层。
+
+**目前剩余风险按交付门槛区分：** P0：#39 公网出站策略、DNS/SSRF 与邀请注册的实网验证；P1：#48 的 PM 命令 SQL/Owner 单源、#49 的剩余 HTTP 模块和真实多 Worker 崩溃恢复、#4 主动告警；P2：#50/#5 AI 多轮证据追问和真实模型评测、#43 PMP 项目集/组合收益与资源容量、#40 真机移动端/SSE 网关压力；发布：#51 V2 数据转换/异机灾备和 #18/#19/#20/#41 的 Windows/Linux/QNAP、加密离机、PITR、签名产物与公网 HTTPS 验收；#34 主版本依赖升级需独立变更。Issue #42 任务归档 Core 能力已存在，但剩余设备/权限验收未完成，不以“代码存在”代替结项。
+
+**合并条件：** 固定本 PR 的最终 Head SHA；Product verification（TypeScript、真实 PostgreSQL、架构、编译 API Smoke、Web build）、Documentation governance、native Windows/Linux、Docker deployment/restore drill、Security scanning 五组工作流全部 success，无未解决阻断线程，确认 main 未漂移，再允许 Squash Merge。无真实设备与模型凭据的验收一律保持开放，不声称整体 V2 / 生产就绪。

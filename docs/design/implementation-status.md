@@ -243,3 +243,7 @@ GET /projects/:id/outbox/summary 和 /dead 现委托 operations/outbox-admin.ts�
 ## ADR-074 · 项目与 AI 审核只读边界（2026-10-17）
 
 项目详情、Owner 的 AI 授权/模型调用审计/分析记录以及当前项目成员可见的进度与候选列表，已迁移到 Core 领域查询。六类读取共用 `withProjectRead` 当前租户+项目授权快照，不再由 `server.ts` 先查权限再在另一个数据库连接读取；原接口与响应结构保留。新增 PostgreSQL 权限撤销/数据隔离测试和架构守卫，并接入 Product CI。此改进不意味着 #49 全域 API 模块化完成，生产多用户实机、性能和公开部署仍待验收。
+
+## ADR-075 · 项目导航与 PM 历史只读边界（2026-10-17）
+
+项目列表的唯一成员可见性 SQL 已从 `project-routes.ts` 移至 Project Core；PM 六张登记簿、问题状态历史、变更实施历史及任务依赖列表共用 `withProjectRead` 当前租户与项目成员授权快照。历史分页上限和错误规范由领域查询与 HTTP DTO 共同约束。补充真实 PostgreSQL 跨租户、分页、撤权集成与静态架构守卫，并纳入 Product CI。未改变任何正式业务写入或数据库 Schema。PM 写入命令、其他 HTTP 领域查询、真实负载和 #48/#49 全域重构仍未完成，不因本次合并关闭整体 Epic。

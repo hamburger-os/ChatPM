@@ -1,10 +1,12 @@
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { z } from 'zod';
-import { pool, type DbClient } from '../../../packages/core/src/db.ts';
+import type {DbClient} from '../../../packages/core/src/db.ts';
 import { executePmCommand, type PmMutation } from '../../../packages/core/src/pm-command.ts';
 import { assertProject, type ProjectAction, type ProjectRole } from '../../../packages/core/src/permissions.ts';
 import { lockTaskDependencyGraph } from '../../../packages/core/src/delivery/dependency-policy.ts';
-import { listPmRegisters } from '../../../packages/core/src/governance/pm-register-query.ts';
+import {listPmRegisters,readPmIssueHistory,
+  readPmChangeImplementationHistory,listPmTaskDependencies} from
+  '../../../packages/core/src/governance/pm-register-query.ts';
 
 const uuid=z.string().uuid();
 const title=z.string().trim().min(1).max(250);
@@ -103,6 +105,7 @@ export function registerPmRoutes(app:FastifyInstance,
   });
 
   const versioned=z.object({idempotencyKey:uuid,expectedVersion:z.number().int().positive()});
+  const historyPage=z.object({beforeVersion:z.coerce.number().int().positive().max(2147483647).optional()});
   const reassignSchema=versioned.extend({
     assigneeId:uuid,note:z.string().trim().min(1).max(2000),
   });
@@ -240,29 +243,10 @@ export function registerPmRoutes(app:FastifyInstance,
   });
 
   app.get('/projects/:projectId/pm/issues/:itemId/history',async req=>{
-    const projectId=context(req),user=await authenticated(req);
-    const id=uuid.parse((req.params as {itemId:string}).itemId);
-    const paging=z.object({beforeVersion:z.coerce.number().int().positive().optional()})
-      .parse(req.query);
-    const scoped=await pool.query(`
-      SELECT i.id FROM project_issues i
-      JOIN project_members pm ON pm.project_id=i.project_id AND pm.user_id=$3
-      JOIN projects p ON p.id=i.project_id
-      JOIN tenant_members tm ON tm.tenant_id=p.tenant_id AND tm.user_id=$3
-      WHERE i.project_id=$1 AND i.id=$2
-    `,[projectId,id,user]);
-    if(!scoped.rowCount)fail(404,'问题不存在或无权限');
-    // 51 rows make truncation explicit instead of silently hiding history.
-    const {rows}=await pool.query<{
-      id:string;from_status:string;to_status:string;issue_version:number;
-      note:string;actor_id:string;occurred_at:Date;
-    }>(`SELECT id,from_status,to_status,issue_version,note,actor_id,occurred_at
-      FROM project_issue_transitions
-      WHERE project_id=$1 AND issue_id=$2 AND issue_version<COALESCE($3::int,2147483647)
-      ORDER BY issue_version DESC LIMIT 51`,
-      [projectId,id,paging.beforeVersion??null]);
-    return {history:rows.slice(0,50),
-      nextBeforeVersion:rows.length>50?rows[49].issue_version:null};
+    const projectId=context(req),actorId=await authenticated(req);
+    const issueId=uuid.parse((req.params as {itemId:string}).itemId);
+    const {beforeVersion}=historyPage.parse(req.query);
+    return readPmIssueHistory(projectId,issueId,actorId,beforeVersion);
   });
 
   const decisionSchema=versioned.extend({decision:z.enum(['approve','reject'])});
@@ -395,46 +379,19 @@ export function registerPmRoutes(app:FastifyInstance,
 
   app.get('/projects/:projectId/pm/changes/:itemId/implementation/history',
     async req=>{
-      const projectId=context(req),user=await authenticated(req);
-      const id=uuid.parse((req.params as {itemId:string}).itemId);
-      const page=z.object({beforeVersion:z.coerce.number().int().positive().optional()})
-        .parse(req.query);
-      const scoped=await pool.query(`
-        SELECT 1 FROM project_change_requests c
-        JOIN projects p ON p.id=c.project_id
-        JOIN project_members pm ON pm.project_id=p.id AND pm.user_id=$3
-        JOIN tenant_members tm ON tm.tenant_id=p.tenant_id AND tm.user_id=$3
-        WHERE c.project_id=$1 AND c.id=$2
-      `,[projectId,id,user]);
-      if(!scoped.rowCount)fail(404,'变更申请不存在或无权限');
-      const {rows}=await pool.query<{
-        id:string;change_version:number;from_status:string;to_status:string;
-        action:string;note:string;actor_id:string;
-        evidence_message_id:string|null;occurred_at:Date;
-      }>(`SELECT id,change_version,from_status,to_status,action,note,
-          actor_id,evidence_message_id,occurred_at
-        FROM project_change_implementation_history
-        WHERE project_id=$1 AND change_id=$2
-          AND change_version<COALESCE($3::int,2147483647)
-        ORDER BY change_version DESC LIMIT 51
-      `,[projectId,id,page.beforeVersion??null]);
-      return {history:rows.slice(0,50),
-        nextBeforeVersion:rows.length>50?rows[49].change_version:null};
+      const projectId=context(req),actorId=await authenticated(req);
+      const changeId=uuid.parse((req.params as {itemId:string}).itemId);
+      const {beforeVersion}=historyPage.parse(req.query);
+      return readPmChangeImplementationHistory(
+        projectId,changeId,actorId,beforeVersion);
     });
 
   const dependencySchema=z.object({
     idempotencyKey:uuid,dependentTaskId:uuid,prerequisiteTaskId:uuid,
   }).refine(x=>x.dependentTaskId!==x.prerequisiteTaskId,'任务不能依赖自身');
   app.get('/projects/:projectId/pm/dependencies',async req=>{
-    const projectId=context(req),user=await authenticated(req);
-    const authorized=await pool.query(`SELECT 1 FROM project_members pm
-      JOIN projects p ON p.id=pm.project_id
-      JOIN tenant_members tm ON tm.tenant_id=p.tenant_id AND tm.user_id=pm.user_id
-      WHERE pm.project_id=$1 AND pm.user_id=$2`,[projectId,user]);
-    if(!authorized.rowCount)fail(404,'项目不存在或无权限');
-    const {rows}=await pool.query(`SELECT * FROM task_dependencies
-      WHERE project_id=$1 ORDER BY created_at DESC LIMIT 250`,[projectId]);
-    return {dependencies:rows};
+    const projectId=context(req),actorId=await authenticated(req);
+    return listPmTaskDependencies(projectId,actorId);
   });
   app.post('/projects/:projectId/pm/dependencies',async(req,reply)=>{
     const projectId=context(req),user=await authenticated(req);

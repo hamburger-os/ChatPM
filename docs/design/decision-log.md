@@ -421,3 +421,13 @@
 **决定。** 继续使用已有 PostgreSQL 和角色授权，不增加缓存、额外角色表或兼容 API。Identity Core 的 `withProjectRead` 在 REPEATABLE READ 事务内锁当前项目和组织成员资格，调用既有 `assertProject` 后使用同一个 DbClient 读取所属领域的业务数据。Project Core 负责项目详情及 Owner 专属 AI 视图，Approval Core 负责进度和候选只读视图，Fastify 只处理身份与 UUID。普通成员和观察者可读项目详情/候选，Owner 通过独立的 `ai.audit.read` 操作才能读取 AI 调用账本，不与 `members.manage` 耦合；不允许借系统管理员或组织管理员身份越过项目成员要求。
 
 **取舍与验收。** 六个现有 URL、原返回字段及 40/60/150/200 上限不变，不引入新的数据源或 Repository 基类。撤权与读取在数据库成员行锁上串行化；不能撤回此前合法完成的已返回数据。真实 PostgreSQL 验证 Owner/Manager/Observer、跨租户与跨项目、实际数据隔离、组织与项目撤权；HTTP 无直接 SQL 的架构断言纳入 CI。其他仍留在 HTTP 层的领域查询、数据迁移与生产实机验收继续按 #49/#51 追踪。
+
+## ADR-075 · PM 历史与导航读取的唯一授权快照（2026-10-17）
+
+**问题与边界。** 问题状态历史、变更实施历史和任务依赖列表仍由 `pm-routes.ts` 先使用 Pool 检查 `tenant_members/project_members`，再用另一个 Pool 查询业务表。鉴权与查询之间的成员撤权窗口和 API 对领域 SQL 的直接所有权违反 #49 的 Core 分工。项目列表 GET 的 SQL 也仍在 HTTP 层，但它本身是一条同时连接当前组织和项目成员的原子查询，无两步鉴权竞态。
+
+**方案。** 不增加表、事件、缓存或平行权限引擎。在 `governance/pm-register-query.ts` 复用已经存在的 `withProjectRead`，使用 REPEATABLE READ + 当前 TenantMember/ProjectMember 行锁 + `read` 动作授权，顺序检查项目内目标记录的存在性并读取同一快照中的历史或依赖。原 PM 六个登记簿也改用同一 helper，避免再次复制授权事务模板。将项目导航查询移至 `project-queries.ts` 的 `listMemberProjects`，单条 SQL 用两层成员关系决定可见项目。历史游标上限为 PostgreSQL int 最大值 2147483647，在 HTTP 和 Core 层都校验，不让溢出转成 500。
+
+**取舍与失败语义。** 保留原有 GET 路径、JSON 字段、依赖条数上限 250、历史 50+1 的 `nextBeforeVersion` 和所有正式写入命令；没有 V1 兼容分支。当前项目成员包括 observer 仍可查看业务历史；非当前成员和跨项目记录 404；无效历史游标 400。读取开始前完成的撤权会被拒绝，并发撤权与已开始读取由数据库行锁序列化，无法追回此前合法返回给客户端的信息。只读访问不创建 CommandReceipt、DomainEvent 或 Outbox。
+
+**验证与后续。** 真实 PostgreSQL 集成测试覆盖 54 条问题状态历史、53 条变更实施历史、翻页与越界值、独立租户/项目、撤权后读取、项目导航隔离；API 静态架构门禁和整体 CI 必须在同一最新 Head 上通过。剩余 PM 正式命令 SQL 仍在 `pm-routes.ts`，应以独立命令所有权迁移继续 #48/#49；多进程故障、真实模型、跨平台设备和 V2 ETL/生产发布不是本变更范围。
