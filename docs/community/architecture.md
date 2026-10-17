@@ -168,3 +168,9 @@ English: Project Outbox diagnostics and manual dead-letter recovery remain restr
 中文：ChatPM 项目周报与月报继续以 PostgreSQL 的正式项目事实为唯一来源。项目成员可以阅读自己有访问权的报告；只有当前项目负责人可以手动生成和发布。读取、权限检查在同一数据库事务内完成，原项目负责人被组织或项目撤权后不能凭旧会话查询新数据。发布严格检查修订版本；已发布的正文保留，网络超时重试使用原命令回执防止重复正式变更。此次没有改变报告接口，也不表示 PDF 导出、大规模分页或企业生产验收完成。
 
 English: Project weekly and monthly reports continue to use authoritative PostgreSQL project facts. Current project members can read their own project's reports; only the current project owner can manually generate and publish them. Authorization and retrieval share one database transaction, so revoked membership cannot authorize a later read. Publication enforces the report revision, protects published content and uses durable command receipts for idempotent retries. This does not add PDF export, large-scale pagination or production certification.
+ 
+### 实时项目消息与历史翻页 / Live project messages and history
+
+中文：项目聊天现在提供基于已持久化消息序号的 SSE 实时接收。网页断线后会使用 Last-Event-ID 或当前游标从数据库补拉，避免仅靠内存通知而漏消息；在弱网络情况下还有低频 REST 对账。切换项目、退出登录、撤销项目/组织成员资格时不再持续推送消息。页面后台关闭事件流，回到前台重新连接；成员可加载更早聊天记录。Next.js 同源代理会直接转发流，不再缓存整段 SSE 响应。当前后端仍需对每条在线流定期查库，不等于大型多租户推送平台。真实 iOS/Android、共享 NAT、复杂代理超时和公网部署尚未验收。
+
+English: Project chat now supports SSE updates using committed PostgreSQL message sequence IDs. On reconnect, the browser resumes from Last-Event-ID or its current cursor and periodically reconciles with durable REST messages, rather than trusting ephemeral notifications. Project switches, logout and tenant/project membership revocation stop delivery; background tabs close the stream and reconnect when visible. Authorized members can load earlier chat history, and the same-origin Next.js proxy forwards the SSE body without buffering. The server still polls its database per open stream; real mobile browsers, large shared gateways, production reverse proxies and public-network behavior remain to be verified.
