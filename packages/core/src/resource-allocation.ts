@@ -25,11 +25,11 @@ export async function recordResourceAllocation(db:DbClient,request:AllocationReq
     SELECT 1 FROM projects p
     JOIN project_members pm ON pm.project_id=p.id AND pm.user_id=$3
     JOIN tenant_members tm ON tm.tenant_id=p.tenant_id AND tm.user_id=$3
-    WHERE p.tenant_id=$1 AND p.id=$2
+    WHERE p.tenant_id=$1 AND p.id=$2 AND pm.role<>'observer'
     FOR SHARE OF p,pm,tm
   `,[tenantId,projectId,userId]);
   if(!eligible.rowCount)
-    deny(400,'资源只能分配给本组织内已加入该项目的成员');
+    deny(400,'资源只能分配给本组织内当前可承担执行责任的项目成员');
 
   const result=await db.query<{peak:number}>(`
     WITH boundaries AS (

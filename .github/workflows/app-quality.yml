@@ -81,6 +81,8 @@ jobs:
         run: node --import tsx packages/core/test/governance-pulse.integration.ts
       - name: Organization governance transaction integration
         run: node --import tsx packages/core/test/organization.integration.ts
+      - name: Project governance Core lifecycle, revocation and receipts
+        run: node --import tsx packages/core/test/project-governance.integration.ts
       - name: Project access revocation integration
         run: node --import tsx packages/core/test/project-access.integration.ts
       - name: Platform admin grant revocation integration

@@ -197,10 +197,13 @@ test('platform AI model mutations reauthorize admin within the business transact
 
 test('project settings reuses model configuration transaction client',()=>{
   const routes=readFileSync(new URL('../../apps/api/src/project-governance-routes.ts',import.meta.url),'utf8');
-  const core=readFileSync(new URL('../../packages/core/src/project-model.ts',import.meta.url),'utf8');
-  assert.match(routes,/resolveProjectModel\(projectId,db\)/);
-  assert.match(core,/resolveModelConfig\(undefined,false,db\)/);
-  assert.match(core,/await db\.query<EffectiveRow>/);
+  const governance=readFileSync(new URL('../../packages/core/src/identity/project-governance.ts',import.meta.url),'utf8');
+  const model=readFileSync(new URL('../../packages/core/src/project-model.ts',import.meta.url),'utf8');
+  assert.match(routes,/updateProjectSettings\(projectId,actor,input\)/);
+  assert.doesNotMatch(routes,/resolveProjectModel|executePmCommand|db\.query/);
+  assert.match(governance,/resolveProjectModel\(projectId,db\)/);
+  assert.match(model,/resolveModelConfig\(undefined,false,db\)/);
+  assert.match(model,/await db\.query<EffectiveRow>/);
 });
 test('browser message retry retains the same nonce until success or editing',()=>{
   const page=readFileSync(new URL('../../apps/web/app/page.tsx',import.meta.url),'utf8');
@@ -332,4 +335,31 @@ test('all formal PM mutations stay in the single Core command owner',()=>{
   assert.match(core,/assertProject\(role,'pm.submit',\{isAssignee:true\}\)/);
   assert.match(core,/input\.decision==='complete'\?'pm.accept':'pm.plan'/);
   assert.match(core,/projectId,actorId:user,idempotencyKey:input\.idempotencyKey/);
+});
+
+test('project membership and settings endpoints are pure DTO delegation',()=>{
+  const api=readFileSync(new URL('../../apps/api/src/project-governance-routes.ts',import.meta.url),'utf8');
+  const core=readFileSync(new URL('../../packages/core/src/identity/project-governance.ts',import.meta.url),'utf8');
+  const methods=['listProjectMembers','addProjectMember','changeProjectMemberRole',
+    'removeProjectMember','transferProjectOwnership','updateProjectSettings'];
+  for(const name of methods){
+    assert.ok(api.includes(name+'('),'HTTP must delegate '+name);
+    assert.match(core,new RegExp('export (?:async )?function '+name+'\\('),'Identity Core owns '+name);
+  }
+  assert.doesNotMatch(api,/\bSELECT\b|\bINSERT\s+INTO\b|\bUPDATE\s+\w+|\bDELETE\s+FROM\b|(?:pool|db)\.query\s*\(|executePmCommand\s*\(/i);
+  assert.equal((core.match(/return executePmCommand\(/g)||[]).length,5);
+  assert.equal((core.match(/await assertNoActiveResponsibilities\(db,projectId,target,/g)||[]).length,2);
+  assert.match(core,/return withProjectRead\(projectId,actorId,'read'/);
+  assert.match(core,/FOR UPDATE/);
+  assert.match(core,/replayAction:'read'/);
+  assert.match(core,/ownership_revision=ownership_revision\+1/);
+  assert.match(core,/project_change_requests/);
+  assert.match(core,/resource_allocations/);
+  assert.match(core,/syncFollowup\(db,projectId,task\.id\)/);
+});
+test('tenant resource planning never assigns execution capacity to project observers',()=>{
+  const core=readFileSync(new URL('../../packages/core/src/resource-allocation.ts',import.meta.url),'utf8');
+  assert.match(core,/pm\.role<>'observer'/);
+  assert.match(core,/FOR SHARE OF p,pm,tm/);
+  assert.match(core,/资源只能分配给本组织内当前可承担执行责任的项目成员/);
 });

@@ -377,3 +377,12 @@ retryDeadEvent 唯一使用现有 executePmCommand：当前授权、dead_at 非�
 - `createPmEntry`、`reassignPmDeliverable`、`submitPmDeliverable`、`reviewPmDeliverable`、`transitionPmIssue`、`decidePmChange`、`updatePmChangeImplementation`、`createPmTaskDependency` 必须调用既有 `executePmCommand`，不可新增第二套 Receipt/Event/Outbox 管道。
 - `pm-routes.ts` 是 Fastify 路由/身份/UUID/Zod DTO 层，不包含 `db.query`、`executePmCommand`、领域 `INSERT/UPDATE/DELETE` 或 dependency graph SQL。Owner/Manager/Member/Observer 的不同权限由 Core 校验；AI 不得以候选代替人类创建/验收/变更实施证据。
 - 验证：真实 PostgreSQL 回执同键/异参、观察者/跨项目拒绝、Issue 变更历史一次写入、交付物提交人与审核者分离、任务依赖环阻断、成功命令审计/事件数量一致；加编译版 API Smoke、静态边界及最新 Head 五项 CI。
+
+## ADR-077 · 项目治理的 Identity Core 服务
+
+- `identity/project-governance.ts` 维护成员列表、人员邀请加入、角色调整/撤权、负责人移交、项目工作时段/AI 开关设置；`project-governance-routes.ts` 不再执行 `db.query` 或 `executePmCommand`，仅做 Cookie/Session 与 Zod DTO。
+- 成员 GET 经 `withProjectRead(...,'read',...)` 同一 REPEATABLE READ 事务和当前 TenantMember/ProjectMember 行锁返回。旧权不能用于撤权后的新请求，跨项目和跨组织不可读取名单。
+- 五个写入继续走 `executePmCommand` 的授权/审计/命令回执/领域事件/Outbox 原子提交。成员变成 observer 或被移除前，统一检测有效 Task、Deliverable、Allocation、Risk、Change 责任；当前目标成员行 FOR UPDATE，新增任务/移交写入应锁同一成员行，防止并发越权后出现无人能处理的责任。
+- Owner 移交必须独立业务版本（`ownership_revision`）、目标当前有效组织/项目成员、前任变 manager 且仅能以 `replayAction='read'` 重放原成功回执；不允许以此获得新的 Owner 操作。AI 项目开关仅在真实变更时递增版本、模型未配置时拒绝开启，不能以设置请求绕过平台系统管理员模型配置。
+
+**容量约束补充：** `resource-allocation.ts` 的新资源分配只允许仍属于当前租户和项目、且 `pm.role<>'observer'` 的执行成员；必须 `FOR SHARE OF p,pm,tm` 与身份角色降级 `FOR UPDATE` 串行化。历史/已取消资源允许保留审计，不因观察者权限自动重写过去的计划。
