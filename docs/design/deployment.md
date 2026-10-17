@@ -37,7 +37,7 @@ Windows PowerShell 前台启动脚本与 WinSW 服务包装示例；Linux system
 
 ### 数据库备份与恢复约束
 
-原生环境使用 `npm run backup -- --dir=./backups --keep=14` 创建私有、原子落盘的归档；在**停止 API/Worker/Web 且确认隔离目标库后**执行 `npm run restore -- ./backups/<实际归档文件>.dump --confirm-replace --confirm-services-stopped`，随后运行数据库迁移。旧的直接写目标文件备份入口已移除。恢复操作会覆盖已有数据库对象，不允许对仍在提供业务服务的生产库直接恢复。备份必须限制访问、加密并定期在隔离环境做恢复演练。
+原生备份与恢复统一通过 `tools/ops/postgres-env.mjs` 解析 PostgreSQL 客户端环境：优先使用 `DATABASE_URL`，否则使用 `PGHOST`、`PGUSER`、`PGDATABASE`；将连接信息转换为 `PG*` 环境变量，不向 `pg_dump` / `pg_restore` 子进程透传 `DATABASE_URL`，也不在命令行展开凭证。原生环境使用 `npm run backup -- --dir=./backups --keep=14` 创建私有、原子落盘的归档；在**停止 API/Worker/Web 且确认隔离目标库后**执行 `npm run restore -- ./backups/<实际归档文件>.dump --confirm-replace --confirm-services-stopped`，随后运行数据库迁移。旧的直接写目标文件备份入口已移除。恢复操作会覆盖已有数据库对象，不允许对仍在提供业务服务的生产库直接恢复。备份必须限制访问、加密并定期在隔离环境做恢复演练。
 
 Compose 默认不暴露 PostgreSQL 宿主机端口，使用 `docker compose --env-file .env -f infra/compose.prod.yml exec -T postgres pg_dump -U chatpm -d chatpm -Fc > backups/chatpm.dump` 等容器内客户端备份方式，操作前保证目标目录存在。
 

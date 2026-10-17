@@ -5,6 +5,7 @@ import { spawnSync } from 'node:child_process';
 import { closeSync, existsSync, openSync, readSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { postgresClientEnvironment } from './postgres-env.mjs';
 
 export function parseRestoreArgs(argv) {
   if (argv.length !== 3 || argv[1] !== '--confirm-replace' ||
@@ -13,25 +14,6 @@ export function parseRestoreArgs(argv) {
   const file = resolve(argv[0]);
   if (!existsSync(file)) throw new Error('Backup file not found: ' + file);
   return file;
-}
-
-function pgEnvironment() {
-  const env = { ...process.env };
-  if (env.DATABASE_URL) {
-    const url = new URL(env.DATABASE_URL);
-    if (!['postgres:', 'postgresql:'].includes(url.protocol))
-      throw new Error('Expected PostgreSQL DATABASE_URL');
-    env.PGHOST = url.hostname;
-    env.PGPORT = url.port || '5432';
-    env.PGUSER = decodeURIComponent(url.username);
-    env.PGPASSWORD = decodeURIComponent(url.password);
-    env.PGDATABASE = decodeURIComponent(url.pathname.slice(1));
-    if (url.searchParams.has('sslmode')) env.PGSSLMODE = url.searchParams.get('sslmode');
-  }
-  if (!env.PGHOST || !env.PGUSER || !env.PGDATABASE)
-    throw new Error('Configure DATABASE_URL or PGHOST/PGUSER/PGDATABASE');
-  delete env.DATABASE_URL;
-  return env;
 }
 
 export async function main(argv = process.argv.slice(2)) {
@@ -51,7 +33,7 @@ export async function main(argv = process.argv.slice(2)) {
     await fetch('http://127.0.0.1:' + (process.env.API_PORT || '3001') + '/health',
       { signal: AbortSignal.timeout(2500) });
   } catch {
-    const env = pgEnvironment();
+    const env = postgresClientEnvironment();
     const run = spawnSync('pg_restore', [
       '--clean', '--if-exists', '--no-owner', '--no-privileges', '--exit-on-error',
       '--dbname', env.PGDATABASE, file,

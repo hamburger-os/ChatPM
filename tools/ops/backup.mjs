@@ -3,9 +3,10 @@
 import 'dotenv/config';
 import { spawnSync } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
-import { chmodSync, closeSync, existsSync, mkdirSync, openSync, readSync, readdirSync, renameSync, statSync, unlinkSync } from 'node:fs';
-import { resolve, dirname, basename, join } from 'node:path';
+import { closeSync, existsSync, mkdirSync, openSync, readSync, readdirSync, renameSync, statSync, unlinkSync } from 'node:fs';
+import { resolve, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { postgresClientEnvironment } from './postgres-env.mjs';
 
 const root = fileURLToPath(new URL('../../', import.meta.url));
 const matching = /^chatpm-\d{8}T\d{6}Z-[a-f0-9]{8}\.dump$/;
@@ -29,24 +30,6 @@ function argsFromCli(argv) {
   if (!Number.isSafeInteger(options.keep) || options.keep < 1 || options.keep > 3650)
     throw new Error('--keep must be an integer between 1 and 3650');
   return options;
-}
-
-function pgEnvironment() {
-  const env = { ...process.env };
-  if (env.DATABASE_URL) {
-    const url = new URL(env.DATABASE_URL);
-    if (!['postgres:', 'postgresql:'].includes(url.protocol)) throw new Error('Expected PostgreSQL DATABASE_URL');
-    env.PGHOST = url.hostname;
-    env.PGPORT = url.port || '5432';
-    env.PGUSER = decodeURIComponent(url.username);
-    env.PGPASSWORD = decodeURIComponent(url.password);
-    env.PGDATABASE = decodeURIComponent(url.pathname.slice(1));
-    if (url.searchParams.has('sslmode')) env.PGSSLMODE = url.searchParams.get('sslmode');
-  }
-  if (!env.PGHOST || !env.PGUSER || !env.PGDATABASE)
-    throw new Error('Configure DATABASE_URL or PGHOST/PGUSER/PGDATABASE');
-  delete env.DATABASE_URL;
-  return env;
 }
 
 export function main(argv = process.argv.slice(2)) {
@@ -74,7 +57,7 @@ export function main(argv = process.argv.slice(2)) {
       : pgArgs;
     const outcome = spawnSync(command, cmdArgs, {
       cwd: root,
-      env: options.docker ? process.env : pgEnvironment(),
+      env: options.docker ? process.env : postgresClientEnvironment(),
       stdio: ['ignore', fd, 'inherit'],
     });
     if (outcome.error || outcome.status !== 0)
