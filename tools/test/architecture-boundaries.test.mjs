@@ -213,3 +213,18 @@ test('Task archive uses one Core command and retains immutable factual history',
   assert.match(runner,/!p\.archived_at/);
   assert.match(ai,/archived_at IS NULL/);
 });
+
+test('Outbox operations routes delegate secured reads and retry to Core',()=>{
+  const route=readFileSync(new URL('../../apps/api/src/operations-routes.ts',import.meta.url),'utf8');
+  const core=readFileSync(new URL('../../packages/core/src/operations/outbox-admin.ts',import.meta.url),'utf8');
+  assert.match(route,/readOutboxSummary\(projectId,actorId\)/);
+  assert.match(route,/readDeadEvents\(projectId,actorId\)/);
+  assert.match(route,/retryDeadEvent\(projectId,eventId,actorId,body\.parse\(req\.body\)\)/);
+  assert.doesNotMatch(route,/\b(?:SELECT|UPDATE|INSERT INTO|DELETE FROM|pool\.query|executePmCommand)\b/i);
+  assert.match(core,/SET TRANSACTION ISOLATION LEVEL REPEATABLE READ/);
+  assert.match(core,/lockProjectAccess\(db,projectId,actorId\)/);
+  assert.match(core,/assertProject\(access\.role,'operations\.manage'\)/);
+  assert.match(core,/outboxSummary\(projectId,db\)/);
+  assert.match(core,/deadEvents\(projectId,db\)/);
+  assert.match(core,/executePmCommand\(/);
+});

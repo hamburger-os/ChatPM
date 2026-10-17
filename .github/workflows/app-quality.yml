@@ -81,6 +81,8 @@ jobs:
         run: node --import tsx packages/core/test/project-access.integration.ts
       - name: Platform admin grant revocation integration
         run: node --import tsx packages/core/test/system-access.integration.ts
+      - name: Current-authorized Outbox diagnostics and replay integration
+        run: node --import tsx packages/core/test/outbox-operations.integration.ts
       - name: Outbox reliability integration
         run: node --import tsx packages/core/test/outbox.integration.ts
       - name: Mock AI conversation integration

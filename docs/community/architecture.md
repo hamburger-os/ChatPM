@@ -156,3 +156,9 @@ English: Project owners and managers may archive completed or cancelled tasks af
 中文：后台 AI 事件使用 PostgreSQL 中同一条 Outbox 记录作为唯一领取状态。处理时间较长时，Worker 定期续租，但只能延长尚未过期、尚未完成、属于自己令牌的领取。过期或被其他 Worker 接管的旧处理进程不能标记完成、修改重试状态或发布旧 AI 结果。真实写入仍由同事务行锁校验，提醒和报告仍有独立运行通道。当前自动化测试覆盖租约和数据库并发边界，尚不能代替公网模型、真实掉电、多 Worker 峰值压测或主动报警验收。
 
 English: AI events keep their sole delivery claim in PostgreSQL Outbox. During slow processing, a worker renews only its own still-valid, incomplete claim. An expired or replaced worker cannot acknowledge, reschedule, or publish stale AI output. Every formal publication still checks the current token under a transaction row lock; reminders and reports run in independent lanes. Automated database checks cover lease and fencing behavior, not production network faults, external model latency, power loss, scale tests or active alert delivery.
+
+### Outbox 运维查询与恢复 / Outbox diagnostics and recovery
+
+中文：项目 Outbox 错误统计、死信列表和人工恢复仍只允许当前项目负责人使用。系统在同一数据库事务中重新检查并锁住组织、项目成员资格，再读取对应项目的诊断数据；失去权限的请求不能凭早先的角色查询结果继续读取。恢复仍有持久幂等回执和版本，不会改写健康任务。此功能不表示外部主动告警或正式生产恢复已经验收。
+
+English: Project Outbox diagnostics and manual dead-letter recovery remain restricted to the current project owner. The server locks and checks the current organization and project membership in the same database transaction used to read the diagnostics, so stale authorization cannot be reused after revocation. Recovery retains durable idempotency receipts and revisions and cannot reset healthy work. External alerts and production disaster recovery remain unverified.

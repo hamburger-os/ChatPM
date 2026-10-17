@@ -221,3 +221,9 @@ Docker 部署 Smoke 原先仅验证 pg_dump custom-format 文件头和 pg_restor
 `outbox.ts` 使用统一 `OUTBOX_LEASE_SECONDS=300` 完成 claim/lease assert/renew/finish/fail 六处到期判定；`withEventLeaseHeartbeat` 仅包装 AI Worker 的 `runAnalysis` 慢调用，每 60 秒延长**当前仍有效且拥有同一 token**的租约，最多一个 SQL in-flight，运行结束清理定时器。停止、失败处理与先前的 `assertEventClaim` 正式发布事务保持原契约。过期旧任务既不能续租，也不能再设置 processed/retry/dead 状态。
 
 补充 PostgreSQL 回归覆盖即将过期但仍有效的续租、旧 claim/token 被新 Worker 替换、已处理事件无法续租、过期任务禁止确认及失败回写、心跳清理；静态架构守卫防止未来慢模型推理绕过 heartbeat。独立 CI 的结果以最新 PR Head 为准。**未完成：** 主动告警发送、真实分布式 Worker 进程故障注入、长推理 HTTP 网络中止、峰值负载及真实运行平台；Issue #4/#49/#51 不因该切片关闭。
+
+## ADR-071 · Outbox 运维 Core 所有权
+
+GET /projects/:id/outbox/summary 和 /dead 现委托 operations/outbox-admin.ts，在同一 REPEATABLE READ 事务锁当前项目及组织成员、检查 operations.manage，然后把同一个 DbClient 传给现有 Outbox 唯一查询。POST /projects/:id/outbox/:eventId/retry 也已迁入该 Core 模块，继续共用 executePmCommand 的事务、版本化 dead letter 恢复、审计、事件、Outbox 和 Receipt。
+
+新增授权、跨租户、撤权、人工恢复幂等及版本的 PostgreSQL 集成测试与架构静态守卫。本次不等于完成全域 API 模块化或多 Worker 生产可靠性验收。
