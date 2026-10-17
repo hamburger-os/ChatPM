@@ -298,3 +298,11 @@ Risk 列表/历史读取迁入 `packages/core/src/risk/risk-queries.ts`，用同
 逐项审查：不改变历史迁移或 Outbox 结构；不使用未验证的代理/Redis；每次续租带有 event/project/token 和已生效租约条件；过期、终态、dead letter 状态拒绝；`FOR UPDATE` 发布和事务内审计原子性保持；heartbeat 异常仅表示无法续约，不能提升数据写入授权；Worker 停机等在途定时器释放，避免独立后台续约。用真实 PostgreSQL 的 expired/reclaim/retry/replay/锁并发以及现有 Docker、native、API Smoke 作为门禁。
 
 **整体状态仍未完结。** #4 还需真实多进程故障注入和主动告警；#39/QNAP IPv6 公网安全、#40 SSE/移动端、#43 PMP 收益/跨项目依赖、#48/#49 全域 Core 收敛、#50 AI Playbook/实测、#51 生产迁移/DR、#18/#19/#20 本地安装/PITR/签名打包均仍有明确缺口。只有本 PR 最新 Head 的 Product/Docs/Native/Docker/Security CI 和未解决 Review Threads 门禁通过，才允许合并本增量。
+
+## ADR-071 · Outbox 运维端点 /review（2026-10-17）
+
+原运维诊断采用 HTTP 两步授权与读取，撤权后可能在其他连接继续返回项目死信记录；原 dead-letter retry 还在 Fastify 维护领域 SQL。已改为 Core 唯一读取与恢复入口：单事务 REPEATABLE READ + 即时 Tenant/Project 成员行锁和 operations.manage 权限，复用现有 Outbox SQL；重试由 executePmCommand 保证原子审计/事件/回执与版本。未新增第二套运维事实表或兼容 API。
+
+验收要求：架构守卫不允许 operations-routes.ts 再引入领域 SQL；PostgreSQL 核验非 Owner、跨租户、撤权、同键重放、真实二次恢复版本；编译版 API Smoke 与最新提交完整 CI 通过后合并。
+
+整体 V2 仍有开放事项：#4 的主动告警和真实故障注入、#39 公网/模型出站实机攻防、#40 SSE/移动端、#43 跨项目收益与依赖、#48/#49 其余正式业务和路由模块所有权、#50 AI Playbook 与真实供应商评测、#51 存量数据 ETL/灾备验收以及 #18/#19/#20 本地安装、PITR 和签名发布。不得因该切片合并宣布全部完成或生产就绪。
