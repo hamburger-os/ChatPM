@@ -402,8 +402,10 @@ test('tenant governance HTTP delegates all administrative writes and scoped read
   assert.match(commands,/replayAccess:'member'/);
   assert.match(commands,/组织至少保留一位管理员/);
   assert.match(commands,/recordResourceAllocation\(db/);
-  assert.match(queries,/SET TRANSACTION ISOLATION LEVEL REPEATABLE READ/);
-  assert.match(queries,/FOR SHARE/);
+  const adminAccess=readFileSync(new URL('../../packages/core/src/identity/tenant-admin-read.ts',import.meta.url),'utf8');
+  assert.match(queries,/from '..\/identity\/tenant-admin-read.ts'/);
+  assert.match(adminAccess,/SET TRANSACTION ISOLATION LEVEL REPEATABLE READ/);
+  assert.match(adminAccess,/FOR SHARE/);
   assert.equal((queries.match(/return withTenantAdminRead\(/g)||[]).length,2);
 });
 
@@ -464,4 +466,23 @@ test('Docker local model exception is pinned to deployer IP allowlist, not whole
     'Only API and Worker need the Docker host gateway mapping');
   assert.match(env,/MODEL_DOCKER_GATEWAY_IPS=/);
   assert.match(egress,/if\(!value\|\|value\.length>256\)unsafe\(\)/);
+});
+
+
+test('invitation emails use same locked Core tenant admin read grant as organization governance',()=>{
+  const route=readFileSync(new URL('../../apps/api/src/invitation-routes.ts',import.meta.url),'utf8');
+  const invitations=readFileSync(new URL('../../packages/core/src/identity/invitations.ts',import.meta.url),'utf8');
+  const query=readFileSync(new URL('../../packages/core/src/governance/tenant-queries.ts',import.meta.url),'utf8');
+  const access=readFileSync(new URL('../../packages/core/src/identity/tenant-admin-read.ts',import.meta.url),'utf8');
+  assert.match(route,/return listTenantInvitations\(tenantId,await authenticated\(req\)\)/);
+  assert.doesNotMatch(route,/pool\.query|db\.query|requireTenant\(/,
+    'Invitation HTTP must not use a stale privilege precheck before reading emails');
+  assert.match(invitations,/export function listTenantInvitations\(/);
+  assert.match(invitations,/return withTenantAdminRead\(tenantId,actorId,async db=>/);
+  assert.match(invitations,/FROM tenant_invitations WHERE tenant_id=\$1/);
+  assert.doesNotMatch(invitations,/SELECT \*/,'Invitation list must not expose token digests');
+  assert.match(query,/withTenantAdminRead/);
+  assert.match(access,/FOR SHARE/);
+  assert.match(access,/SET TRANSACTION ISOLATION LEVEL REPEATABLE READ/);
+  assert.match(invitations,/organizationCommand\(/);
 });

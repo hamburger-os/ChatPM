@@ -423,3 +423,9 @@ retryDeadEvent 唯一使用现有 executePmCommand：当前授权、dead_at 非�
 - `MODEL_DOCKER_GATEWAY_IPS` 由部署运维人员在服务器/容器环境显式写入，最多四个精确 IP，且每个必须属于可信 RFC1918/ULA 网关类型。未配置、地址不一致、单条错误 A/AAAA、IPv4/IPv6 family 错配时拒绝整个出站请求，不能自动放行私网段、记录并学习新地址或从用户聊天中读取网关名单。
 - 只允许显式配置 Docker host alias 走此规则；公开 HTTPS 模型提供商照旧全部 A/AAAA 必须非私网，本机 literal localhost 例外不自动延伸到任意内网。模型目录预探测与结构化/文本推理继续调用安全传输，不要引入直接 `fetch` 或环境 HTTP Proxy 绕过。
 - 不得把 `MODEL_DOCKER_GATEWAY_IPS` 当成开放 LAN 访问授权；实际 DNS 验证、LAN 防火墙、宿主机模型端口和生产环境凭据隔离须独立检查，未核验不能标生产安全通过。
+
+## ADR-083 · 邀请列表私密性与租户管理员读取单源
+
+- `identity/tenant-admin-read.ts` 唯一拥有 `withTenantAdminRead`：REPEATABLE READ 事务内锁定 `tenant_members` 当前管理员行 `FOR SHARE`，并在相同连接/快照上读取组织敏感数据。已被 `governance/tenant-queries.ts`（组织人员、资源）和 `identity/invitations.ts`（邀请邮箱）复用，不要在 HTTP 中复制 `requireTenant` 前置校验或在其后新开连接读取。
+- `identity/invitations.ts::listTenantInvitations` 仅输出邀请元数据（id、邮箱、发出时间、过期、接受和撤销状态）。绝不返回 token_sha256、明文邀请码、上游敏感凭据。租户过滤条件只能来自服务器已验证的 URL UUID 与同一管理员事务，不得做跨租户共享邮箱查找。
+- 邀请签发/撤销必须继续使用既有 `organizationCommand` 当前角色锁、同事务幂等/审计；领取使用已存在的邀请行锁、邮件匹配、一次性消耗规则，不能基于浏览器暂存管理员状态作权限判断。撤权与读交叉导致 `40001` 时按失败关闭，不把状态回退到旧权限或暗中重放上一步授权结果。

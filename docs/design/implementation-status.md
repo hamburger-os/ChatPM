@@ -277,3 +277,7 @@ GET /projects/:id/outbox/summary 和 /dead 现委托 operations/outbox-admin.ts�
 ## ADR-082 · 模型 Docker 网关 DNS 信任收紧（2026-10-17）
 
 模型公开地址现有的 DNS 解析全量检查、固定 HTTP(S) 连接、禁跳转/代理及大小限制继续有效。本次收紧 `host.docker.internal`：只有部署管理员在 `MODEL_DOCKER_GATEWAY_IPS` 显式声明的 1–4 个确切 RFC1918/ULA 网关 IP 可被连接；未配置、任何其他私网同段 IP、恶意混合 A/AAAA、无效地址/族别均拒绝。Compose 仅向 API/Worker 注入可选 IP Pin 并映射 host-gateway，Web 无感，默认云端模型不受影响。新增单元/静态架构测试；生产网络与 DNS 污染、Docker/QNAP/IPv6 真实出口/本地模型验收及公开注册高风险治理仍未完成，#39/#51 保持开放。
+
+## ADR-083 · Invitation 管理敏感读取权限收敛（2026-10-17）
+
+`GET /tenants/:tenantId/invitations` 原 HTTP 先 `requireTenant` 后 `pool.query`，两次连接之间可发生管理员撤权；已改为 Identity Core `listTenantInvitations`。全部组织管理员敏感 GET 现在复用唯一 `identity/tenant-admin-read.ts` 的 REPEATABLE READ + 当前成员 `FOR SHARE` 事务权限核验（邀请名单、组织成员、资源分配）。POST 签发/撤销只依据 `organizationCommand` 同事务权限与幂等结果，不再在 HTTP 中增加可过期的业务预校验。真实 PostgreSQL 并发撤权、跨租户、邮箱/令牌敏感性与非管理员拒绝加入原邀请码集成测试。未引入新表、影子授权或兼容层，真实公网注册策略与邀请码防滥用仍属 #39 开放验收。
