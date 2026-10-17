@@ -539,3 +539,13 @@
 **HTTP 分工。** `admin-model-routes.ts` 仍负责会话、UUID 路由参数、HTTP 201/200、发现错误翻译、可控文本/结构化探针及响应；平台模型 GET 和目录读取继续在 `systemAdminTransaction` 使用同一个 DbClient。外部网络模型调用必须在冷却+授权事务提交后执行，绝不在 SQL 行锁内等待 DNS/HTTP。无论输入是否完整，非总管理员管理 POST 首先 403，再考虑 Zod 输入错误；不向客户端或系统审计暴露 provider API Key。
 
 **验收。** 新增真实 PostgreSQL 模型全生命周期回归：非法/越权输入、加密 key 不进公开 DTO、更新保留密钥、模型批量导入幂等、供应商存在模型时删除 409、模型测试 30 秒冷却、删除后 404、系统审计动作及密钥脱敏、管理员撤权后拒绝。静态架构测试禁止 Fastify 模型 HTTP 再出现业务 SQL/模型 schema/保存 API，确保八个业务操作只由 Core 和唯一管理员授权事务处理。五组最新 Head CI、审查线程和主干漂移作为合并门禁。此切片不声明企业 SSO/MFA、真实厂商测试或 #39/#49/#50/#51 全面完成。
+
+## ADR-086 · Outbox 队列诊断基于当前租约区分积压、失联与重试压力（2026-10-18）
+
+**审查发现。** Outbox 本身已有单事件 claim、300 秒租约、60 秒 heartbeat 续期、claim token fencing、指数退避、8 次失败死信及人工恢复。此前私有 Doctor 使用 `next_attempt_at < NOW()-INTERVAL '10 minutes'` 将所有未处理事件都计为“队列逾期”，没有排除仍在 heartbeat 续期的有效模型调用；一个长于十分钟的正常模型处理在其 `next_attempt_at` 很旧时可能被误报为队列积压，同时诊断缺少对卡死的 claim 与大量已失败、正等待执行的重试的独立判断。单靠 Worker lane 最近成功时间无法代替独立的 Outbox 状态诊断。
+
+**设计决定。** 不改现有 Outbox claim/lease SQL、事务边界、AI 发布栅栏或历史迁移，也不新增影子计数表或监控数据库。将私有 `tools/ops/doctor.mjs` 作为唯一的 Outbox 诊断阈值和 SQL 来源：`OUTBOX_QUEUE_THRESHOLDS`（排队逾期 10 分钟、失联 claim 10 分钟、当前可执行待重试达到 10 件）和 `OUTBOX_HEALTH_SQL`，由同一只读聚合语句返回五个当前状态计数。只有 **未被领取、已到期超过十分钟** 的事件计入 `OUTBOX_OVERDUE`；claim 已持有且其 `claimed_at` 超过十分钟未刷新者独立为 `OUTBOX_STALLED_CLAIM`；有前一次失败、当前无有效 claim、已经到期的待重试达到十件时触发 `OUTBOX_RETRY_READY_PRESSURE`；当前未处理的死信仍触发 `OUTBOX_DEAD_LETTER`。待执行总量输出 `readyEvents` 供运维判断；未来预约（如 AI 每日预算）不计入当前可执行队列。不传输聊天正文、错误堆栈、模型密钥或模型响应。
+
+**边界。** 十分钟 stale claim 是**独立告警观察阈值**而不是对 Core 300 秒正式租约 TTL 的第二份配置；没有 active heartbeat 的 stale claim 在实际过期后仍由 Worker 既有 `claimEvents` 恢复，此改动不会给诊断器重试、消费或重新授权的能力。重试压力是当前**待重试件数**，并不是根据时间窗口计算出的重试失败率；缺少必需的队列指标则 `OUTBOX_TELEMETRY_INVALID` fail closed，不把缺值当零。默认阈值是运维起始值，不是实测业务 SLA；后续应结合真实入站量/排队、失败时长、模型限流和告警噪音基线调优。
+
+**验证与遗留。** 保留原 Outbox PostgreSQL lease/heartbeat/fencing/final-attempt/replay 回归和 Worker 分 lane 测试；加入 SQL **真实 PostgreSQL** 场景测试，直接使用生产 Doctor 同一聚合查询对比长耗时合法续期、尚未到期的预算延期、排队超时、已停止续期的 claim、批量 429 待重试和死信、已处理事件及清理后信号恢复；pure ops 和架构守卫阻止回退到旧的无 claim 过滤聚合，Product CI 运行最新测试。此 PR 不代表 #4 外部邮件/IM/PagerDuty 告警送达、重试**失败率**时间序列、完整进程崩溃和 DB/网络故障注入、真实设备/跨实例恢复性能验收已完成；它们继续开放。

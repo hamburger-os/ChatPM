@@ -406,3 +406,11 @@ CI 须验证 PostgreSQL 游标 200 条边界、25 条更早记录、跨项目与
 **权限/事务重点：** 所有模型管理操作必须从当前总管理员行锁进入，未经授权的畸形 body 也直接 403，合法管理员参数错误才 400；密钥不入公有响应/审计。目录发现凭据同事务查询、出站安全客户端固定 DNS/SSRF，模型测试冷却事务完成后才发起可能 60 秒的远程请求。真实 PostgreSQL 覆盖全生命周期、审计计数/不含 Key、批量导入、删除带关联阻断、角色撤销拒绝、冷却 429 以及原 HTTP smoke。静态架构守卫禁止将 schema/SQL 和模型写路径重新塞回 API，原模型目录、原生 Win/Linux、Docker、Docs、安全扫描在最新 Head 全绿并零未解决线程才合并。
 
 **尚存** #39 真实模型网络、安全出站、密钥泄漏及公网注册滥用、#49 剩余 API/Worker 模块与故障恢复、#50 模型授权和 Playbook 评测、#51 Windows/QNAP/Linux/PITR 正式现场验收；此改造不能代替任何现场生产就绪结论。
+
+## ADR-086 · Outbox 租约与运维错误归因 /review（2026-10-18）
+
+在已合并 `main` `5ec8b26` 上复核 `outbox.ts`、AI Worker、Doctor、PostgreSQL lease/fencing 和现有 CI。确认租约续期已有完整正式实现（300 秒租约/60 秒 heartbeat、claim token、发布事务 `FOR UPDATE` 栅栏、单次 claim 避免后续 AI 被预领过期）；该项不应重复设计/虚构不存在。真正诊断缺口是 Doctor 将 **所有超过十分钟 next_attempt_at 的未处理记录**算作排队逾期，不区分已领取且正在安全续期的模型长事务。它也没有针对长时间停止续期的 claim 与大量已失败待重试的独立告警项。
+
+采用单一 `OUTBOX_HEALTH_SQL` 对未处理数据进行只读 PostgreSQL 聚合：未领取且超时才 `OUTBOX_OVERDUE`；未续期逾十分钟 `OUTBOX_STALLED_CLAIM`；正可执行且此前失败达十件 `OUTBOX_RETRY_READY_PRESSURE`；死信原样告警，缺少指标 `OUTBOX_TELEMETRY_INVALID`。阈值放在唯一 `OUTBOX_QUEUE_THRESHOLDS`，避免在 SQL、测试和部署脚本内各定义一次不同的诊断规则；正式 Outbox lease TTL 不变，故障恢复仍由 Worker 负责。真实 PostgreSQL 测试直接执行相同 SQL：心跳生效的旧事件不误报，日预算推迟/已处理不误报，真实未领取逾期、超时租约、十条 429 待重试、死信分别分流，清理后恢复。原完整 Outbox 故障与授权集成、Ops 单元、架构守卫、Docker、Native 和安全扫描都纳入最新 Head 验收。
+
+**未宣称：** 未来的线下压测 SLA、失败率时间窗、跨实例混沌故障注入、模型真实限流与故障时密钥处理、任务调度器长期停止运行告警和外部邮箱/IM/PagerDuty 送达。#4/#49/#51 的这些生产验收仍开放。

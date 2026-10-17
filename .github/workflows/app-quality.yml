@@ -57,6 +57,8 @@ jobs:
         run: npm run db:migrate
       - name: Independent Worker lane health and fail-closed diagnostics integration
         run: node --import tsx tools/test/worker-health.integration.mjs
+      - name: Outbox lease-aware queue metrics and fault-state PostgreSQL integration
+        run: node --import tsx tools/test/outbox-queue-health.integration.mjs
       - name: First-account bootstrap token and race integration
         run: node --import tsx packages/core/test/bootstrap.integration.ts
       - name: Account Identity Core registration, login, tenant access and revocation

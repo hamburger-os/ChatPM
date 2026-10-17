@@ -72,7 +72,7 @@ test('health assessment fails closed independently for each Worker lane',()=>{
   const healthyLane={heartbeatAgeSec:20,successAgeSec:25,failureAgeSec:null};
   const lanes={events:{...healthyLane},reminders:{...healthyLane},
     reports:{...healthyLane,heartbeatAgeSec:305,successAgeSec:305}};
-  const input={apiOk:true,lanes,overdue:0,dead:0,
+  const input={apiOk:true,lanes,overdue:0,stalledClaims:0,retryReady:0,dead:0,
     migrations:['029_worker_lane_health.sql']};
   assert.deepEqual(evaluateHealth(input),{ok:true,issues:[]});
 
@@ -102,6 +102,16 @@ test('health assessment fails closed independently for each Worker lane',()=>{
 
   assert.deepEqual(evaluateHealth({...input,overdue:1,dead:2}).issues,
     ['OUTBOX_OVERDUE','OUTBOX_DEAD_LETTER']);
+  assert.deepEqual(evaluateHealth({...input,stalledClaims:1}).issues,
+    ['OUTBOX_STALLED_CLAIM'],'A crashed claim is diagnosed separately from queued overdue work');
+  assert.deepEqual(evaluateHealth({...input,retryReady:9}),{ok:true,issues:[]},
+    'A small set of due retry events must not flood operators');
+  assert.deepEqual(evaluateHealth({...input,retryReady:10}).issues,
+    ['OUTBOX_RETRY_READY_PRESSURE'],'A retry-ready backlog crossing the bound is actionable');
+  assert.deepEqual(evaluateHealth({...input,retryReady:12,stalledClaims:1}).issues,
+    ['OUTBOX_STALLED_CLAIM','OUTBOX_RETRY_READY_PRESSURE']);
+  assert.deepEqual(evaluateHealth({...input,stalledClaims:undefined}).issues,
+    ['OUTBOX_TELEMETRY_INVALID'],'A missing queue metric cannot silently return healthy');
   assert.deepEqual(evaluateHealth({...input,migrations:[]}).issues,
     ['DATABASE_NOT_MIGRATED']);
 

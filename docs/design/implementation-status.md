@@ -289,3 +289,7 @@ GET /projects/:id/outbox/summary 和 /dead 现委托 operations/outbox-admin.ts�
 ## ADR-085 · 平台 AI 模型正式管理命令收敛（2026-10-17）
 
 供应商创建/编辑/删除、模型批量导入/创建/编辑/删除、quick/full 模型测试的权限+冷却准备已从 Fastify 管理路由归入 `identity/platform-model-commands.ts`，复用单一 `systemAdminTransaction`、原 provider/model 存储模型、AES-GCM 密钥和正式 `system_audit_entries`。同一个 Core Zod input contract 保证非管理员先 403，不再通过异常字段探测模型配置规则。HTTP 仅负责身份、参数、返回和经批准的模型网络探针；没有第二份审计、权限缓存或兼容路径。真实 PostgreSQL 模型管理/审计/权限/冷却回归进入 Product CI。#49 剩余业务与 Worker 边界、真实模型厂商/密钥吊销、公网部署验收仍是独立开放项。
+
+## ADR-086 · Outbox 私有诊断：活动租约与真正积压区分（2026-10-18）
+
+`tools/ops/doctor.mjs` 的单一队列聚合和阈值区分待执行超时（只含未领取事件）、十分钟不续期的 stalled claim、已到期的待重试压力和既存死信；合法 heartbeat 中的长耗时 AI 调用与预约的次日预算重试不再误报为排队逾期。返回 `overdueEvents`、`stalledClaims`、`retryReadyEvents`、`readyEvents`、`deadLetters` 与确定机器错误码。缺失计数 fail closed；未修改正式 Worker claim/续期/发布栅栏、DB 结构或产品权限。新增真实 PostgreSQL 队列状态对照、纯评价/静态守卫和 Product CI；远程运维通知、故障率趋势、服务中断注入与生产 SLA 依旧开放。
