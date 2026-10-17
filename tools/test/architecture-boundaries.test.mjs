@@ -228,3 +228,18 @@ test('Outbox operations routes delegate secured reads and retry to Core',()=>{
   assert.match(core,/deadEvents\(projectId,db\)/);
   assert.match(core,/executePmCommand\(/);
 });
+
+test('Reporting API delegates reads and report command state to Core',()=>{
+  const route=readFileSync(new URL('../../apps/api/src/report-routes.ts',import.meta.url),'utf8');
+  const service=readFileSync(new URL('../../packages/core/src/reporting/report-services.ts',import.meta.url),'utf8');
+  for(const symbol of ['listProjectReports','requestProjectReport','publishProjectReport'])
+    assert.match(route,new RegExp('\\b'+symbol+'\\('));
+  assert.doesNotMatch(route,/\b(?:SELECT|UPDATE|INSERT INTO|DELETE FROM)\b|pool\.query|executePmCommand\(/i,
+    'Report HTTP must never own state mutation or business SQL');
+  assert.match(service,/SET TRANSACTION ISOLATION LEVEL REPEATABLE READ/);
+  assert.match(service,/lockProjectAccess\(db,projectId,actorId\)/);
+  assert.match(service,/await generateReport\(db,projectId,v\.kind,actorId\)/);
+  assert.match(service,/report\.published\.v1/);
+  assert.equal((service.match(/executePmCommand\(\{/g)||[]).length,2,
+    'Both report mutations must reuse the same durable receipt runtime');
+});
