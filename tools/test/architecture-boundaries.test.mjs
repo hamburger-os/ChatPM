@@ -383,3 +383,26 @@ test('project owner has exactly one persisted identity in project_members',()=>{
   assert.match(query,/owner.user_id AS owner_id/g);
   assert.doesNotMatch(query,/p\.owner_id/);
 });
+
+test('tenant governance HTTP delegates all administrative writes and scoped reads',()=>{
+  const api=readFileSync(new URL('../../apps/api/src/governance-routes.ts',import.meta.url),'utf8');
+  const commands=readFileSync(new URL('../../packages/core/src/governance/tenant-commands.ts',import.meta.url),'utf8');
+  const queries=readFileSync(new URL('../../packages/core/src/governance/tenant-queries.ts',import.meta.url),'utf8');
+  const names=['createDepartment','createPortfolio','createProgram','addTenantMember',
+    'changeTenantMemberRole','assignDepartmentMember','cancelTenantAllocation',
+    'recordTenantAllocation'];
+  for(const name of names){
+    assert.match(api,new RegExp('\\b'+name+'\\('));
+    assert.match(commands,new RegExp('export function '+name+'\\('));
+  }
+  assert.match(api,/listTenantMembers\(tenantId,user\)/);
+  assert.match(api,/listTenantAllocations\(tenantId,user\)/);
+  assert.doesNotMatch(api,/pool\.query|db\.query|organizationCommand\(|recordResourceAllocation\(|requireTenant\(/);
+  assert.equal((commands.match(/return organizationCommand\(/g)||[]).length,8);
+  assert.match(commands,/replayAccess:'member'/);
+  assert.match(commands,/组织至少保留一位管理员/);
+  assert.match(commands,/recordResourceAllocation\(db/);
+  assert.match(queries,/SET TRANSACTION ISOLATION LEVEL REPEATABLE READ/);
+  assert.match(queries,/FOR SHARE/);
+  assert.equal((queries.match(/return withTenantAdminRead\(/g)||[]).length,2);
+});

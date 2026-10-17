@@ -465,3 +465,15 @@
 **取舍与风险。** PostgreSQL 检查维持两个独立约束（一个部分唯一索引、一个提交时存在性约束），避免镜像列或另外的身份真相。既有安装中如果确实存在不一致旧数据，应先停写、备份，在隔离库人工按正式审计决策修复旧 Owner 成员关系，再重跑迁移；不在迁移里创建伪造权限。被组织撤销成员资格的人可以保留 Owner 历史角色但**所有访问仍由当前 tenant_members + project_members 双重认证拒绝**；完整管理员责任接管流程另行设计，不能靠自动重分配绕过审计。
 
 **验证与门禁。** 真实 PostgreSQL 验证 schema 列已消失、无 Owner 创建失败、直接降级/删除唯一 Owner 失败、第二 Owner 违反索引、一次事务成功移交、并发版本/旧命令重放以及合法级联删除；所有旧测试项目夹具在一条 SQL 中原子建立唯一 Owner，避免无效项目；compiled API smoke + Web build + Windows/Linux/Docker/Security/Docs 最终 Head CI 通过。此切片**不等同** #48 所有 PM 正式领域、#49 Worker 故障、#50 AI 和 #51 实机生产完整验收。
+
+## ADR-079 · 组织治理读写统一归属 Core（2026-10-17）
+
+**问题。** `governance-routes.ts` 仍持有八类组织写入的 `organizationCommand` 回调和领域 SQL，并先由 HTTP `requireTenant` 做权限预检；组织成员和资源分配 GET 同样先在一个 Pool 连接校验租户管理员、再从另一个连接读取。这导致撤权读竞态、重复权限实现和 API 业务增长，与模块化单体中 Core 唯一业务命令所有权原则不符。
+
+**决定。** 将 Department/Portfolio/Program 创建、组织成员加入/角色变更、部门成员分配/改派、资源分配登记/取消这八个现有正式写入移至 `governance/tenant-commands.ts`，继续只调用同一个 `organizationCommand`。保持 Tenant advisory transaction lock、当前组织管理员行锁、`tenant_command_receipts`（含 payload hash）、`organization_audit_entries` 同事务，以及部门/项目/租户复合外键和 `recordResourceAllocation` 的容量核验；不新建命令总线、缓存或其它执行源。HTTP 保留 Session、UUID、Zod、资源日期和组合归属校验及现有接口状态/返回结构；业务权限只通过 Core 当前事务授予，撤权前预检不再被作为凭据。
+
+**读取一致性。** `governance/tenant-queries.ts` 复用同一个 `withTenantAdminRead`，对 GET members / allocations 开启 REPEATABLE READ，并锁定当前租户管理员成员行 `FOR SHARE`；对象读取在同一 DbClient/快照完成。非管理员、被撤销组织成员或跨租户 ID 不会泄露姓名、邮箱、日期或分配信息。其它已在 Core 的 `getTenantStructure` 与 `getGovernancePulse` 保持原独立作用域及读取安全。
+
+**权限和并发边界。** 组织管理员自降级/他降级保留已有“至少一名管理员”规则，唯一成功的角色变更可在本人降为普通成员后凭相同 idempotencyKey **仅重放已完成回执**；新命令依旧拒绝。资源容量按日期边界、跨项目 100% 上限、非 observer 项目成员、项目/租户作用域与组织命令串行化进行校验，删除历史分配仅标取消，不能覆盖历史来源。
+
+**验证与遗留范围。** 静态架构守卫禁止 Fastify 组织路由直接持有业务 SQL 或 `organizationCommand`；真实 PostgreSQL 覆盖管理员可见性、跨租户禁止、部门与组合/项目集及 FK、成员加入、部门责任、资源超配/取消、组织角色降级及最后管理员保护、回执重放/冲突与审计数量；最新 Head 五项 CI 成功后才合并。不代表 #49 其它 API/Worker 或 #43 PMP 收益治理、#39 实网安全、#51 实机发布已完成。

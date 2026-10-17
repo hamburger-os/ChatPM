@@ -394,3 +394,11 @@ retryDeadEvent 唯一使用现有 executePmCommand：当前授权、dead_at 非�
 - `identity/project-governance.ts` 转让负责人只操作两条成员 Role 和独立 `projects.ownership_revision`；原始操作者必须当下为 Owner 且有当前租户成员关系，目标必须当下具备组织+项目成员资格；移交后的旧负责人只可读其**相同幂等键**的已提交成功回执。
 - 新 migration 严格验证旧身份字段匹配才删除，DB 部分唯一索引保证最多一名 Owner，两个延期约束触发器保证提交时最少一名。无数据对账证据不得在正式旧库自动修复或跳过失败。
 - 工程测试必须覆盖无 Owner、双 Owner、直接降级、原子移交、并发版本、只读可见性、项目删除级联、重新部署迁移重跑；不得依赖未提交 DB 状态中的临时 Owner 空窗。
+
+## ADR-079 · 组织正式命令单源与管理员读快照
+
+- `governance/tenant-commands.ts` 唯一拥有八类组织写入：`createDepartment`、`createPortfolio`、`createProgram`、`addTenantMember`、`changeTenantMemberRole`、`assignDepartmentMember`、`cancelTenantAllocation`、`recordTenantAllocation`。全部复用既有 `organizationCommand`，不可构建另一套回执、身份预检、事务或事件机制。
+- `governance/tenant-queries.ts` 的 `listTenantMembers/listTenantAllocations` 使用相同 `withTenantAdminRead`，在一个 REPEATABLE READ 事务内锁有效 `tenant_members.role='admin'` 并读取数据。HTTP 不得先 `requireTenant` 然后 `pool.query` 执行敏感读取。
+- 组织角色变更降为 member 时，禁止撤销最后一位管理员；完成的同键原回执允许旧管理员重放（`replayAccess:'member'`），任何全新管理命令仍必须当前管理员。此前有权限的 UI 状态不授权异步请求。
+- `recordResourceAllocation` 仍控制真实百分比容量、项目当前执行成员资格、日期窗口以及跨项目超额；取消操作仅标记审计字段。Portfolio/Program 仅是战略/协同结构，组织管理员及部门 Lead 权限不意味着所有项目聊天室内容访问。
+- Product CI 加入直接调用 Core 的真实 Postgres 测试与静态边界；保留其它服务的原 API Smoke、Web、Docker/native/security/文档完整门禁。
