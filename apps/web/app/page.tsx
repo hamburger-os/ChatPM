@@ -47,6 +47,8 @@ export default function Home(){
   const bottom=useRef<HTMLDivElement>(null);
   const skipNextAutoScroll=useRef(false);
   const cursor=useRef(0);
+  const selectedRef=useRef<string|null>(null);
+  selectedRef.current=selected;
   const createIntent=useRef<{fingerprint:string;key:string}|null>(null);
   const sendIntent=useRef<{projectId:string;content:string;nonce:string}|null>(null);
   const current=projects.find(x=>x.id===selected)||null;
@@ -98,7 +100,7 @@ export default function Home(){
     return ()=>{active=false;};
   },[auth]);
   useEffect(()=>{
-    if(!selected||view!=='projects')return;
+    if(!selected||view!=='projects'||auth!=='ready')return;
     const projectId=selected;
     let active=true;
     let stream:EventSource|null=null;
@@ -175,7 +177,7 @@ export default function Home(){
       active=false;clearInterval(timer);closeStream();
       document.removeEventListener('visibilitychange',visible);
     };
-  },[selected,view]);
+  },[selected,view,auth]);
   useEffect(()=>{
     if(view!=='projects')return;
     if(skipNextAutoScroll.current){
@@ -191,7 +193,7 @@ export default function Home(){
     try{
       const page=await request<{messages:Message[];hasMore:boolean}>(
         '/projects/'+projectId+'/messages?before='+historyCursor);
-      if(selected!==projectId)return;
+      if(selectedRef.current!==projectId)return;
       skipNextAutoScroll.current=true;
       setMessages(old=>{
         const seen=new Set<string>();
