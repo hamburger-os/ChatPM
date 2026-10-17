@@ -103,8 +103,10 @@ try{
   for(const fn of [getProjectDetails,listProjectProgress,listProjectProposals]){
     await assert.rejects(fn(project,observer),/项目不存在或无权限/);
   }
-  await pool.query('DELETE FROM project_members WHERE project_id=$1 AND user_id=$2',
-    [project,owner]);
+  // Removing the only persisted owner is forbidden; revoke active tenant
+  // membership to validate the same HTTP read-denial boundary.
+  await pool.query('DELETE FROM tenant_members WHERE tenant_id=$1 AND user_id=$2',
+    [tenant,owner]);
   for(const fn of [getProjectDetails,getProjectAiAuthorization,
     listProjectAiInvocations,listProjectAiRuns,listProjectProgress,
     listProjectProposals]){
