@@ -298,7 +298,7 @@ test('Conversation cursor and SSE stream use one current-membership read service
   assert.match(stream,/await listProjectMessages\(projectId,actorId/);
   assert.match(stream,/after=Number\(m\.seq\)/);
   assert.match(stream,/reply\.raw\.once\('close',cleanup\)/);
-  assert.match(stream,/reply\.raw\.once\('drain',done\)/);
+  assert.match(stream,/socket\.once\('drain',onDrain\)/);
   assert.match(proxy,/eventStream \? response\.body : await response\.arrayBuffer\(\)/);
   assert.match(proxy,/signal: eventStream \? request\.signal : AbortSignal\.timeout\(30000\)/);
   assert.match(proxy,/'last-event-id'/);
@@ -558,7 +558,7 @@ test('SSE stream has bounded backpressure and releases per-user slots on slow pe
   assert.match(stream,/clearTimeout\(deadline\)/);
   assert.match(stream,/socket\.off\('drain',onDrain\)/);
   assert.match(stream,/socket\.off\('close',onClose\)/);
-  assert.match(stream,/if\(!await writeSseFrame\(reply\.raw,chunk\)\)\{\s+cleanup\(\);\s+reply\.raw\.destroy\(\)/);
+  assert.match(stream,/if\(!await writeSseFrame\(reply\.raw,chunk\)\)\{[\s\S]*?cleanup\(\);\s+reply\.raw\.destroy\(\)/);
   assert.match(stream,/if\(count<=1\)activeStreams\.delete\(actorId\)/);
   assert.match(stream,/ping=setInterval\(/);
   assert.match(stream,/void write\(': keep-alive\\n\\n'\)\.catch/);
