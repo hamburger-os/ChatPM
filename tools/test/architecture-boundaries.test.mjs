@@ -266,3 +266,25 @@ test('Conversation cursor and SSE stream use one current-membership read service
   assert.match(page,/new EventSource\('/);
   assert.match(page,/setHistoryMore\(page\.hasMore\)/);
 });
+
+test('project AI and review reads cannot split API authorization from domain SQL',()=>{
+  const api=readFileSync(new URL('../../apps/api/src/server.ts',import.meta.url),'utf8');
+  const access=readFileSync(new URL('../../packages/core/src/identity/project-access.ts',import.meta.url),'utf8');
+  const project=readFileSync(new URL('../../packages/core/src/project-queries.ts',import.meta.url),'utf8');
+  const review=readFileSync(new URL('../../packages/core/src/approval/review-queries.ts',import.meta.url),'utf8');
+  const start=api.indexOf("app.get('/projects/:id',");
+  const end=api.indexOf('registerInvitationRoutes(',start);
+  assert.ok(start>=0&&end>start);
+  const routes=api.slice(start,end);
+  for(const name of ['getProjectDetails','getProjectAiAuthorization',
+    'listProjectAiInvocations','listProjectAiRuns',
+    'listProjectProgress','listProjectProposals'])
+    assert.ok(routes.includes(name+'('),'Route must delegate to '+name);
+  assert.doesNotMatch(routes,/\b(?:SELECT|INSERT|UPDATE|DELETE)\b|pool\.query|\bmember\(/i);
+  assert.match(access,/SET TRANSACTION ISOLATION LEVEL REPEATABLE READ/);
+  assert.match(access,/lockProjectAccess\(db,projectId,actorId\)/);
+  assert.match(access,/assertProject\(access\.role,action\)/);
+  assert.equal((project.match(/withProjectRead\(/g)||[]).length,4);
+  assert.equal((review.match(/withProjectRead\(/g)||[]).length,2);
+  assert.equal((project.match(/'members\.manage'/g)||[]).length,3);
+});

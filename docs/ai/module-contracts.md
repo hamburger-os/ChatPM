@@ -357,3 +357,9 @@ retryDeadEvent 唯一使用现有 executePmCommand：当前授权、dead_at 非�
 - `GET /projects/:id/messages/events` 仅 Cookie/Bearer Session 与当前项目权限可开流，`Last-Event-ID` 优先于 URL after，输出 `id: seq` 和 `event: message`，每轮重新验证 Session、上述 Core 项目访问；登出/撤权立即在下一轮断开。流必须限时定期扫描、心跳、背压、单用户连接数量和 socket close 清理。SSE 是送达加速，不是持久事实或 exactly-once 推送。
 - Next `/api` 对 SSE 使用 `response.body` 直接返回、转发 `last-event-id`，不走非 SSE 的 `AbortSignal.timeout(30000)` 或 `arrayBuffer`；Web 用 EventSource 断线续传、消息 ID 去重/seq 排序、后台关闭、30 秒 REST 对账；历史页面使用 `before`。
 - 验收：Core 真实 PostgreSQL 翻页/越权/撤权、编译版 API Event Stream/Last-Event-ID/登出、Next 代理架构守卫与生产构建。真实移动端、代理/共享 NAT、大规模连接及多实例广播需单独验证。
+
+## ADR-074 · 当前成员身份约束的只读项目视图
+
+- `identity/project-access.ts` 提供 `withProjectRead(projectId,actorId,action,query)`：REPEATABLE READ 事务内执行 `lockProjectAccess`（项目/租户成员 FOR SHARE）与 `assertProject`，同连接读取业务表，成员不存在 404，角色权限不足 403。
+- `project-queries.ts` 是项目详情、仅 Owner 可读的 AI 授权/调用/分析视图的 SQL 所有者；`approval/review-queries.ts` 是进度证据和待审批候选读取 SQL 的所有者。进度与候选依然不是被批准的任务状态。
+- `server.ts` 六个 GET 只做 Cookie/Session、UUID 与委托；禁止恢复先 `member()` 再 `pool.query()` 的分离检查。保留响应字段、顺序与列表上限，测试覆盖实际数据、跨组织、跨项目、两类撤权与 Owner-only 边界。

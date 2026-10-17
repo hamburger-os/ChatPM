@@ -239,3 +239,7 @@ GET /projects/:id/outbox/summary 和 /dead 现委托 operations/outbox-admin.ts�
 新增 `conversation/message-queries.ts`：项目最新消息、提交序号 `after`、反向历史 `before` 统一在 REPEATABLE READ/当前租户+项目成员行锁中读取，任何权限撤销不允许下一批读取。Fastify 增加 `/projects/:id/messages/events`，发送 `id: message.seq` 的 SSE；支持 Last-Event-ID、心跳、流量背压、最多 3 条并发用户连接与登出/撤权后连接终止。Next 同源代理不再为 SSE 使用 30 秒固定超时/整包读取，Web 用 EventSource + 去重有序合并 + 30 秒 REST 对账，后台暂停并开放历史翻页。
 
 测试：Core PostgreSQL 游标/撤权、编译版 API Smoke 的 SSE 授权/续传/登出终止、架构边界与 Next/Web 构建；仅描述真实 CI 成功后代码可用性。尚缺多实例通知模型、共享网关压测、真实移动设备 E2E 与公网反向代理的 SSE 流式验收，#40 保持开放。
+
+## ADR-074 · 项目与 AI 审核只读边界（2026-10-17）
+
+项目详情、Owner 的 AI 授权/模型调用审计/分析记录以及当前项目成员可见的进度与候选列表，已迁移到 Core 领域查询。六类读取共用 `withProjectRead` 当前租户+项目授权快照，不再由 `server.ts` 先查权限再在另一个数据库连接读取；原接口与响应结构保留。新增 PostgreSQL 权限撤销/数据隔离测试和架构守卫，并接入 Product CI。此改进不意味着 #49 全域 API 模块化完成，生产多用户实机、性能和公开部署仍待验收。

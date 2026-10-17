@@ -174,3 +174,9 @@ English: Project weekly and monthly reports continue to use authoritative Postgr
 中文：项目聊天现在提供基于已持久化消息序号的 SSE 实时接收。网页断线后会使用 Last-Event-ID 或当前游标从数据库补拉，避免仅靠内存通知而漏消息；在弱网络情况下还有低频 REST 对账。切换项目、退出登录、撤销项目/组织成员资格时不再持续推送消息。页面后台关闭事件流，回到前台重新连接；成员可加载更早聊天记录。Next.js 同源代理会直接转发流，不再缓存整段 SSE 响应。当前后端仍需对每条在线流定期查库，不等于大型多租户推送平台。真实 iOS/Android、共享 NAT、复杂代理超时和公网部署尚未验收。
 
 English: Project chat now supports SSE updates using committed PostgreSQL message sequence IDs. On reconnect, the browser resumes from Last-Event-ID or its current cursor and periodically reconciles with durable REST messages, rather than trusting ephemeral notifications. Project switches, logout and tenant/project membership revocation stop delivery; background tabs close the stream and reconnect when visible. Authorized members can load earlier chat history, and the same-origin Next.js proxy forwards the SSE body without buffering. The server still polls its database per open stream; real mobile browsers, large shared gateways, production reverse proxies and public-network behavior remain to be verified.
+
+### 当前授权的项目只读视图 / Current-authorized project reads
+
+中文：项目详情、进度与候选列表在同一 PostgreSQL 事务中核验当前组织和项目成员身份并读取数据。只有项目负责人可以读取 AI 授权状态、模型调用审计和分析记录，普通成员与观察者不能通过直接请求 API 绕开角色权限。现有接口和返回字段保持不变，撤权后的新查询不能继续使用旧权限结果。这不表示全部 API 已完成模块拆分，也不代替真实生产部署和安全验收。
+
+English: Project details, progress and proposal lists now check current tenant and project membership within the same PostgreSQL transaction that reads the data. Only a project owner can read AI authorization, model invocation audits and analysis runs; members and observers cannot bypass that role by calling the API directly. Existing endpoints and response fields are unchanged, and reads after revocation cannot reuse stale permissions. Other API boundaries and real production security acceptance remain unfinished.
