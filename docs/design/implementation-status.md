@@ -215,3 +215,9 @@ Docker 部署 Smoke 原先仅验证 pg_dump custom-format 文件头和 pg_restor
 新增 `027_task_archive.sql`，在正式 Task 增加原位归档标记并扩展不可变 `project_task_history`，`packages/core/src/delivery/task-commands.ts` 提供 `setTaskArchived`，POST `/projects/:id/tasks/:taskId/archive` 与 `/restore` 只做入参校验、现时角色与版本由已有命令运行时控制。项目 Owner/Manager 有权归档完成/取消且无待审核进度的任务，Owner/Manager 可恢复；成员/观察者只读历史。归档期间禁止修改任务或接受进度，停止催办和后续针对该任务的 AI 进度抽取；项目任务 UI 增加归档列表与恢复。正式 Task 列表 GET 从 `server.ts` 移入 Core `delivery/task-queries.ts`，使用同一个 REPEATABLE READ 事务的当前成员行锁核验与读取，避免旧请求在撤权后继续跨连接拿到归档任务。周月报当前工作量和项目集组合快照剔除归档任务，但来源、领域事件、历史证据以及先前报告仍保留；不实现硬删除。
 
 同 PR 增加 PostgreSQL 集成测试与架构守卫，纳入 Product verification。实际完成及质量验证须以 PR 最终 SHA 的 CI 为准；不宣称正式生产实机、长期数据保留策略、完整 PMP 或 AI 性能验收。
+
+## ADR-070 · Outbox 租约心跳与过期消费者隔离（2026-10-17）
+
+`outbox.ts` 使用统一 `OUTBOX_LEASE_SECONDS=300` 完成 claim/lease assert/renew/finish/fail 六处到期判定；`withEventLeaseHeartbeat` 仅包装 AI Worker 的 `runAnalysis` 慢调用，每 60 秒延长**当前仍有效且拥有同一 token**的租约，最多一个 SQL in-flight，运行结束清理定时器。停止、失败处理与先前的 `assertEventClaim` 正式发布事务保持原契约。过期旧任务既不能续租，也不能再设置 processed/retry/dead 状态。
+
+补充 PostgreSQL 回归覆盖即将过期但仍有效的续租、旧 claim/token 被新 Worker 替换、已处理事件无法续租、过期任务禁止确认及失败回写、心跳清理；静态架构守卫防止未来慢模型推理绕过 heartbeat。独立 CI 的结果以最新 PR Head 为准。**未完成：** 主动告警发送、真实分布式 Worker 进程故障注入、长推理 HTTP 网络中止、峰值负载及真实运行平台；Issue #4/#49/#51 不因该切片关闭。
