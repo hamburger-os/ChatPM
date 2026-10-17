@@ -37,8 +37,9 @@ export function registerAdminModelRoutes(app:FastifyInstance,
     return systemAdminTransaction(actor,async db=>({providers:await listProviders(db)}));
   });
   app.post('/admin/ai/providers',async(req,reply)=>{
-    const actor=await authenticated(req),value=providerSchema.parse(req.body);
+    const actor=await authenticated(req);
     const provider=await systemAdminTransaction(actor,async db=>{
+      const value=providerSchema.parse(req.body);
       const saved=await saveProvider(db,null,value);
       await db.query(`INSERT INTO system_audit_entries(actor_id,action,target_id,metadata)
         VALUES($1,'ai.provider_created',$2,$3)`,
@@ -49,8 +50,8 @@ export function registerAdminModelRoutes(app:FastifyInstance,
   });
   app.put('/admin/ai/providers/:id',async req=>{
     const actor=await authenticated(req),id=uuid.parse((req.params as {id:string}).id);
-    const value=providerSchema.parse(req.body);
     const provider=await systemAdminTransaction(actor,async db=>{
+      const value=providerSchema.parse(req.body);
       const saved=await saveProvider(db,id,value);
       await db.query(`INSERT INTO system_audit_entries(actor_id,action,target_id,metadata)
         VALUES($1,'ai.provider_updated',$2,$3)`,[actor,id,JSON.stringify({
@@ -101,14 +102,14 @@ export function registerAdminModelRoutes(app:FastifyInstance,
   });
   app.post('/admin/ai/models/import',async(req,reply)=>{
     const actor=await authenticated(req);
-    const input=z.object({
-      providerId:uuid,
-      models:z.array(z.object({
-        id:z.string().trim().min(1).max(150).regex(/^[^\r\n]+$/),
-        name:z.string().trim().min(1).max(100).optional(),
-      }).strict()).min(1).max(50),
-    }).strict().parse(req.body);
     const result=await systemAdminTransaction(actor,async db=>{
+      const input=z.object({
+        providerId:uuid,
+        models:z.array(z.object({
+          id:z.string().trim().min(1).max(150).regex(/^[^\r\n]+$/),
+          name:z.string().trim().min(1).max(100).optional(),
+        }).strict()).min(1).max(50),
+      }).strict().parse(req.body);
       const imported=await importModelConfigs(db,input.providerId,input.models);
       await db.query(`INSERT INTO system_audit_entries(actor_id,action,target_id,metadata)
         VALUES($1,'ai.models_imported',$2,$3)`,[actor,input.providerId,
@@ -123,8 +124,9 @@ export function registerAdminModelRoutes(app:FastifyInstance,
     return systemAdminTransaction(actor,async db=>({models:await listModelConfigs(db)}));
   });
   app.post('/admin/ai/models',async(req,reply)=>{
-    const actor=await authenticated(req),value=modelSchema.parse(req.body);
+    const actor=await authenticated(req);
     const model=await systemAdminTransaction(actor,async db=>{
+      const value=modelSchema.parse(req.body);
       const saved=await saveModelConfig(db,null,value);
       await db.query(`INSERT INTO system_audit_entries(actor_id,action,target_id,metadata)
         VALUES($1,'ai.model_created',$2,$3)`,[actor,saved.id,JSON.stringify({
@@ -135,8 +137,8 @@ export function registerAdminModelRoutes(app:FastifyInstance,
   });
   app.put('/admin/ai/models/:id',async req=>{
     const actor=await authenticated(req),id=uuid.parse((req.params as {id:string}).id);
-    const value=modelSchema.parse(req.body);
     const model=await systemAdminTransaction(actor,async db=>{
+      const value=modelSchema.parse(req.body);
       const saved=await saveModelConfig(db,id,value);
       await db.query(`INSERT INTO system_audit_entries(actor_id,action,target_id,metadata)
         VALUES($1,'ai.model_updated',$2,$3)`,[actor,id,JSON.stringify({
@@ -160,13 +162,13 @@ export function registerAdminModelRoutes(app:FastifyInstance,
   app.post('/admin/ai/models/:id/test',async req=>{
     const actor=await authenticated(req);
     const id=uuid.parse((req.params as {id:string}).id);
-    const mode=z.object({mode:z.enum(['quick','full']).default('quick')})
-      .strict().parse(req.body??{}).mode;
     // Credential resolution AND the billable-call cooldown are protected by
     // the current platform-admin row lock in ONE DB transaction. Never hold
     // a PostgreSQL connection across the external model network request.
-    const config=await systemAdminTransaction(actor,async db=>{
-      const settings=await resolveModelConfig(id,true,db)
+    const {config,mode}=await systemAdminTransaction(actor,async db=>{
+      const mode=z.object({mode:z.enum(['quick','full']).default('quick')})
+        .strict().parse(req.body??{}).mode;
+      const config=await resolveModelConfig(id,true,db)
         .catch(()=>denied(400,'模型配置不可用'));
       const check=await db.query(`INSERT INTO ai_model_checks(model_config_id,last_test_at)
         VALUES($1,NOW()) ON CONFLICT(model_config_id) DO UPDATE SET
@@ -174,7 +176,7 @@ export function registerAdminModelRoutes(app:FastifyInstance,
         RETURNING model_config_id`,[id]);
       if(!check.rowCount)denied(429,
         '每个模型最多每 30 秒测试一次，以避免误触发计费调用');
-      return settings;
+      return {config,mode};
     });
     const started=Date.now();
     const identity=modelAuditIdentity(config);

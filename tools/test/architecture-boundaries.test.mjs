@@ -495,12 +495,13 @@ test('platform model metadata and credentials only read under current admin tran
   const model=readFileSync(new URL('../../packages/core/src/project-model.ts',import.meta.url),'utf8');
   const access=readFileSync(new URL('../../packages/core/src/identity/system-access.ts',import.meta.url),'utf8');
   assert.match(route,/listProviders\(db\)/);
+  assert.match(route,/const value=modelSchema\.parse\(req\.body\);[\s\S]*?const saved=await saveModelConfig\(db,null,value\)/);
   assert.match(route,/listModelConfigs\(db\)/);
   assert.match(route,/resolveProviderCatalogConfig\(id,db\)/);
   assert.match(route,/resolveModelConfig\(id,true,db\)/);
   assert.doesNotMatch(route,/requireSystemAdmin|await admin\(req\)/,
     'Prechecked administrator rights must not be reused for credential reads');
-  assert.match(route,/const config=await systemAdminTransaction\(actor,async db=>/);
+  assert.match(route,/const \{config,mode\}=await systemAdminTransaction\(actor,async db=>/);
   assert.match(model,/export async function listProviders\(db:DbClient\)/);
   assert.match(model,/export async function listModelConfigs\(db:DbClient\)/);
   assert.match(model,/resolveProviderCatalogConfig\(id:string,db:DbClient\)/);
@@ -508,7 +509,7 @@ test('platform model metadata and credentials only read under current admin tran
   assert.ok((route.match(/systemAdminTransaction\(/g)||[]).length>=11,
     'All platform model routes must recheck the current admin grant');
   const call=route.indexOf('const started=Date.now();');
-  const end=route.indexOf('const config=await systemAdminTransaction(actor,async db=>');
+  const end=route.indexOf('const {config,mode}=await systemAdminTransaction(actor,async db=>');
   assert.ok(end>=0&&call>end,
     'DB grant/cooldown finishes before the external model call');
 });
