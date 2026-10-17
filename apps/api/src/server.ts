@@ -1,7 +1,7 @@
 import { serverConfig } from '../../../packages/core/src/config.ts';
 import { callStructuredLLM, modelAuditIdentity } from '../../../packages/core/src/llm-transport.ts';
 import { resolveProjectModel } from '../../../packages/core/src/project-model.ts';
-import { assertProject, canProject, isSystemAdmin, type ProjectRole } from '../../../packages/core/src/permissions.ts';
+import {isSystemAdmin} from '../../../packages/core/src/permissions.ts';
 import { registerAdminModelRoutes } from './admin-model-routes.ts';
 import { registerGovernanceRoutes } from './governance-routes.ts';
 import { registerPmRoutes } from './pm-routes.ts';
@@ -29,6 +29,10 @@ import { enforceRegistration,mayRegister } from '../../../packages/core/src/iden
 import { postUserMessage } from '../../../packages/core/src/conversation/user-message-command.ts';
 import { listProjectMessages } from '../../../packages/core/src/conversation/message-queries.ts';
 import { registerMessageStreamRoutes } from './message-stream-routes.ts';
+import {getProjectDetails,getProjectAiAuthorization,listProjectAiInvocations,
+  listProjectAiRuns} from '../../../packages/core/src/project-queries.ts';
+import {listProjectProgress,listProjectProposals} from
+  '../../../packages/core/src/approval/review-queries.ts';
 
 
 const port = serverConfig.API_PORT;
@@ -78,19 +82,6 @@ async function authenticated(req: { cookies: Record<string,string|undefined>, he
   const user = token ? await readSession(token) : null;
   if (!user) fail(401,'请先登录');
   return user!;
-}
-async function member(userId:string, projectId:string) {
-  const {rows}=await pool.query(
-    `SELECT pm.role,p.tenant_id,p.ai_enabled,p.timezone,p.work_start,p.work_end,p.cooldown_hours
-     FROM project_members pm JOIN projects p ON p.id=pm.project_id
-     JOIN tenant_members tm ON tm.tenant_id=p.tenant_id AND tm.user_id=pm.user_id
-     WHERE pm.project_id=$1 AND pm.user_id=$2`,[projectId,userId]);
-  if (!rows[0]) fail(404,'项目不存在或无权限');
-  return rows[0] as {role:ProjectRole,tenant_id:string,ai_enabled:boolean,
-    timezone:string,work_start:number|null,work_end:number|null,cooldown_hours:number|null};
-}
-function owner(m:{role:string}) {
-  assertProject(m.role as ProjectRole,'members.manage');
 }
 async function issueSession(reply:{setCookie:Function},userId:string) {
   reply.setCookie('chatpm_session',await createSession(userId),{
@@ -159,38 +150,20 @@ app.get('/tenants',async req=>{
   return {tenants:rows};
 });
 app.get('/projects/:id',async req=>{
-  const projectId=uuid.parse((req.params as {id:string}).id);
-  const userId=await authenticated(req);
-  await member(userId,projectId);
-  const {rows}=await pool.query(
-    `SELECT id,name,timezone,ai_enabled,work_start,work_end,cooldown_hours,settings_revision,owner_id,ownership_revision FROM projects WHERE id=$1`,
-    [projectId]);
-  return {project:rows[0]};
+  const id=uuid.parse((req.params as {id:string}).id);
+  return getProjectDetails(id,await authenticated(req));
 });
 app.get('/projects/:id/ai/authorization',async req=>{
   const id=uuid.parse((req.params as {id:string}).id);
-  owner(await member(await authenticated(req),id));
-  const {rows}=await pool.query(`SELECT ai_enabled AS enabled,
-    ai_authorization_version AS version FROM projects WHERE id=$1`,[id]);
-  return {authorization:{enabled:rows[0].enabled,version:Number(rows[0].version)}};
+  return getProjectAiAuthorization(id,await authenticated(req));
 });
 app.get('/projects/:id/ai/invocations',async req=>{
   const id=uuid.parse((req.params as {id:string}).id);
-  owner(await member(await authenticated(req),id));
-  const {rows}=await pool.query(`SELECT id,authorization_version,model_identity,
-    prompt_version,status,error_code,latency_ms,input_tokens,output_tokens,
-    started_at,finished_at
-    FROM ai_model_invocations WHERE project_id=$1 ORDER BY started_at DESC LIMIT 60`,[id]);
-  return {invocations:rows};
+  return listProjectAiInvocations(id,await authenticated(req));
 });
-
 app.get('/projects/:id/ai/runs',async req=>{
   const id=uuid.parse((req.params as {id:string}).id);
-  owner(await member(await authenticated(req),id));
-  const {rows}=await pool.query(`SELECT source_message_id,kind,status,model_name,error_code,
-      created_at,updated_at FROM ai_analysis_runs WHERE project_id=$1
-      ORDER BY created_at DESC LIMIT 40`,[id]);
-  return {runs:rows};
+  return listProjectAiRuns(id,await authenticated(req));
 });
 
 app.get('/projects/:id/messages',async req=>{
@@ -212,24 +185,11 @@ app.post('/projects/:id/messages',async(req,reply)=>{
 });
 app.get('/projects/:id/progress',async req=>{
   const id=uuid.parse((req.params as {id:string}).id);
-  await member(await authenticated(req),id);
-  const {rows}=await pool.query(`SELECT u.id,u.task_id,u.source_message_id,
-    u.summary,u.kind,u.status,u.created_at,t.title AS task_title
-    FROM task_progress_updates u JOIN tasks t ON t.id=u.task_id AND t.project_id=u.project_id
-    WHERE u.project_id=$1 ORDER BY u.created_at DESC LIMIT 150`,[id]);
-  return {updates:rows};
+  return listProjectProgress(id,await authenticated(req));
 });
 app.get('/projects/:id/proposals',async req=>{
-  const projectId=uuid.parse((req.params as {id:string}).id);
-  await member(await authenticated(req),projectId);
-  const {rows}=await pool.query(
-    `SELECT pc.*, ct.assignee_hint AS clarified_assignee_hint,
-       ct.due_at AS clarified_due_at,ct.status AS clarification_status,
-       ct.response_message_id AS clarification_message_id
-     FROM proposed_changes pc LEFT JOIN clarification_threads ct ON ct.proposal_id=pc.id
-     WHERE pc.project_id=$1 ORDER BY pc.created_at DESC LIMIT 200`,
-    [projectId]);
-  return {proposals:rows};
+  const id=uuid.parse((req.params as {id:string}).id);
+  return listProjectProposals(id,await authenticated(req));
 });
 registerInvitationRoutes(app,authenticated,issueSession);
 registerAdminModelRoutes(app,authenticated);

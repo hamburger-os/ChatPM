@@ -35,7 +35,7 @@ Identity/Tenancy、Projects、Conversations、Work、Risk/Decision、AI Orchestr
 
 ## 运行时边界与部署目标
 
-目前 API、Web、Worker 分进程运行，PostgreSQL 是唯一正式项目事实来源；Worker 直接轮询事务型 Outbox 和跟进计划，不依赖 Redis/BullMQ。聊天使用 HTTP 轮询。所有外部 AI 请求需要项目负责人开启。
+目前 API、Web、Worker 分进程运行，PostgreSQL 是唯一正式项目事实来源；Worker 直接轮询事务型 Outbox 和跟进计划，不依赖 Redis/BullMQ。聊天使用 PostgreSQL 已提交消息序号 + SSE 增量接收，辅以 REST 历史翻页及断线对账；当前服务端对在线流定期查库。所有外部 AI 请求需要项目负责人开启。
 
 目标为共用产品核心的官方 SaaS 与自部署，云端与本地模型通过适配器接入。只有在实测需求充分时才增加其他分布式组件，避免建立无使用依据的兼容层。
 

@@ -1,4 +1,5 @@
-import type { DbClient } from '../db.ts';
+import {transaction, type DbClient} from '../db.ts';
+import {assertProject, type ProjectAction} from '../permissions.ts';
 import type { ProjectRole } from '../permissions.ts';
 
 /**
@@ -16,4 +17,17 @@ export async function lockProjectAccess(db:DbClient,projectId:string,actorId:str
   if(!rows[0])throw Object.assign(
     new Error('项目不存在或无权限'),{statusCode:404});
   return {tenantId:rows[0].tenant_id,role:rows[0].role};
+}
+
+/** Current project + tenant membership and the read share one snapshot. */
+export async function withProjectRead<T>(
+  projectId:string,actorId:string,action:ProjectAction,
+  query:(db:DbClient)=>Promise<T>,
+):Promise<T>{
+  return transaction(async db=>{
+    await db.query('SET TRANSACTION ISOLATION LEVEL REPEATABLE READ');
+    const access=await lockProjectAccess(db,projectId,actorId);
+    assertProject(access.role,action);
+    return query(db);
+  });
 }

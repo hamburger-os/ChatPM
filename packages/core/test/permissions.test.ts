@@ -16,5 +16,8 @@ test('project action authorization denies observer mutations and member planning
   assert.equal(canProject('manager','proposal.approve'),true);
   assert.equal(canProject('manager','members.manage'),false);
   assert.equal(canProject('owner','members.manage'),true);
+  assert.equal(canProject('owner','ai.audit.read'),true);
+  for(const role of ['manager','member','observer'] as const)
+    assert.equal(canProject(role,'ai.audit.read'),false);
   assert.throws(()=>assertProject('observer','task.create'),/没有执行该操作的权限/);
 });
