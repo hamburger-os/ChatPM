@@ -226,3 +226,9 @@ English: Events (including AI/Outbox), reminders and reports each report indepen
 中文：新用户注册、登录、个人信息和所属组织列表现在都通过 Identity Core 服务执行。初次注册仍依据部署者配置的公开注册或安全 bootstrap 策略；用户、初始组织和管理员成员资格一起写入数据库，失败就整体回滚。登录不会向客户端返回密码哈希；组织成员被移除后，组织导航会立即更新，不允许再用以前的成员资格访问。HTTP 继续负责安全 Cookie、Origin/CSRF 和限速，不存储第二套身份记录。
 
 English: Registration, sign-in, self-profile and tenant navigation are now owned by a single Identity Core service. First-account bootstrap still enforces the configured secure enrollment policy and atomically creates the account, first tenant and admin membership. Password hashes are never returned in login responses. Tenant navigation is based on current membership, so a revoked membership disappears immediately; Fastify retains cookie/session, Origin and rate-limit duties. This does not certify enterprise SSO/MFA or production anti-abuse readiness.
+
+### Docker 宿主机模型地址严格绑定 / Pinned Docker host model gateway
+
+中文：若把本地 AI 模型连接地址配置为 `http://host.docker.internal:<端口>`，必须由部署者在服务器的 `MODEL_DOCKER_GATEWAY_IPS` 中列出**实际验证过**的 Docker 宿主机网关 IP。解析结果的每个 A/AAAA IP 都要在精确名单里，不能仅因为它是局域网 IP 就放行。网关 IP 改变时请求会失败，直到部署者重新检查并更新配置。普通公网 HTTPS 模型无需该配置；此规则不在浏览器中存放模型密钥或网关 IP 权限。不得把 CI 通过视为现场网络攻击验收。
+
+English: When a self-hosted model uses `http://host.docker.internal:<port>`, operators must explicitly pin verified gateway IPs in server-side `MODEL_DOCKER_GATEWAY_IPS`. Every DNS A/AAAA answer must exactly match the allowlist; an arbitrary private LAN address is not trusted. If the Docker gateway changes, requests fail closed until the operator revalidates it. Public HTTPS providers do not need this setting. CI validation alone does not certify live QNAP/Windows/IPv6 network isolation or production egress security.

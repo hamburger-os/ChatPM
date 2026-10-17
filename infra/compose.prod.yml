@@ -13,6 +13,8 @@ x-app: &app
     PGPASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
     SESSION_SECRET: ${SESSION_SECRET:?Set SESSION_SECRET in .env}
     MODEL_ENCRYPTION_KEY: ${MODEL_ENCRYPTION_KEY:?Set MODEL_ENCRYPTION_KEY in .env}
+    # Only used for explicit host.docker.internal model targets; empty is fail-closed.
+    MODEL_DOCKER_GATEWAY_IPS: ${MODEL_DOCKER_GATEWAY_IPS:-}
     WEB_ORIGIN: ${WEB_ORIGIN:-http://localhost:3000}
     DB_POOL_MAX: ${DB_POOL_MAX:-10}
     REGISTRATION_MODE: ${REGISTRATION_MODE:-bootstrap}
@@ -47,6 +49,8 @@ services:
         condition: service_healthy
   api:
     <<: *app
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     command: ["npm","run","start:api"]
     environment:
       <<: *app-env
@@ -60,6 +64,8 @@ services:
       retries: 4
   worker:
     <<: *app
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     command: ["npm","run","start:worker"]
     environment:
       <<: *app-env

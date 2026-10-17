@@ -30,6 +30,9 @@ jobs:
             (.services.api.environment | has("BOOTSTRAP_TOKEN")) and
             (.services.worker.environment | has("BOOTSTRAP_TOKEN") | not) and
             (.services.migrate.environment | has("BOOTSTRAP_TOKEN") | not) and
+            (.services.api.environment.MODEL_DOCKER_GATEWAY_IPS == "") and
+            (.services.worker.environment.MODEL_DOCKER_GATEWAY_IPS == "") and
+            ((.services.web.environment | has("MODEL_DOCKER_GATEWAY_IPS")) | not) and
             (.services.web.environment | has("SESSION_SECRET") | not) and
             (.services.web.environment | has("PGPASSWORD") | not) and
             (.services.web.environment | has("OPENAI_API_KEY") | not)'

@@ -100,3 +100,7 @@ CI 先完成 Web Proxy/Origin/Cookie、Worker heartbeat 和 Outbox 检查，然�
 
 Linux 已有 `infra/linux/chatpm-doctor.service` + `chatpm-doctor.timer` 每 5 分钟执行；Windows 在正式安装服务并保护 .env ACL 后由管理员运行 `infra/windows/install-doctor-task.ps1` 注册 `ChatPM-Doctor`，使用 LocalService（只读配置、无需管理员进程长期驻留）每五分钟一次。通过 `systemctl list-timers` / `journalctl -u chatpm-doctor.service` 或 Windows Task Scheduler 查看实际退出码和最近运行时间，并由部署者的外部监控将非零退出、计划任务长期未运行升级给值班人员。未接外部监控时只是周期诊断，不是短信/邮件/IM **主动通知**；需要实测告警渠道、抖动去重、服务停机、模型超时、DB 重启、跨实例竞争与通知送达才能通过生产 #4/#51。
 
+
+## ADR-082 · Docker 模型网关 IP 明确允许名单
+
+默认云端 HTTPS 模型不需要任何网关环境变量。若系统总管理员选择 `http://host.docker.internal:<port>/v1` 作为本地模型基础 URL，则生产 Compose 为 API 与 Worker 容器配置 `extra_hosts: host.docker.internal:host-gateway`，但只有运维者**先验证真实网关身份**，再在受保护 `.env` 设置 `MODEL_DOCKER_GATEWAY_IPS=172.18.0.1`（IP **仅示例，不可照抄**）才允许模型请求。可逗号分隔最多 4 个已验证 A/AAAA 网关 IP，**不接受网段 CIDR、`localhost`、任意内网服务地址或公网 IP**；没有配置或有一个未知解析 IP 就拒绝请求。建议在已部署 API/Worker 容器内执行 `getent hosts host.docker.internal`，结合容器路由/宿主机 Docker 网络配置核对每条地址的归属，不仅凭 DNS 输出即信任。容器网络重建、升级或网关变更后按停写/维护策略重新核对并更新允许名单，避免用一个更宽的私网段掩盖实际问题。若本地模型运行在原生 Windows/Linux 同一进程命名空间，可显式配置 `localhost`；不能因此扩展任意内网别名为可信。QNAP/IPv6/HTTPS、模型所在宿主机端口与 egress 防火墙仍需目标机器实测。

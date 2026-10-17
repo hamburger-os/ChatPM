@@ -374,3 +374,11 @@ CI 须验证 PostgreSQL 游标 200 条边界、25 条更早记录、跨项目与
 **验收门禁。** 真实数据库 Core 测试核验正确与错误密码、密码 hash 不进入公开返回、重复邮箱事务回滚、跨组织不可见、用户总管理员状态当前值、组织资格撤销后导航消失；历史 bootstrap 并发 race 测试、前端同源 Cookie/Origin、编译 API Smoke 与全部五组 CI 保留。静态架构守卫禁止新业务查询回流 HTTP。未得到最新 Head Product、Docs、Native、Docker、Security 全绿、主干未漂移和审查线程 0 之前不合并。
 
 **尚未解决：** #49 其它领域 API/Worker 故障、#39 QNAP/IPv6 公网网络及注册风控、#50 AI 能力审批与真实模型、#51 Win11/Linux 实机及迁移恢复。模块收敛不代表所有需求已实现或可直接投入生产。
+
+## ADR-082 · 模型 Docker 网关信任边界 /review（2026-10-17）
+
+从合并后主干 `183735f` 审核 P0 #39 的 ModelEndpointPolicy、ModelEgress、HTTP Catalog、StructuredLLM、API 管理员模型配置和生产 Compose。已有：禁止嵌密钥 URL/非本地明文 HTTP、解析全量 A/AAAA 并拒绝任何公网模型混合私网返回、HTTP socket 使用校验过的固定地址、禁止重定向/代理、保护上游凭据与响应限制。缺陷在于：`host.docker.internal` 把整个 RFC1918/ULA 私网当作可信出口，第一跳 DNS 被改为另一个私网 IP 时仍会发送请求和模型 Bearer Key。不能仅靠“DNS 查询只执行一次”证明服务身份。
+
+采用 `MODEL_DOCKER_GATEWAY_IPS` **精确 IP 字面名单**作为唯一部署信任锚；漏配即在 DNS 前拒绝，错配/包含不可信地址及 A/AAAA 中混入其他内网地址直接拒绝，Node socket 仍 PIN 已验证结果。不保留旧“整个内网均可信”的兼容后门。API/Worker 共享原 `model-egress.ts` 与配置变量，Compose 加真实 host-gateway 别名，Web 仍不持有模型配置。回归测试覆盖合法与恶意网关、IPv4/IPv6、地址家族一致性、重定向/敏感头/大体积响应及结构化调用；架构静态守卫防止绕过。文档说明网关变动需人工重新核验，真实 QNAP/Win11/Linux/公网出站实测不由 CI 绿灯取代。PR 必须五组最新 HEAD 检查与未解决 Review 线程零个，主干无漂移才能合并。
+
+其它开放安全问题：公开部署邀请和账号滥用的针对性攻防、真实模型出口封锁策略、宿主机内部 DNS 污染与代理、全链路 HTTPS、密钥/日志、部署级 TLS/防火墙验证。不声称 #39 或 #51 全部完成。

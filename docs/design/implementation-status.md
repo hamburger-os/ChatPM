@@ -273,3 +273,7 @@ GET /projects/:id/outbox/summary 和 /dead 现委托 operations/outbox-admin.ts�
 ## ADR-081 · Account Identity Core（2026-10-17）
 
 注册资格、用户/租户初始创建、登录密码校验、个人资料与所属租户列表迁移至 `identity/account-services.ts` 统一业务入口，原 `server.ts` 对应五个路由只保留 DTO/session/cookie 逻辑。沿用原 `registration-policy.ts` bootstrap 锁、默认关闭公众自由注册的生产策略及现有 Session 服务，未新增 DB 字段、镜像权限或兼容端点。真实 PostgreSQL 身份注册/登录/撤权/跨租户隔离、静态架构守卫与原 compiled HTTP Smoke 已进入 Product CI。剩余 #49 Worker/其它 API 边界与 #39 公网安全/生产身份风控仍不视作完成。
+
+## ADR-082 · 模型 Docker 网关 DNS 信任收紧（2026-10-17）
+
+模型公开地址现有的 DNS 解析全量检查、固定 HTTP(S) 连接、禁跳转/代理及大小限制继续有效。本次收紧 `host.docker.internal`：只有部署管理员在 `MODEL_DOCKER_GATEWAY_IPS` 显式声明的 1–4 个确切 RFC1918/ULA 网关 IP 可被连接；未配置、任何其他私网同段 IP、恶意混合 A/AAAA、无效地址/族别均拒绝。Compose 仅向 API/Worker 注入可选 IP Pin 并映射 host-gateway，Web 无感，默认云端模型不受影响。新增单元/静态架构测试；生产网络与 DNS 污染、Docker/QNAP/IPv6 真实出口/本地模型验收及公开注册高风险治理仍未完成，#39/#51 保持开放。

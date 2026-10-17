@@ -416,3 +416,10 @@ retryDeadEvent 唯一使用现有 executePmCommand：当前授权、dead_at 非�
 - `registerAccount` 必须复用 `enforceRegistration` 的唯一注册策略和 advisory 锁，在一个事务中写入 `users`、`tenants`、`tenant_members(role='admin')`，禁止创建半成品用户/组织。生产 bootstrap 允许有 token 的首个管理员注册，之后默认关闭公众自由注册；邀新成员仍使用独立一次性邀请。
 - `authenticateAccount` 不得返回 `password_hash`；`getAccountProfile` 从 `users.is_system_admin` 当前记录读取；`listAccountTenants` JOIN 当前 `tenant_members`，不得使用前端角色缓存授权后续操作。已签名 Cookie/JTI Session、CSRF Origin、速率限制仍由原入口/现有安全模块负责。
 - 这些服务返回当前状态不代表高权限命令可以不再验证当前 role；正式身份/项目/组织写入仍必须在事务内锁住其权限事实源。
+
+## ADR-082 · Docker Host 模型地址固定信任源
+
+- `model-egress.ts` 是安全 DNS、解析结果校验、固定 socket 连接和 HTTP 响应限制的唯一实现。即使 model config 已由总管理员设置，也不能把任意 RFC1918/ULA 的 `host.docker.internal` DNS 回答视为目标可信。
+- `MODEL_DOCKER_GATEWAY_IPS` 由部署运维人员在服务器/容器环境显式写入，最多四个精确 IP，且每个必须属于可信 RFC1918/ULA 网关类型。未配置、地址不一致、单条错误 A/AAAA、IPv4/IPv6 family 错配时拒绝整个出站请求，不能自动放行私网段、记录并学习新地址或从用户聊天中读取网关名单。
+- 只允许显式配置 Docker host alias 走此规则；公开 HTTPS 模型提供商照旧全部 A/AAAA 必须非私网，本机 literal localhost 例外不自动延伸到任意内网。模型目录预探测与结构化/文本推理继续调用安全传输，不要引入直接 `fetch` 或环境 HTTP Proxy 绕过。
+- 不得把 `MODEL_DOCKER_GATEWAY_IPS` 当成开放 LAN 访问授权；实际 DNS 验证、LAN 防火墙、宿主机模型端口和生产环境凭据隔离须独立检查，未核验不能标生产安全通过。

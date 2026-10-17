@@ -497,3 +497,13 @@
 **HTTP 边界与取舍。** Fastify 仅负责 Zod DTO、Cookie 设定、会话验证、Origin 与原速率限制；无需改变已有 URL、状态码或公开 response shape。创建 Session/登出仍调用现有 `security.ts`，不在本次引入认证微服务、第二个 RBAC、额外登录缓存、后门注册模式或旧接口兼容层。保留现有账户创建“新用户自动有自己组织”的 open/bootstrap 策略；生产默认 bootstrap、首次创建后关闭，额外人员需经过邀请闭环。跨组织项目成员资格/系统管理员的正式写操作仍由当前 DB 事务授权；个人资料仅 UI 信号，不构成管理员命令许可。
 
 **测试。** 真实 PostgreSQL 验证原子注册、密码哈希与正确/错误登录、重复邮箱不可创建第二租户、个人总管理员身份当前值、跨租户不可导航、组织成员撤销即时隐藏及后续改角色恢复可见；现有 bootstrap 并发测试、HTTP Auth/Cookie/CSRF/注册限流/邀请、Docker 与原生构建保留。静态守卫禁止 HTTP 账户路由恢复业务 SQL、hash 与注册事务。剩余 #49 其它 API 模块边界、系统强密码/多因素认证、正式生产环境安全与性能验收另行处理，不在本 PR 假定全部完成。
+
+## ADR-082 · Docker 本地模型网关的明确 IP 信任锚（2026-10-17）
+
+**安全缺陷。** 既有 ADR-042 已实施全部 DNS A/AAAA 结果校验、校验后连接绑定、TLS 原域名校验、重定向拒绝、非代理传输、响应字节上限。审核发现一个信任边界例外：`host.docker.internal` 的解析只要落在任意 RFC1918 或 ULA 地址便被接受。若管理员保存了此本地模型别名，恶意或被劫持的 DNS 首次应答可指向另一台内网主机（甚至同一个 172.16/12 网段中的不同 IP）；虽然 socket 固定于该应答 IP，没有第二次 DNS rebinding，**连接目标却可能从第一跳就不是真正网关**。公开部署不能将“私网”当作可信服务身份。
+
+**单源选择。** 仍使用唯一 `model-egress.ts` 传输实现，不增加另一个 HTTP 客户端或兼容分支。仅对 `host.docker.internal` 引入部署者显式设置的 `MODEL_DOCKER_GATEWAY_IPS`：1–4 个逗号分隔的 IP 字面值，必须属于现有 Docker 网关可接受的 RFC1918/ULA 集合；未设置、为空、格式错误、包含公网/回环/元数据/链路本地或 DNS 回答中包含任何名单外 IP 均 fail closed。先拒绝缺少信任锚的配置、再做 DNS；解析每个 A/AAAA 的地址家族必须与内容一致。允许名单通过 Node `BlockList.addAddress/check` 精确匹配数值地址（包括 IPv6 标准写法），不是子网放行。HTTP(S) 真正连接依然仅使用本次安全验证的固定解析 IP，禁止重定向和代理、TLS SNI 仍用原 hostname。
+
+**部署与失败原则。** Docker API/Worker 都通过 Compose 显式映射 `host.docker.internal:host-gateway`，接收部署者提供的同一 `MODEL_DOCKER_GATEWAY_IPS`；默认空值意味着云端模型、显式 localhost 不受影响，但 Docker host 模型在没有网关 IP 审查与配置前拒绝请求。需管理员从实际容器查询该别名的 A/AAAA，验证它确属预期 Docker 宿主机网关，然后在受保护 .env 设置确切 IP；Docker 网络重建或 IP 变化后必须重新审核，绝不自动学习并信任新私网地址。测试涵盖无 PIN、同网段恶意私网 IP、混合 A/AAAA、映射 IPv4、族别伪造、无效 allowlist、正常显式网关、原有公网限制与真实本地 socket 拒绝跳转/超大响应。
+
+**安全边界。** 这只解决应用内 Docker 网关别名冒用，不证明实际 Docker 引擎/QNAP/Windows host-gateway 语义、宿主机端口权限、外部 egress 防火墙、恶意 DNS/代理基础设施、HTTPS/TLS 网络攻防与供应商日志合规；#39、#41、#51 保留开放直到真实公网/IPv6/模型流量/注册邀请/密钥泄漏与宿主机网络隔离验收。模型始终只能由系统总管理员配置，聊天内容不得指定 URL。
