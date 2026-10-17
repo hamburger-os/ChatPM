@@ -227,3 +227,9 @@ Docker 部署 Smoke 原先仅验证 pg_dump custom-format 文件头和 pg_restor
 GET /projects/:id/outbox/summary 和 /dead 现委托 operations/outbox-admin.ts，在同一 REPEATABLE READ 事务锁当前项目及组织成员、检查 operations.manage，然后把同一个 DbClient 传给现有 Outbox 唯一查询。POST /projects/:id/outbox/:eventId/retry 也已迁入该 Core 模块，继续共用 executePmCommand 的事务、版本化 dead letter 恢复、审计、事件、Outbox 和 Receipt。
 
 新增授权、跨租户、撤权、人工恢复幂等及版本的 PostgreSQL 集成测试与架构静态守卫。本次不等于完成全域 API 模块化或多 Worker 生产可靠性验收。
+
+## ADR-072 · Reporting Core 命令和读取边界（2026-10-17）
+
+原 `apps/api/src/report-routes.ts` 的报告列表和 create/publish 领域 SQL 已移入 `packages/core/src/reporting/report-services.ts`。GET 从“路由先授权，再换连接读取”改为同一 REPEATABLE READ 事务中的 `lockProjectAccess` 与报告查询，防止权限撤销导致过时读取。两个 POST 依旧由一个 `executePmCommand` 完成当前 Tenant+Project Owner 授权、Receipt/Event/Audit/Outbox，继续调用同一 `generateReport` 和原有报告状态/version SQL。Fastify 只作身份获取与 Zod/UUID 参数解析。
+
+新增 PostgreSQL Core 集成覆盖授权隔离、发布与已发布不变、同 key 回放、新 key 旧版本拒绝、撤权；架构守卫防止路由重获 SQL 所有权，并纳入 CI。此为 #49 与 #48 的正式 Reporting 边界切片，不表示整个 V2、报告平台功能、生产部署或真实模型验收完成。
