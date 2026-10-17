@@ -261,3 +261,7 @@ GET /projects/:id/outbox/summary 和 /dead 现委托 operations/outbox-admin.ts�
 ## ADR-078 · 项目负责人单一事实源（2026-10-17）
 
 `project_members.role='owner'` 为唯一持久身份；`028_project_owner_single_authority.sql` 首先拒绝和旧 `projects.owner_id` 不一致的数据，成功后移除重复列，并以既有 Owner 唯一索引加延期提交约束保持每项目恰好一名 Owner。项目创建/详情/列表/Owner 移交 Core 已从该成员角色导出负责人 ID、保留独立 `ownership_revision` 以及同事务 CommandReceipt/Event/Audit/Outbox。接口可继续返回派生的 `owner_id`，但 DB 不保存第二份。真实 PostgreSQL Owner 约束、并发/移交/角色禁止和普通 API smoke 纳入 CI。实际生产旧库的异机备份/数据对账仍属于 #51，遇到迁移前置不一致必须中止并人工协调，不可标称全量平滑迁移。
+
+## ADR-079 · Tenant Governance Core 命令与查询（2026-10-17）
+
+部门、Portfolio、Program、组织成员/角色、部门人员角色、资源分配登记/取消共八类正式写入由 `governance/tenant-commands.ts` 持有唯一 SQL 与业务命令，继续使用现有 `organizationCommand` 原子租户回执/审计/锁。组织成员、资源分配读取移至 `governance/tenant-queries.ts`，当前管理员鉴权、REPEATABLE READ 与数据读取共事务。HTTP 层保留身份和校验，未新增兼容路由、数据库迁移或第二套业务权限。加入真实 PostgreSQL 跨租户、幂等、权限撤销、剩余管理员约束及资源容量测试。其它领域边界、主动告警、真实设备部署和一套完整的 PMP 收益/资源治理仍属开放验收。

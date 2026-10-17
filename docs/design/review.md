@@ -352,3 +352,11 @@ CI 须验证 PostgreSQL 游标 200 条边界、25 条更早记录、跨项目与
 **CI 与审计。** 旧 Raw fixture 的项目创建必须和唯一 Owner INSERT 同一 SQL 语句，否则 commit-time DB trigger 故意拒绝；如果测试手动插入重复 Owner 使用 ON CONFLICT DO NOTHING，不创建替代身份。真实 PostgreSQL 测试、强制单源架构守卫、迁移双跑、Owner 版本/重放、原有 API Smoke、Native/Docker、文档与安全扫描作为最新 Head 合并门禁；无阻断审查线程才可 Merge。真实旧数据/生产停写/异地快照、PITR 和原生 OS 设备检查不由 CI 代替。
 
 **整体未完成：** #48 尚有其它历史 Task/正式领域对齐、#49 尚有 API/Worker 故障注入、#39 第三方真实 DNS/出站网络验收、#50 模型 Evidence/Playbook、#43 PMP 组合收益/跨项目容量、#51 V2 一次性数据迁移和真正跨平台发布验收；#4 主动告警、#18/#19/#20/#41 的系统服务、恢复、安装包、QNAP 及公网 HTTPS 同样独立开放。
+
+## ADR-079 · Tenant Governance 模块整体 /review（2026-10-17）
+
+最新主干基线为 #105 的 Owner 单源合并提交 `b42f6ad`。审查发现组织治理 Fastify 路由仍有八个事务回调和正式 SQL、成员/资源 GET 先鉴权再跨连接读取，权限检查与 Core 的当前授权不处于同一快照。已将全部写入统一到 `governance/tenant-commands.ts` 的 `organizationCommand`，将两类敏感 GET 委托 `tenant-queries.ts` 的 `withTenantAdminRead`，消除 HTTP 业务 SQL 和 TOCTOU 窗口。原消息/项目/成员/部门/组合/项目集的实体边界、角色变更约束、资金/资源审核语义与完整 REST DTO 均不引入新兼容层。
+
+审查测试焦点：非管理员和跨租户不能读姓名、邮箱和资源数据；创建部门/Program/Portfolio 的租户 FK 强制隔离；有效组织成员可以按管理员策略加入，不得凭邮件绕过邀请码策略；组织管理员降级后原命令同键重放只读，新命令拒绝；最后一名管理员不能被降级；资源分配在共享 Tenant advisory lock 下阻止超额、observer、跨项目/跨租户、取消后不可重复取消。成功命令仅写一次组织回执和审计，失败命令事务回滚；版本化 Project Owner 单源规则继承 ADR-078。编译版 API Smoke 和五组最新 Head CI、未解决审查线程、主干漂移验证均作为合并门禁。
+
+**仍需保留的生产风险：** #48 旧领域和正式 PM 生命周期完整整合、#49 多 Worker 故障注入及剩余 API 服务 SQL、#43 PMP 收益/资源历史、#39 公网 DNS/SSRF 真实流量安全、#50 AI 证据/干预与真实模型评测、#51 存量库 ETL/离机快照/Win11-Linux-QNAP/HTTPS/PITR/签名发布。尚无这些实测证据时不可标项目整体完成。
