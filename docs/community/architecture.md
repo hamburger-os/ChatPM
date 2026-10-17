@@ -150,3 +150,9 @@ AI 进度建议、候选任务和候选风险都需要具备项目授权的人�
 中文：正式任务可以由项目负责人或项目管理者在「已完成」或「已取消」且没有待审核进度时归档，归档后从当前任务列表中移除但仍可在已归档任务中查看和恢复；历史变更、AI 来源、任务依赖及已发布报告都保留。归档会停止提醒，且不能在恢复前继续编辑任务或确认其进度。普通成员和观察者不能执行归档/恢复。归档是可逆业务状态，不是不可恢复的数据删除。
 
 English: Project owners and managers may archive completed or cancelled tasks after all pending progress reviews are resolved. Archived tasks leave the active list but remain visible in a dedicated archive view and may be restored without changing their prior status. Source proposals, dependencies, immutable task history and published reports are preserved; reminders and new updates are blocked until restoration. Members and observers cannot archive or restore. Archiving is reversible and is not permanent deletion.
+
+### Outbox 长任务续租与旧 Worker 隔离 / Long-running Outbox lease renewal
+
+中文：后台 AI 事件使用 PostgreSQL 中同一条 Outbox 记录作为唯一领取状态。处理时间较长时，Worker 定期续租，但只能延长尚未过期、尚未完成、属于自己令牌的领取。过期或被其他 Worker 接管的旧处理进程不能标记完成、修改重试状态或发布旧 AI 结果。真实写入仍由同事务行锁校验，提醒和报告仍有独立运行通道。当前自动化测试覆盖租约和数据库并发边界，尚不能代替公网模型、真实掉电、多 Worker 峰值压测或主动报警验收。
+
+English: AI events keep their sole delivery claim in PostgreSQL Outbox. During slow processing, a worker renews only its own still-valid, incomplete claim. An expired or replaced worker cannot acknowledge, reschedule, or publish stale AI output. Every formal publication still checks the current token under a transaction row lock; reminders and reports run in independent lanes. Automated database checks cover lease and fencing behavior, not production network faults, external model latency, power loss, scale tests or active alert delivery.
