@@ -85,6 +85,8 @@ jobs:
         run: node --import tsx packages/core/test/outbox-operations.integration.ts
       - name: Outbox reliability integration
         run: node --import tsx packages/core/test/outbox.integration.ts
+      - name: Ordered conversation cursor and revocation integration
+        run: node --import tsx packages/core/test/message-queries.integration.ts
       - name: Mock AI conversation integration
         run: node --import tsx packages/core/test/ai.integration.ts
       - name: Task linkage Worker integration
