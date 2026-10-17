@@ -58,13 +58,13 @@ function modelPublic(r:ModelRow):ModelPublic{
     maxOutputTokens:r.max_output_tokens,contextChars:r.context_chars,
     enabled:r.enabled,isDefault:r.is_default};
 }
-export async function listProviders():Promise<ProviderPublic[]>{
-  const {rows}=await pool.query<ProviderRow>(
+export async function listProviders(db:DbClient):Promise<ProviderPublic[]>{
+  const {rows}=await db.query<ProviderRow>(
     'SELECT * FROM ai_provider_connections ORDER BY name');
   return rows.map(providerPublic);
 }
-export async function listModelConfigs():Promise<ModelPublic[]>{
-  const {rows}=await pool.query<ModelRow>(
+export async function listModelConfigs(db:DbClient):Promise<ModelPublic[]>{
+  const {rows}=await db.query<ModelRow>(
     'SELECT * FROM ai_model_configs ORDER BY is_default DESC,name');
   return rows.map(modelPublic);
 }
@@ -156,8 +156,8 @@ export async function resolveProjectModel(
 
 
 /** Catalog probes are allowed before the connection is enabled. */
-export async function resolveProviderCatalogConfig(id:string):Promise<{baseUrl:string;apiKey:string}>{
-  const {rows}=await pool.query<ProviderRow>(
+export async function resolveProviderCatalogConfig(id:string,db:DbClient):Promise<{baseUrl:string;apiKey:string}>{
+  const {rows}=await db.query<ProviderRow>(
     'SELECT * FROM ai_provider_connections WHERE id=$1',[id]);
   const provider=rows[0];
   if(!provider)throw new Error('PROVIDER_NOT_FOUND');

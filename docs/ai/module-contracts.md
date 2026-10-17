@@ -429,3 +429,10 @@ retryDeadEvent 唯一使用现有 executePmCommand：当前授权、dead_at 非�
 - `identity/tenant-admin-read.ts` 唯一拥有 `withTenantAdminRead`：REPEATABLE READ 事务内锁定 `tenant_members` 当前管理员行 `FOR SHARE`，并在相同连接/快照上读取组织敏感数据。已被 `governance/tenant-queries.ts`（组织人员、资源）和 `identity/invitations.ts`（邀请邮箱）复用，不要在 HTTP 中复制 `requireTenant` 前置校验或在其后新开连接读取。
 - `identity/invitations.ts::listTenantInvitations` 仅输出邀请元数据（id、邮箱、发出时间、过期、接受和撤销状态）。绝不返回 token_sha256、明文邀请码、上游敏感凭据。租户过滤条件只能来自服务器已验证的 URL UUID 与同一管理员事务，不得做跨租户共享邮箱查找。
 - 邀请签发/撤销必须继续使用既有 `organizationCommand` 当前角色锁、同事务幂等/审计；领取使用已存在的邀请行锁、邮件匹配、一次性消耗规则，不能基于浏览器暂存管理员状态作权限判断。撤权与读交叉导致 `40001` 时按失败关闭，不把状态回退到旧权限或暗中重放上一步授权结果。
+
+## ADR-084 · 系统管理员模型凭据读取与网络隔离
+
+- `identity/system-access.ts::systemAdminTransaction` 是系统级模型管理的唯一当前授权事务。Fastify 可验证 Session/参数，但不得先以独立 `requireSystemAdmin` 查询作为随后凭据读取的权限凭证。
+- `project-model.ts` 中 `listProviders(db)`、`listModelConfigs(db)`、`resolveProviderCatalogConfig(id,db)` 要求一个已经通过 `systemAdminTransaction` 检查的 `DbClient`；受保护的列表只输出公开 provider/model DTO。仅系统管理员管理入口能在同一事务中取得解密的目录密钥，普通项目成员不能通过 URL 指定连接目标。
+- quick/full 模型连接测试的配置读取与 30 秒 `ai_model_checks` 冷却更新必须处于**同一个**授权事务；事务完成后才允许访问网络模型，避免持有授权行锁或数据库连接等待外部 DNS/HTTP。此限制不替换项目 Worker 的既有 Project 模型解析事务。
+- 禁止引入模型管理用第二套 RBAC 缓存、明文密钥落库或 UI 中可见的 API Key；目前后端的模型出站仍由唯一 `model-egress.ts` 执行 DNS/SSRF 防护，Docker 本机模型仍受 ADR-082 精确网关 PIN 规则约束。
