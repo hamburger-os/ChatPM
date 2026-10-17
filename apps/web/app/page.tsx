@@ -95,30 +95,74 @@ export default function Home(){
   },[auth]);
   useEffect(()=>{
     if(!selected||view!=='projects')return;
-    let active=true;cursor.current=0;setMessages([]);
-    async function update(){
-      const x=await request<{messages:Message[]}>('/projects/'+selected+'/messages?after='+cursor.current);
-      if(!active)return;
-      if(x.messages.length){
-        cursor.current=Math.max(cursor.current,...x.messages.map(m=>Number(m.seq)));
-        setMessages(old=>{
-          const known=new Set(old.map(m=>m.id));
-          return [...old,...x.messages.filter(m=>!known.has(m.id))].slice(-1500);
-        });
-      }
-    }
+    const projectId=selected;
+    let active=true;
+    let stream:EventSource|null=null;
+    let streamOpen=false;
     let inFlight=false;
-    const poll=async()=>{
-      if(!active||document.hidden||inFlight)return;
+    let lastReconcile=0;
+    cursor.current=0;
+    setMessages([]);
+
+    function receive(incoming:Message[]){
+      if(!active||!incoming.length)return;
+      const valid=incoming.filter(m=>Number.isSafeInteger(Number(m.seq)) &&
+        Number(m.seq)>0&&typeof m.id==='string');
+      if(!valid.length)return;
+      cursor.current=Math.max(cursor.current,...valid.map(m=>Number(m.seq)));
+      setMessages(old=>{
+        const existing=new Set(old.map(m=>m.id));
+        const newItems=valid.filter(m=>!existing.has(m.id));
+        return [...old,...newItems].sort((a,b)=>Number(a.seq)-Number(b.seq)).slice(-1500);
+      });
+    }
+    async function update(){
+      if(!active||inFlight||document.hidden)return;
       inFlight=true;
-      try{await update();}catch(e){if(active)setNotice(e instanceof Error?e.message:'消息刷新失败');}
-      finally{inFlight=false;}
+      try{
+        const x=await request<{messages:Message[]}>(
+          '/projects/'+projectId+'/messages?after='+cursor.current);
+        receive(x.messages);
+        lastReconcile=Date.now();
+      }catch(e){
+        if(active)setNotice(e instanceof Error?e.message:'消息刷新失败');
+      }finally{inFlight=false;}
+    }
+    function closeStream(){
+      streamOpen=false;
+      stream?.close();
+      stream=null;
+    }
+    function openStream(){
+      if(!active||document.hidden||stream)return;
+      stream=new EventSource('/api/projects/'+projectId+'/messages/events?after='+cursor.current,
+        {withCredentials:true});
+      stream.onopen=()=>{streamOpen=true;};
+      stream.onmessage=event=>{
+        try{receive([JSON.parse(event.data) as Message]);}
+        catch{/* Invalid event content is ignored; the REST reconciliation recovers gaps. */}
+      };
+      // EventSource reconnects with Last-Event-ID; REST remains a fallback.
+      stream.onerror=()=>{streamOpen=false;};
+    }
+    void update().finally(()=>{if(active)openStream();});
+    const timer=setInterval(()=>{
+      if(!active||document.hidden)return;
+      if(!stream||stream.readyState===EventSource.CLOSED){
+        closeStream();
+        openStream();
+      }
+      if(!streamOpen||Date.now()-lastReconcile>=30000)void update();
+    },5000);
+    const visible=()=>{
+      if(document.hidden)closeStream();
+      else{void update();openStream();}
     };
-    void poll();
-    const timer=setInterval(()=>void poll(),5000);
-    const visible=()=>{if(!document.hidden)void poll();};
     document.addEventListener('visibilitychange',visible);
-    return ()=>{active=false;clearInterval(timer);document.removeEventListener('visibilitychange',visible);};
+    return ()=>{
+      active=false;clearInterval(timer);closeStream();
+      document.removeEventListener('visibilitychange',visible);
+    };
   },[selected,view]);
   useEffect(()=>{if(view==='projects')bottom.current?.scrollIntoView({behavior:'smooth'});},[messages.length,view]);
   async function action(fn:()=>Promise<void>){
