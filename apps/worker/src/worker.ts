@@ -1,18 +1,17 @@
 import 'dotenv/config';
 import { pool } from '../../../packages/core/src/db.ts';
-import { recordWorkerHeartbeat } from '../../../packages/core/src/operations/worker-heartbeat.ts';
+import {recordWorkerHeartbeat,type WorkerLane} from '../../../packages/core/src/operations/worker-heartbeat.ts';
 import { processEvents } from '../../../packages/core/src/conversation/ai-event-runner.ts';
 import { processReminders } from '../../../packages/core/src/automation/reminder-runner.ts';
 import { processReports } from '../../../packages/core/src/reporting/period-runner.ts';
 
 // A slow or failed model call must never hold reminders or periodic reporting
 // behind it. Each lane has its own single-flight lock and independent retry.
-type Lane = 'events'|'reminders'|'reports';
-const inFlight = new Map<Lane,Promise<void>>();
+const inFlight = new Map<WorkerLane,Promise<void>>();
 let stopping=false;
 let lastReportScanSlot=-1;
 
-function dispatch(lane:Lane,job:()=>Promise<void>):void{
+function dispatch(lane:WorkerLane,job:()=>Promise<void>):void{
   if(stopping||inFlight.has(lane))return;
   const active=(async()=>{
     let succeeded=false;
@@ -23,7 +22,7 @@ function dispatch(lane:Lane,job:()=>Promise<void>):void{
       console.error('Worker lane failed',lane,error instanceof Error?error.name:'UnknownFailure');
     } finally {
       try {
-        await recordWorkerHeartbeat(succeeded);
+        await recordWorkerHeartbeat(lane,succeeded);
       } catch(error) {
         console.error('Worker heartbeat failed',error instanceof Error?error.name:'UnknownFailure');
       }

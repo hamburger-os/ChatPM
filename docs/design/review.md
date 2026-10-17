@@ -360,3 +360,9 @@ CI 须验证 PostgreSQL 游标 200 条边界、25 条更早记录、跨项目与
 审查测试焦点：非管理员和跨租户不能读姓名、邮箱和资源数据；创建部门/Program/Portfolio 的租户 FK 强制隔离；有效组织成员可以按管理员策略加入，不得凭邮件绕过邀请码策略；组织管理员降级后原命令同键重放只读，新命令拒绝；最后一名管理员不能被降级；资源分配在共享 Tenant advisory lock 下阻止超额、observer、跨项目/跨租户、取消后不可重复取消。成功命令仅写一次组织回执和审计，失败命令事务回滚；版本化 Project Owner 单源规则继承 ADR-078。编译版 API Smoke 和五组最新 Head CI、未解决审查线程、主干漂移验证均作为合并门禁。
 
 **仍需保留的生产风险：** #48 旧领域和正式 PM 生命周期完整整合、#49 多 Worker 故障注入及剩余 API 服务 SQL、#43 PMP 收益/资源历史、#39 公网 DNS/SSRF 真实流量安全、#50 AI 证据/干预与真实模型评测、#51 存量库 ETL/离机快照/Win11-Linux-QNAP/HTTPS/PITR/签名发布。尚无这些实测证据时不可标项目整体完成。
+
+## ADR-080 · Worker 健康误报与主动监控 /review（2026-10-17）
+
+从合并后的 `main` `db5021d` 完整检查 Worker/Outbox/Doctor。发现 Worker 三条 independent lane 都调用 `recordWorkerHeartbeat(succeeded)`，聚合写 `worker_health('default')`；因此事件/AI/Outbox 失败后，提醒频繁成功会覆盖最近成功时间，造成健康误报。已修改 Worker 使用唯一 `WorkerLane` 类型，心跳在 PostgreSQL 中按 lane 独立；`029_worker_lane_health.sql` 显式删除旧共享遥测，禁止旧行。Doctor 仍在同一受控本地运维入口读取，按 lane 阈值与最后失败时间分别产出错误码。既有 Linux 计划任务保留，Windows 增加单独 LocalService 诊断任务安装脚本（绝不嵌密钥）。
+
+/review 验证：某通道失败、其它通道健康时需 unhealthy；失败后独立成功恢复需 healthy；陈旧/缺失 lane 必须 fail closed；重复迁移 checksum、Worker 架构 guard、真实 PostgreSQL 记录、Unit Ops、构建、Docker 及 Windows/Linux 检查最新 SHA 均成功、零未解决审查线程才合并。后台 AI 模型实际提供商、多 Worker 崩溃竞态、外部告警通道和生产任务调度实机运行尚无完成证据，#4/#49/#51 不得关闭。

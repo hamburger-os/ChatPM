@@ -265,3 +265,7 @@ GET /projects/:id/outbox/summary 和 /dead 现委托 operations/outbox-admin.ts�
 ## ADR-079 · Tenant Governance Core 命令与查询（2026-10-17）
 
 部门、Portfolio、Program、组织成员/角色、部门人员角色、资源分配登记/取消共八类正式写入由 `governance/tenant-commands.ts` 持有唯一 SQL 与业务命令，继续使用现有 `organizationCommand` 原子租户回执/审计/锁。组织成员、资源分配读取移至 `governance/tenant-queries.ts`，当前管理员鉴权、REPEATABLE READ 与数据读取共事务。HTTP 层保留身份和校验，未新增兼容路由、数据库迁移或第二套业务权限。加入真实 PostgreSQL 跨租户、幂等、权限撤销、剩余管理员约束及资源容量测试。其它领域边界、主动告警、真实设备部署和一套完整的 PMP 收益/资源治理仍属开放验收。
+
+## ADR-080 · Worker lane 独立诊断（2026-10-17）
+
+旧 `worker_health.default` 无法识别独立 AI/Outbox、提醒、报告任一通道失效。已通过新的 `029_worker_lane_health.sql` 约束迁移为三个独立状态、Worker 按 lane 记录成功/失败、Doctor 对各通道单独核验心跳和成功时效及最近失败。缺失记录默认告警，恢复不需要清空历史失败字段。现有 Linux 定时诊断继续生效，新增 Windows LocalService 五分钟周期任务安装脚本；真实 PostgreSQL 模拟其中一条通道失败/恢复/停更，并纳入 Product CI/架构测试。该诊断能触发**操作系统任务非零退出**，但不包含外部邮件或 IM 通知送达、不等于生产主动通知与故障注入全部完成。#4/#49/#51 保持开放。

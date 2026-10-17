@@ -214,3 +214,9 @@ English: A project owner is now recorded **only** by the single project member w
 中文：部门、项目集、项目组合、人员管理和跨项目资源安排现在通过统一的 Core 正式命令执行。后台会在同一数据库事务中检查当前组织管理员权限、保持幂等回执与审计，并在成员角色变更时保护最后一名管理员。组织成员名单和资源分配数据只允许当前管理员查询，并在数据库快照中确认权限后读取；不能因页面曾经有权限而在撤权后继续取得数据。资源分配仍须符合项目成员身份和容量约束；这不代表完整 PMP 项目集收益或生产环境验收已完成。
 
 English: Departments, programs, portfolios, tenant members, department assignments and cross-project capacity changes are now performed by Core-owned tenant commands with current administrative authorization, idempotent receipts and audit in the same database transaction. Tenant member and allocation reads share a repeatable-read snapshot with the current administrator row lock. Demotion cannot remove the last administrator, and a previously completed role-change receipt may be replayed only with the original key. Capacity and project membership constraints remain enforced independently. Full PMP benefits governance and production certification remain separate tasks.
+
+### Worker 分通道可观测性 / Independent Worker lane health
+
+中文：事件（含 AI/Outbox）、团队提醒、周期报告各自报告完成、成功和失败。诊断会分别判定三类通道是否失联、过期或最近失败，不能再因为提醒成功而把事件通道的持续失败显示为健康。诊断仍是受保护的运维命令，不将项目消息或密钥上报到公网；本项目提供 Linux 五分钟 timer 和 Windows LocalService 五分钟计划任务入口。操作系统日志/退出码不等于邮件或 IM 通知，生产管理员需额外接入可信监控与告警值班流程。
+
+English: Events (including AI/Outbox), reminders and reports each report independent completion, success and failure telemetry. Doctor checks freshness and recent failures per lane, so a healthy reminder lane cannot hide a failed event lane. The private operational command reports structured fault codes and a non-zero exit status; Linux and Windows can schedule five-minute checks under least privilege. This is not an external pager, email or IM delivery guarantee, nor a substitute for a real multi-worker failure-recovery drill.

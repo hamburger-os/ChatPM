@@ -93,3 +93,10 @@ Compose 默认不暴露 PostgreSQL 宿主机端口，使用 `docker compose --en
 ## ADR-050 · Docker 隔离库的备份恢复演练
 
 CI 先完成 Web Proxy/Origin/Cookie、Worker heartbeat 和 Outbox 检查，然后停止 Web/API/Worker，只保留测试 PostgreSQL。用原有 backup.mjs --docker 生成受限宿主机备份；在原数据库与随机创建的独立恢复数据库中，对所有 public 普通表计算行数和数据内容摘要并逐项相等比较。pg_restore 使用 exit-on-error，演练数据库只在成功创建后由 finally 清理，源库和 Docker PostgreSQL 数据卷保持不变。CI 此后仍将销毁测试卷、重新执行一键 Docker 部署验证。这证明测试数据可恢复，不证明真实业务 TB 级恢复速度、离机密钥管理、任何时间点恢复或者 Win11/Linux 实体机器维护流程；生产升级仍需单独的停写/备份/恢复验收。
+
+## ADR-080 · Worker 分通道私有健康诊断
+
+`npm run doctor` 不再读取单个混合 `worker_health.default`；会分别检查 `events`、`reminders`、`reports` 的最后成功/失败/心跳，返回结构化 `workerLanes` 和 `WORKER_<LANE>_...` 错误码，任一缺失或不健康则非零退出。必须先按原正式升级步骤**停止各服务、备份、执行 `029_worker_lane_health.sql`、再重启 Worker**，否则新旧 Worker 的遥测写入不兼容；不建立双轨兼容。初次启动若尚未执行首轮 tick，Doctor 将 fail closed。
+
+Linux 已有 `infra/linux/chatpm-doctor.service` + `chatpm-doctor.timer` 每 5 分钟执行；Windows 在正式安装服务并保护 .env ACL 后由管理员运行 `infra/windows/install-doctor-task.ps1` 注册 `ChatPM-Doctor`，使用 LocalService（只读配置、无需管理员进程长期驻留）每五分钟一次。通过 `systemctl list-timers` / `journalctl -u chatpm-doctor.service` 或 Windows Task Scheduler 查看实际退出码和最近运行时间，并由部署者的外部监控将非零退出、计划任务长期未运行升级给值班人员。未接外部监控时只是周期诊断，不是短信/邮件/IM **主动通知**；需要实测告警渠道、抖动去重、服务停机、模型超时、DB 重启、跨实例竞争与通知送达才能通过生产 #4/#51。
+

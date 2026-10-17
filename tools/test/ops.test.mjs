@@ -55,7 +55,8 @@ test('CRLF input remains CRLF', () => {
 
 
 import { backupName, listBackups } from '../ops/backup.mjs';
-import { evaluateHealth } from '../ops/doctor.mjs';
+import * as healthExports from '../ops/doctor.mjs';
+const {evaluateHealth}=healthExports;
 
 test('private backup naming is sorted and retention never includes unrelated files', () => {
   const name = backupName(new Date('2026-10-13T02:30:00.000Z'), 'abcdef01');
@@ -66,17 +67,55 @@ test('private backup naming is sorted and retention never includes unrelated fil
   ]), [name, 'chatpm-20261012T023000Z-abcdef02.dump']);
 });
 
-test('health assessment fails closed for stale Worker and overdue outbox', () => {
-  const input = {
-    apiOk: true, heartbeatAgeSec: 20, successAgeSec: 25,
-    overdue: 0, dead: 0, migrations: ['004_worker_health.sql'],
-  };
-  assert.deepEqual(evaluateHealth(input), { ok: true, issues: [] });
-  assert.deepEqual(evaluateHealth({ ...input, heartbeatAgeSec: 300, overdue: 1 }).issues,
-    ['WORKER_HEARTBEAT_STALE', 'OUTBOX_OVERDUE']);
-  assert.deepEqual(evaluateHealth({ ...input, successAgeSec: null }).issues,
-    ['WORKER_TICK_NOT_SUCCESSFUL']);
+test('health assessment fails closed independently for each Worker lane',()=>{
+  const {parseWorkerLanes}=healthExports;
+  const healthyLane={heartbeatAgeSec:20,successAgeSec:25,failureAgeSec:null};
+  const lanes={events:{...healthyLane},reminders:{...healthyLane},
+    reports:{...healthyLane,heartbeatAgeSec:305,successAgeSec:305}};
+  const input={apiOk:true,lanes,overdue:0,dead:0,
+    migrations:['029_worker_lane_health.sql']};
+  assert.deepEqual(evaluateHealth(input),{ok:true,issues:[]});
+
+  const eventsDown={...input,lanes:{...lanes,
+    events:{heartbeatAgeSec:400,successAgeSec:400,failureAgeSec:10}}};
+  assert.deepEqual(evaluateHealth(eventsDown).issues,[
+    'WORKER_EVENTS_HEARTBEAT_STALE',
+    'WORKER_EVENTS_TICK_NOT_SUCCESSFUL',
+    'WORKER_EVENTS_LAST_TICK_FAILED',
+  ],'Healthy reminders and reports must never mask a broken AI/Outbox lane');
+
+  const noReports={...input,lanes:{events:lanes.events,reminders:lanes.reminders}};
+  assert.deepEqual(evaluateHealth(noReports).issues,[
+    'WORKER_REPORTS_HEARTBEAT_STALE','WORKER_REPORTS_TICK_NOT_SUCCESSFUL',
+  ],'Missing report heartbeat fails closed');
+
+  const recentFailure={...input,lanes:{...lanes,
+    events:{heartbeatAgeSec:0.1,successAgeSec:0.25,failureAgeSec:0.1}}};
+  assert.deepEqual(evaluateHealth(recentFailure).issues,
+    ['WORKER_EVENTS_LAST_TICK_FAILED'],
+    'Sub-second failures after success must not be lost to integer timestamp truncation');
+
+  const recovered={...input,lanes:{...lanes,
+    events:{heartbeatAgeSec:4,successAgeSec:4,failureAgeSec:60}}};
+  assert.deepEqual(evaluateHealth(recovered),{ok:true,issues:[]},
+    'Last failure does not remain active after recovery');
+
+  assert.deepEqual(evaluateHealth({...input,overdue:1,dead:2}).issues,
+    ['OUTBOX_OVERDUE','OUTBOX_DEAD_LETTER']);
+  assert.deepEqual(evaluateHealth({...input,migrations:[]}).issues,
+    ['DATABASE_NOT_MIGRATED']);
+
+  const parsed=parseWorkerLanes([
+    {name:'events',seen_age:'12',success_age:'13',failure_age:null},
+    {name:'reminders',seen_age:'8',success_age:null,failure_age:'2'},
+    {name:'unknown',seen_age:'1',success_age:'1',failure_age:null},
+  ]);
+  assert.deepEqual(parsed,{
+    events:{heartbeatAgeSec:12,successAgeSec:13,failureAgeSec:null},
+    reminders:{heartbeatAgeSec:8,successAgeSec:null,failureAgeSec:2},
+  });
 });
+
 
 import { prepareNativeEnv, validateNativeEnv } from '../ops/bootstrap-native.mjs';
 
@@ -261,4 +300,17 @@ test('isolated recovery executable refuses operation unless explicitly CI-author
   assert.match(script,/CHATPM_CI_RESTORE_DRILL!=='1'/);
   assert.match(script,/prefix='chatpm_restore_drill_'/);
   assert.match(script,/Stop Web\/API\/Worker writers/);
+});
+
+test('native Doctor scheduling uses least privilege and bounded cadence',()=>{
+  const linuxService=readFileSync('infra/linux/chatpm-doctor.service','utf8');
+  const linuxTimer=readFileSync('infra/linux/chatpm-doctor.timer','utf8');
+  const windows=readFileSync('infra/windows/install-doctor-task.ps1','utf8');
+  assert.match(linuxService,/User=chatpm/);
+  assert.match(linuxService,/tools\/ops\/doctor\.mjs/);
+  assert.match(linuxTimer,/OnUnitActiveSec=5m/);
+  assert.match(windows,/NT AUTHORITY\\LocalService/);
+  assert.match(windows,/New-ScheduledTaskTrigger/);
+  assert.match(windows,/tools\/ops\/doctor\.mjs/);
+  assert.doesNotMatch(windows,/-(?:Password|Credential)\b|Write-Host.*(?:token|secret)/i);
 });
