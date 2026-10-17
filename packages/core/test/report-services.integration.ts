@@ -88,14 +88,14 @@ try{
   assert.equal(later.report.content,first.report.content,
     'Published snapshot is immutable even if current tasks change');
   for(const kind of ['report.generation_requested.v1','report.published.v1']){
-    const {rows}=await pool.query<{events:number;receipts:number}>(`
+    const counts=await pool.query<{events:number;receipts:number}>(`
       SELECT (SELECT COUNT(*)::int FROM domain_events
         WHERE project_id=$1 AND kind=$2) AS events,
       (SELECT COUNT(*)::int FROM command_receipts
         WHERE project_id=$1 AND kind=$2) AS receipts`,
       [projectId,kind]);
-    assert.equal(rows[0].events,kind==='report.generation_requested.v1'?2:1);
-    assert.equal(rows[0].receipts,rows[0].events);
+    assert.equal(counts.rows[0].events,kind==='report.generation_requested.v1'?2:1);
+    assert.equal(counts.rows[0].receipts,counts.rows[0].events);
   }
   await pool.query('DELETE FROM tenant_members WHERE tenant_id=$1 AND user_id=$2',
     [tenant,owner]);
