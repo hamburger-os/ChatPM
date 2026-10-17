@@ -38,10 +38,14 @@ export default function Home(){
   const [showDetails,setShowDetails]=useState(true);
   const [mobileWork,setMobileWork]=useState(false);
   const [messages,setMessages]=useState<Message[]>([]);
+  const [historyCursor,setHistoryCursor]=useState<string|null>(null);
+  const [historyMore,setHistoryMore]=useState(false);
+  const [historyBusy,setHistoryBusy]=useState(false);
   const [chat,setChat]=useState('');
   const [working,setWorking]=useState(false);
   const [notice,setNotice]=useState('');
   const bottom=useRef<HTMLDivElement>(null);
+  const skipNextAutoScroll=useRef(false);
   const cursor=useRef(0);
   const createIntent=useRef<{fingerprint:string;key:string}|null>(null);
   const sendIntent=useRef<{projectId:string;content:string;nonce:string}|null>(null);
@@ -101,7 +105,9 @@ export default function Home(){
     let streamOpen=false;
     let inFlight=false;
     let lastReconcile=0;
+    let initialized=false;
     cursor.current=0;
+    setHistoryCursor(null);setHistoryMore(false);
     setMessages([]);
 
     function receive(incoming:Message[]){
@@ -113,15 +119,21 @@ export default function Home(){
       setMessages(old=>{
         const existing=new Set(old.map(m=>m.id));
         const newItems=valid.filter(m=>!existing.has(m.id));
-        return [...old,...newItems].sort((a,b)=>Number(a.seq)-Number(b.seq)).slice(-1500);
+        return [...old,...newItems].sort((a,b)=>Number(a.seq)-Number(b.seq)).slice(-3000);
       });
     }
     async function update(){
       if(!active||inFlight||document.hidden)return;
       inFlight=true;
       try{
-        const x=await request<{messages:Message[]}>(
-          '/projects/'+projectId+'/messages?after='+cursor.current);
+        const requestedAfter=cursor.current;
+        const x=await request<{messages:Message[];hasMore:boolean}>(
+          '/projects/'+projectId+'/messages?after='+requestedAfter);
+        if(!initialized&&active){
+          initialized=true;
+          setHistoryCursor(x.messages[0]?.seq===undefined?null:String(x.messages[0].seq));
+          setHistoryMore(x.hasMore);
+        }
         receive(x.messages);
         lastReconcile=Date.now();
       }catch(e){
@@ -164,7 +176,35 @@ export default function Home(){
       document.removeEventListener('visibilitychange',visible);
     };
   },[selected,view]);
-  useEffect(()=>{if(view==='projects')bottom.current?.scrollIntoView({behavior:'smooth'});},[messages.length,view]);
+  useEffect(()=>{
+    if(view!=='projects')return;
+    if(skipNextAutoScroll.current){
+      skipNextAutoScroll.current=false;
+      return;
+    }
+    bottom.current?.scrollIntoView({behavior:'smooth'});
+  },[messages.length,view]);
+  async function loadOlderMessages(){
+    if(!selected||!historyCursor||!historyMore||historyBusy)return;
+    const projectId=selected;
+    setHistoryBusy(true);
+    try{
+      const page=await request<{messages:Message[];hasMore:boolean}>(
+        '/projects/'+projectId+'/messages?before='+historyCursor);
+      if(selected!==projectId)return;
+      skipNextAutoScroll.current=true;
+      setMessages(old=>{
+        const seen=new Set<string>();
+        return [...page.messages,...old].filter(m=>{
+          if(seen.has(m.id))return false;
+          seen.add(m.id);return true;
+        }).sort((a,b)=>Number(a.seq)-Number(b.seq)).slice(-3000);
+      });
+      setHistoryCursor(page.messages[0]?.seq===undefined?null:String(page.messages[0].seq));
+      setHistoryMore(page.hasMore);
+    }catch(e){setNotice(e instanceof Error?e.message:'历史消息加载失败');}
+    finally{setHistoryBusy(false);}
+  }
   async function action(fn:()=>Promise<void>){
     setNotice('');setWorking(true);
     try{await fn();}catch(e){setNotice(e instanceof Error?e.message:'操作失败');}
@@ -351,6 +391,10 @@ export default function Home(){
             onClick={()=>setShowDetails(x=>!x)}>{showDetails?'收起详情 ◧':'展开详情 ◨'}</button>
         </header>
         {selected?<><div className="messages">
+          {historyMore&&<button className="secondary" type="button" disabled={historyBusy}
+            onClick={()=>void loadOlderMessages()}>
+            {historyBusy?'加载中…':'加载更早消息'}
+          </button>}
           {messages.map(m=><article key={m.id} className={'bubble '+(m.kind==='ai'?'ai':'')}>
             <div className="msg-header"><strong>{m.kind==='ai'?'✳ AI 项目经理':m.author||'项目成员'}</strong>
               <time>{new Date(m.created_at).toLocaleString('zh-CN')}</time></div>
