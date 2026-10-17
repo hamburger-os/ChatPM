@@ -95,6 +95,15 @@ try{
       AND kind='outbox.dead_letter_retried.v1'
     ORDER BY aggregate_version`,[projectId,eventId])).rows.map(r=>r.aggregate_version);
   assert.deepEqual(history,[1,2]);
+  await pool.query('DELETE FROM tenant_members WHERE tenant_id=$1 AND user_id=$2',
+    [tenant,owner]);
+  await assert.rejects(readOutboxSummary(projectId,owner),
+    /项目不存在或无权限/);
+  await assert.rejects(readDeadEvents(projectId,owner),
+    /项目不存在或无权限/);
+  await assert.rejects(retryDeadEvent(projectId,eventId,owner,{
+    idempotencyKey:randomUUID(),
+  }),/项目不存在或无权限/);
   await pool.query('DELETE FROM project_members WHERE project_id=$1 AND user_id=$2',
     [projectId,observer]);
   await assert.rejects(readDeadEvents(projectId,observer),
