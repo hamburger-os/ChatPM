@@ -220,3 +220,9 @@ English: Departments, programs, portfolios, tenant members, department assignmen
 中文：事件（含 AI/Outbox）、团队提醒、周期报告各自报告完成、成功和失败。诊断会分别判定三类通道是否失联、过期或最近失败，不能再因为提醒成功而把事件通道的持续失败显示为健康。诊断仍是受保护的运维命令，不将项目消息或密钥上报到公网；本项目提供 Linux 五分钟 timer 和 Windows LocalService 五分钟计划任务入口。操作系统日志/退出码不等于邮件或 IM 通知，生产管理员需额外接入可信监控与告警值班流程。
 
 English: Events (including AI/Outbox), reminders and reports each report independent completion, success and failure telemetry. Doctor checks freshness and recent failures per lane, so a healthy reminder lane cannot hide a failed event lane. The private operational command reports structured fault codes and a non-zero exit status; Linux and Windows can schedule five-minute checks under least privilege. This is not an external pager, email or IM delivery guarantee, nor a substitute for a real multi-worker failure-recovery drill.
+
+### 账户与租户的统一身份服务 / One Core owner for accounts
+
+中文：新用户注册、登录、个人信息和所属组织列表现在都通过 Identity Core 服务执行。初次注册仍依据部署者配置的公开注册或安全 bootstrap 策略；用户、初始组织和管理员成员资格一起写入数据库，失败就整体回滚。登录不会向客户端返回密码哈希；组织成员被移除后，组织导航会立即更新，不允许再用以前的成员资格访问。HTTP 继续负责安全 Cookie、Origin/CSRF 和限速，不存储第二套身份记录。
+
+English: Registration, sign-in, self-profile and tenant navigation are now owned by a single Identity Core service. First-account bootstrap still enforces the configured secure enrollment policy and atomically creates the account, first tenant and admin membership. Password hashes are never returned in login responses. Tenant navigation is based on current membership, so a revoked membership disappears immediately; Fastify retains cookie/session, Origin and rate-limit duties. This does not certify enterprise SSO/MFA or production anti-abuse readiness.

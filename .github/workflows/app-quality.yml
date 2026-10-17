@@ -59,6 +59,8 @@ jobs:
         run: node --import tsx tools/test/worker-health.integration.mjs
       - name: First-account bootstrap token and race integration
         run: node --import tsx packages/core/test/bootstrap.integration.ts
+      - name: Account Identity Core registration, login, tenant access and revocation
+        run: node --import tsx packages/core/test/account-services.integration.ts
       - name: Single authoritative project owner and migration constraints
         run: node --import tsx packages/core/test/project-owner.integration.ts
       - name: AI authorization version and denial integration

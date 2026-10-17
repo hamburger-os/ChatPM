@@ -426,3 +426,25 @@ test('worker telemetry has independent persistent lanes and fail-closed doctor',
   assert.match(doctor,/DATABASE_NOT_MIGRATED/);
   assert.match(doctor,/parseWorkerLanes\(heartbeat\.rows\)/);
 });
+
+
+test('authentication, registration and member tenant navigation are Core owned',()=>{
+  const server=readFileSync(new URL('../../apps/api/src/server.ts',import.meta.url),'utf8');
+  const core=readFileSync(new URL('../../packages/core/src/identity/account-services.ts',import.meta.url),'utf8');
+  const names=['getRegistrationStatus','registerAccount','authenticateAccount',
+    'getAccountProfile','listAccountTenants'];
+  for(const name of names){
+    assert.match(server,new RegExp('\\b'+name+'\\('));
+    assert.match(core,new RegExp('export (?:async )?function '+name+'\\('));
+  }
+  const start=server.indexOf("app.get('/auth/registration-policy'");
+  const end=server.indexOf("app.get('/projects/:id'",start);
+  assert.ok(start>0&&end>start);
+  const routes=server.slice(start,end);
+  assert.doesNotMatch(routes,/pool\.query|db\.query|transaction\(|enforceRegistration\(|hashPassword\(|verifyPassword\(/);
+  assert.match(core,/return transaction\(async db=>/);
+  assert.match(core,/enforceRegistration\(db,serverConfig\.REGISTRATION_MODE/);
+  assert.match(core,/INSERT INTO tenant_members\(tenant_id,user_id,role\)/);
+  assert.match(core,/SELECT id,email,display_name,is_system_admin FROM users/);
+  assert.match(core,/WHERE tm\.user_id=\$1 ORDER BY/);
+});

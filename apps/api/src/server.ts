@@ -1,7 +1,4 @@
 import { serverConfig } from '../../../packages/core/src/config.ts';
-import { callStructuredLLM, modelAuditIdentity } from '../../../packages/core/src/llm-transport.ts';
-import { resolveProjectModel } from '../../../packages/core/src/project-model.ts';
-import {isSystemAdmin} from '../../../packages/core/src/permissions.ts';
 import { registerAdminModelRoutes } from './admin-model-routes.ts';
 import { registerGovernanceRoutes } from './governance-routes.ts';
 import { registerPmRoutes } from './pm-routes.ts';
@@ -14,7 +11,6 @@ import { registerOperationsRoutes } from './operations-routes.ts';
 import { registerRiskRoutes } from './risk-routes.ts';
 import { registerProjectRoutes } from './project-routes.ts';
 import { registerInvitationRoutes } from './invitation-routes.ts';
-import { randomUUID } from 'node:crypto';
 import { signedQuotaKey } from '../../../packages/core/src/quota-key.ts';
 import Fastify from 'fastify';
 import cors from '@fastify/cors';
@@ -22,10 +18,11 @@ import cookie from '@fastify/cookie';
 import helmet from '@fastify/helmet';
 import rateLimit from '@fastify/rate-limit';
 import { z, ZodError } from 'zod';
-import { pool, transaction } from '../../../packages/core/src/db.ts';
-import { createSession, hashPassword, readSession, revokeSession, verifyPassword } from '../../../packages/core/src/security.ts';
-import { syncFollowup } from '../../../packages/core/src/followup.ts';
-import { enforceRegistration,mayRegister } from '../../../packages/core/src/identity/registration-policy.ts';
+import {pool} from '../../../packages/core/src/db.ts';
+import {createSession,readSession,revokeSession} from '../../../packages/core/src/security.ts';
+import {getRegistrationStatus,registerAccount,authenticateAccount,
+  getAccountProfile,listAccountTenants} from
+  '../../../packages/core/src/identity/account-services.ts';
 import { postUserMessage } from '../../../packages/core/src/conversation/user-message-command.ts';
 import { listProjectMessages } from '../../../packages/core/src/conversation/message-queries.ts';
 import { registerMessageStreamRoutes } from './message-stream-routes.ts';
@@ -94,41 +91,21 @@ app.get('/health', async () => {
   await pool.query('SELECT 1');
   return {ok:true};
 });
-app.get('/auth/registration-policy',async()=>{
-  const mode=serverConfig.REGISTRATION_MODE;
-  const hasUsers=mode==='bootstrap'
-    ?Boolean((await pool.query('SELECT 1 FROM users LIMIT 1')).rowCount):false;
-  return {allowed:mayRegister(mode,hasUsers)&&
-    (mode!=='bootstrap'||Boolean(serverConfig.BOOTSTRAP_TOKEN)),
-    requiresBootstrapToken:mode==='bootstrap'};
-});
+app.get('/auth/registration-policy',async()=>getRegistrationStatus());
 app.post('/auth/register', {config:{rateLimit:{max:5,timeWindow:'1 minute'}}}, async (req,reply) => {
   const input=z.object({email:z.string().email().max(200).transform(x=>x.toLowerCase()),
     displayName:z.string().trim().min(1).max(80),password:z.string().min(10).max(128),
     bootstrapToken:z.string().max(256).optional()}).parse(req.body);
-  const user=await transaction(async db=>{
-    await enforceRegistration(db,serverConfig.REGISTRATION_MODE,
-      input.bootstrapToken,serverConfig.BOOTSTRAP_TOKEN);
-    const u=(await db.query(
-      'INSERT INTO users(email,display_name,password_hash) VALUES($1,$2,$3) RETURNING id,email,display_name',
-      [input.email,input.displayName,hashPassword(input.password)])).rows[0];
-    const tenant=(await db.query('INSERT INTO tenants(name) VALUES($1) RETURNING id',
-      [input.displayName+' 的团队'])).rows[0];
-    await db.query('INSERT INTO tenant_members(tenant_id,user_id,role) VALUES($1,$2,$3)',
-      [tenant.id,u.id,'admin']);
-    return u;
-  });
+  const user=await registerAccount(input);
   await issueSession(reply,user.id);
   return {user};
 });
 app.post('/auth/login', {config:{rateLimit:{max:8,timeWindow:'1 minute'}}}, async(req,reply)=>{
   const input=z.object({email:z.string().email().transform(x=>x.toLowerCase()),
     password:z.string().min(1)}).parse(req.body);
-  const user=(await pool.query(
-    'SELECT id,email,display_name,password_hash FROM users WHERE email=$1',[input.email])).rows[0];
-  if (!user || !verifyPassword(input.password,user.password_hash)) fail(401,'账号或密码错误');
+  const user=await authenticateAccount(input.email,input.password);
   await issueSession(reply,user.id);
-  return {user:{id:user.id,email:user.email,display_name:user.display_name}};
+  return {user};
 });
 app.post('/auth/logout',async(req,reply)=>{
   const token=req.cookies.chatpm_session ?? req.headers.authorization?.replace(/^Bearer\s+/i,'');
@@ -136,19 +113,9 @@ app.post('/auth/logout',async(req,reply)=>{
   reply.clearCookie('chatpm_session',{path:'/'});
   return {ok:true};
 });
-app.get('/me',async req=>{
-  const userId=await authenticated(req);
-  const {rows}=await pool.query('SELECT id,email,display_name FROM users WHERE id=$1',[userId]);
-  return {user:{...rows[0],is_system_admin:await isSystemAdmin(userId)}};
-});
+app.get('/me',async req=>getAccountProfile(await authenticated(req)));
 
-app.get('/tenants',async req=>{
-  const userId=await authenticated(req);
-  const {rows}=await pool.query(`SELECT t.id,t.name,tm.role FROM tenants t
-    JOIN tenant_members tm ON tm.tenant_id=t.id WHERE tm.user_id=$1
-    ORDER BY t.name,t.id`,[userId]);
-  return {tenants:rows};
-});
+app.get('/tenants',async req=>listAccountTenants(await authenticated(req)));
 app.get('/projects/:id',async req=>{
   const id=uuid.parse((req.params as {id:string}).id);
   return getProjectDetails(id,await authenticated(req));

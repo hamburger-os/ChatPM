@@ -409,3 +409,10 @@ retryDeadEvent 唯一使用现有 executePmCommand：当前授权、dead_at 非�
 - `tools/ops/doctor.mjs` 唯一持有 lane 告警阈值，周期性通过同一 PostgreSQL 状态表评估每个 lane；events/reminders 180 秒心跳/300 秒成功，reports 900 秒。无行、陈旧或失败应产生确定错误码和非零退出，不写业务事实。
 - Worker `dispatch` 捕获 lane 真实执行结果后以 `recordWorkerHeartbeat(lane,succeeded)` 报告，遥测写失败不得导致 Lane 业务重放；AI/Outbox 对业务结果仍以 claim fencing、幂等与独立业务事务为准。
 - 任何新的监控接入须读取 Doctor 的退出码/结构化码，而非第二次直接查询同一表建立重复阈值源；企业级远程告警通知、去重和升级渠道需要专门的可信出口与实测。
+
+## ADR-081 · Account Identity 业务入口
+
+- `identity/account-services.ts` 唯一拥有 `getRegistrationStatus`、`registerAccount`、`authenticateAccount`、`getAccountProfile`、`listAccountTenants` 的账户相关查询与写入。Fastify `server.ts` 不应调用 `db.query` 或 `transaction` 实施这五类业务，也不能自行 hash 密码/校验 bootstrap 成员资格。
+- `registerAccount` 必须复用 `enforceRegistration` 的唯一注册策略和 advisory 锁，在一个事务中写入 `users`、`tenants`、`tenant_members(role='admin')`，禁止创建半成品用户/组织。生产 bootstrap 允许有 token 的首个管理员注册，之后默认关闭公众自由注册；邀新成员仍使用独立一次性邀请。
+- `authenticateAccount` 不得返回 `password_hash`；`getAccountProfile` 从 `users.is_system_admin` 当前记录读取；`listAccountTenants` JOIN 当前 `tenant_members`，不得使用前端角色缓存授权后续操作。已签名 Cookie/JTI Session、CSRF Origin、速率限制仍由原入口/现有安全模块负责。
+- 这些服务返回当前状态不代表高权限命令可以不再验证当前 role；正式身份/项目/组织写入仍必须在事务内锁住其权限事实源。
