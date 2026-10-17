@@ -71,6 +71,11 @@ test('AI publication transactions fence all outbox claims and never prelease slo
   const clarification=readFileSync(new URL('../../packages/core/src/clarification.ts',import.meta.url),'utf8');
   const outbox=readFileSync(new URL('../../packages/core/src/outbox.ts',import.meta.url),'utf8');
   assert.match(outbox,/export async function assertEventClaim/);
+  assert.match(outbox,/export async function renewEventLease/);
+  assert.match(outbox,/export async function withEventLeaseHeartbeat/);
+  assert.match(outbox,/OUTBOX_LEASE_SECONDS=300/);
+  assert.match(runner,/withEventLeaseHeartbeat\(event,\(\)=>runAnalysis\(event\)\)/,
+    'Slow model inference must renew only its current Outbox claim');
   assert.match(outbox,/claim_token=\$3/);
   assert.match(outbox,/FOR UPDATE/);
   assert.match(runner,/claimEvents\(1\)/,'Claim only the next event to be consumed');

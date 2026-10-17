@@ -290,3 +290,11 @@ Risk 列表/历史读取迁入 `packages/core/src/risk/risk-queries.ts`，用同
 | 依赖升级 (#34) | 锁定版本和现有 CI | 分 PR 主版本迁移与生态兼容性矩阵，不能一次未经校验升级 |
 
 **合并门槛。** 本轮 Task Archive 只在最新 Head 五组 CI 和审查记录成功后合并；重大未完成 Issues 保持开放。所有生产实机、真实模型、历史迁移数据和外部签名密钥有关验收，在缺少环境/证据时必须明确标注 *未验收*。不将 CI green 写成生产安全认证。
+
+## ADR-070 · V2 整体 /review 增量：Outbox 租约与陈旧 Worker 拒绝（2026-10-17）
+
+在主分支 `d7f56a20e6dd5bce42853a0d208a7e3b52014b13` 和仍开放的 #4/#49/#51 审查中，确认之前的五分钟 lease 只在领取和 `assertEventClaim` 事务发布时生效；长模型调用不续租，`finishEvent/failEvent` 又缺少有效租约时间边界。决定单一常量统一所有租约状态修改，并仅针对慢模型调用引入在途 heartbeat。最重要的安全契约不是“网络调用恰好一次”，而是 **旧 Worker 不得确认、失败重排或发表正式结果**。外部模型请求已经执行时，不能保证及时撤销收费。
+
+逐项审查：不改变历史迁移或 Outbox 结构；不使用未验证的代理/Redis；每次续租带有 event/project/token 和已生效租约条件；过期、终态、dead letter 状态拒绝；`FOR UPDATE` 发布和事务内审计原子性保持；heartbeat 异常仅表示无法续约，不能提升数据写入授权；Worker 停机等在途定时器释放，避免独立后台续约。用真实 PostgreSQL 的 expired/reclaim/retry/replay/锁并发以及现有 Docker、native、API Smoke 作为门禁。
+
+**整体状态仍未完结。** #4 还需真实多进程故障注入和主动告警；#39/QNAP IPv6 公网安全、#40 SSE/移动端、#43 PMP 收益/跨项目依赖、#48/#49 全域 Core 收敛、#50 AI Playbook/实测、#51 生产迁移/DR、#18/#19/#20 本地安装/PITR/签名打包均仍有明确缺口。只有本 PR 最新 Head 的 Product/Docs/Native/Docker/Security CI 和未解决 Review Threads 门禁通过，才允许合并本增量。

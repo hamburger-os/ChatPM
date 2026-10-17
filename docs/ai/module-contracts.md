@@ -329,3 +329,10 @@ Docker 工作流为验证多账号 HTTP/Origin/Cookie 人为设置 `REGISTRATION
 
 
 **并发底线：** 归档 Command 持目标 Task `FOR UPDATE` 至提交；进度创建在数据库 `trg_reject_archived_task_progress` 内对同一 Task `FOR SHARE`，归档或进度插入必须一方等待另一方。禁止移除此触发器而仅依赖模型/HTTP 的旧快照或状态检查。
+
+## Outbox 长调用租约契约（ADR-070）
+
+- `OUTBOX_LEASE_SECONDS=300` 是领取、回收、续租、发布、确认、失败回写的唯一租约长度；Worker 每 60 秒调用一次 `renewEventLease`，仅在同一个有效 `claim_token` 持有活动事件时刷新 `claimed_at`。
+- `withEventLeaseHeartbeat(event,()=>runAnalysis(event))` 围绕外部模型慢调用，不能在其他 Worker lane 并发重入相同 Event；不可预领 12 个慢事件。timer 在工作成功/失败时都必须清理，任何时刻最多一个 heartbeat SQL in flight。
+- heartbeat 失败不授予任何额外发布权；真正的消息、澄清、候选和审计数据库写入必须在同一事务中 `assertEventClaim`，用 `FOR UPDATE` 和当前 token 锁住租约直到提交。已过期的旧领取不得由 heartbeat 重启，也不能 `finishEvent` 或 `failEvent` 改写新/旧状态。
+- CI 必须含真实 PostgreSQL 多次领取、旧 token 回写、未被接管但已过期、DB 行锁、续租后的 token/attempts 不变和 worker heartbeat 路径静态守卫。不得将该测试宣传为真实故障环境或外部 AI 供应商延迟验收。
