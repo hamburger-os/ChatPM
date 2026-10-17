@@ -43,6 +43,24 @@ export function isAllowedDockerGatewayAddress(address:string):boolean{
 }
 function invalidUrl():never{throw new Error('MODEL_EGRESS_INVALID_URL');}
 function unsafe():never{throw new Error('MODEL_CATALOG_UNSAFE_ENDPOINT');}
+
+/** Explicit deployment pin for the ONLY accepted Docker host-gateway alias.
+ * Merely resolving host.docker.internal to some RFC1918/ULA address is not
+ * sufficient: a poisoned first DNS answer could point at another LAN service.
+ * This is a deployer allowlist, not model/provider/user controlled data.
+ */
+function pinnedDockerGateways(value:string|undefined):BlockList{
+  if(!value||value.length>256)unsafe();
+  const entries=value.split(',');
+  if(entries.length<1||entries.length>4)unsafe();
+  const allow=new BlockList();
+  for(const raw of entries){
+    const address=raw.trim();
+    if(!isAllowedDockerGatewayAddress(address))unsafe();
+    allow.addAddress(address,isIP(address)===4?'ipv4':'ipv6');
+  }
+  return allow;
+}
 type Resolver=(hostname:string,options:{all:true})=>Promise<LookupAddress[]>;
 
 function validateTarget(url:URL):{host:string;local:boolean}{
@@ -53,9 +71,14 @@ function validateTarget(url:URL):{host:string;local:boolean}{
     invalidUrl();
   return {host,local};
 }
-async function pinnedModelAddress(url:URL,resolve:Resolver=dnsLookup):
-  Promise<LookupAddress>{
+async function pinnedModelAddress(
+  url:URL,resolve:Resolver=dnsLookup,
+  dockerGatewayIps=process.env.MODEL_DOCKER_GATEWAY_IPS,
+):Promise<LookupAddress>{
   const {host,local}=validateTarget(url);
+  // Fail BEFORE DNS if the local Docker exception has no static allowlist.
+  const gateway=host==='host.docker.internal'
+    ?pinnedDockerGateways(dockerGatewayIps):null;
   const literalFamily=isIP(host);
   if(literalFamily){
     if(!local&&isPrivateModelAddress(host))unsafe();
@@ -66,13 +89,14 @@ async function pinnedModelAddress(url:URL,resolve:Resolver=dnsLookup):
   catch{throw new Error('MODEL_CATALOG_DNS_FAILED');}
   if(!Array.isArray(addresses)||!addresses.length)unsafe();
   for(const address of addresses){
-    if(!isIP(address.address)||![4,6].includes(address.family))unsafe();
+    if(isIP(address.address)!==address.family)unsafe();
     if(local){
       const loopback=address.address==='::1'||
         /^127\./.test(address.address);
       if(host==='localhost'){
         if(!loopback)unsafe();
-      }else if(!isAllowedDockerGatewayAddress(address.address))unsafe();
+      }else if(!gateway||!isAllowedDockerGatewayAddress(address.address)||
+        !gateway.check(address.address,address.family===4?'ipv4':'ipv6'))unsafe();
     }else if(isPrivateModelAddress(address.address))unsafe();
   }
   // Subsequent socket creation uses ONLY this already checked address:
@@ -80,11 +104,13 @@ async function pinnedModelAddress(url:URL,resolve:Resolver=dnsLookup):
   return addresses[0];
 }
 
-export async function assertPublicModelHost(baseUrl:string,
-  resolve:Resolver=dnsLookup):Promise<void>{
+export async function assertPublicModelHost(
+  baseUrl:string,resolve:Resolver=dnsLookup,
+  dockerGatewayIps=process.env.MODEL_DOCKER_GATEWAY_IPS,
+):Promise<void>{
   let url:URL;
   try{url=new URL(baseUrl);}catch{invalidUrl();}
-  await pinnedModelAddress(url,resolve);
+  await pinnedModelAddress(url,resolve,dockerGatewayIps);
 }
 
 /**

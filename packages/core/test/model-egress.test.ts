@@ -45,7 +45,7 @@ test('local exceptions remain explicit and reject public DNS aliases',async()=>{
     (async()=>[{address:'8.8.8.8',family:4}])),
     /MODEL_CATALOG_UNSAFE_ENDPOINT/);
 });
-test('host.docker.internal cannot be DNS-rebound to metadata or public endpoints',async()=>{
+test('host.docker.internal needs explicitly pinned private gateway IPs, not arbitrary LAN DNS',async()=>{
   for(const address of ['10.9.8.7','172.18.0.1','192.168.65.254',
     'fd12::1','::ffff:10.20.30.40'])
     assert.equal(isAllowedDockerGatewayAddress(address),true,address);
@@ -53,22 +53,50 @@ test('host.docker.internal cannot be DNS-rebound to metadata or public endpoints
     '127.0.0.1','::1','fe80::1','fec0::1','100.64.1.2',
     '198.18.0.1','8.8.8.8','2606:4700:4700::1111'])
     assert.equal(isAllowedDockerGatewayAddress(address),false,address);
-  for(const unsafeAddress of ['169.254.169.254','::ffff:169.254.169.254',
-    '127.0.0.1','::1','fe80::1','100.64.1.2','8.8.8.8']){
-    const family=unsafeAddress.includes(':')?6:4;
-    await assert.rejects(assertPublicModelHost('http://host.docker.internal:11434/v1',
+
+  const base='http://host.docker.internal:11434/v1';
+  let dnsCalls=0;
+  const expected=async()=>{dnsCalls++;return [
+    {address:'172.19.0.1',family:4},{address:'fd00::2',family:6},
+  ];};
+  await assert.rejects(assertPublicModelHost(base,expected,''),
+    /MODEL_CATALOG_UNSAFE_ENDPOINT/);
+  assert.equal(dnsCalls,0,'Missing pin must fail before a DNS request');
+  await assert.doesNotReject(assertPublicModelHost(base,expected,
+    '172.19.0.1,fd00::2'));
+
+  // Even an RFC1918/ULA DNS result is NOT automatically trusted. Without
+  // this check, a malicious answer can target another internal machine.
+  for(const poisoned of ['172.19.0.2','10.1.2.3','192.168.88.44',
+    'fd00::3','169.254.169.254','127.0.0.1',
+    'fe80::1','8.8.8.8','::ffff:10.1.2.3']){
+    const family=poisoned.includes(':')?6:4;
+    await assert.rejects(assertPublicModelHost(base,
       async()=>[{address:'172.19.0.1',family:4},
-        {address:unsafeAddress,family}]),
-      /MODEL_CATALOG_UNSAFE_ENDPOINT/,
-      'Mixed safe and unsafe DNS sets must fail: '+unsafeAddress);
+        {address:poisoned,family}],
+      '172.19.0.1,fd00::2'),/MODEL_CATALOG_UNSAFE_ENDPOINT/,
+      'Must reject unexpected A/AAAA entry: '+poisoned);
   }
-  await assert.doesNotReject(assertPublicModelHost('http://host.docker.internal:11434/v1',
-    async()=>[{address:'172.19.0.1',family:4},
-      {address:'fd00::2',family:6}]));
+  await assert.rejects(assertPublicModelHost(base,
+    async()=>[{address:'172.19.0.2',family:4}],'172.19.0.1'),
+    /MODEL_CATALOG_UNSAFE_ENDPOINT/,
+    'Even a single poisoned private A response fails');
+  for(const bad of ['8.8.8.8','169.254.169.254','127.0.0.1',
+    '172.19.0.1,8.8.8.8','not-an-ip','172.19.0.1,,,,']){
+    await assert.rejects(assertPublicModelHost(base,expected,bad),
+      /MODEL_CATALOG_UNSAFE_ENDPOINT/,'Bad allowlist: '+bad);
+  }
+  await assert.rejects(assertPublicModelHost(base,
+    async()=>[{address:'172.19.0.1',family:6}],'172.19.0.1'),
+    /MODEL_CATALOG_UNSAFE_ENDPOINT/,'Forged resolver address family rejected');
+  await assert.rejects(assertPublicModelHost(base,
+    async()=>[{address:'fd00::2',family:4}],'fd00::2'),
+    /MODEL_CATALOG_UNSAFE_ENDPOINT/,'IPv6 answer cannot masquerade as A');
   await assert.rejects(assertPublicModelHost('http://localhost:11434/v1',
     async()=>[{address:'172.19.0.1',family:4}]),
     /MODEL_CATALOG_UNSAFE_ENDPOINT/);
 });
+
 test('real local socket POST retains authorization but refuses redirects and bounded bodies',async()=>{
   const seen:Array<{path:string;authorization:string|null;body:string}>=[];
   const server=createServer((req,res)=>{

@@ -448,3 +448,20 @@ test('authentication, registration and member tenant navigation are Core owned',
   assert.match(core,/SELECT id,email,display_name,is_system_admin FROM users/);
   assert.match(core,/WHERE tm\.user_id=\$1 ORDER BY/);
 });
+
+
+test('Docker local model exception is pinned to deployer IP allowlist, not whole private network',()=>{
+  const egress=readFileSync(new URL('../../packages/core/src/model-egress.ts',import.meta.url),'utf8');
+  const compose=readFileSync(new URL('../../infra/compose.prod.yml',import.meta.url),'utf8');
+  const env=readFileSync(new URL('../../.env.example',import.meta.url),'utf8');
+  assert.match(egress,/const gateway=host==='host\.docker\.internal'/);
+  assert.match(egress,/pinnedDockerGateways\(dockerGatewayIps\)/);
+  assert.match(egress,/gateway\.check\(address\.address/);
+  assert.match(egress,/isIP\(address\.address\)!==address\.family/);
+  assert.match(egress,/dockerGatewayIps=process\.env\.MODEL_DOCKER_GATEWAY_IPS/g);
+  assert.match(compose,/MODEL_DOCKER_GATEWAY_IPS: \$\{MODEL_DOCKER_GATEWAY_IPS:-\}/);
+  assert.equal((compose.match(/host\.docker\.internal:host-gateway/g)||[]).length,2,
+    'Only API and Worker need the Docker host gateway mapping');
+  assert.match(env,/MODEL_DOCKER_GATEWAY_IPS=/);
+  assert.match(egress,/if\(!value\|\|value\.length>256\)unsafe\(\)/);
+});
