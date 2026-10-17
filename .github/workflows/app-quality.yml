@@ -89,6 +89,8 @@ jobs:
         run: node --import tsx packages/core/test/ai.integration.ts
       - name: Task linkage Worker integration
         run: node --import tsx tools/test/task-linkage-smoke.mjs
+      - name: Core reporting permissions, idempotency and publication integration
+        run: node --import tsx packages/core/test/report-services.integration.ts
       - name: Scheduled reporting integration
         run: node --import tsx packages/core/test/reports.integration.ts
       - name: Build production server

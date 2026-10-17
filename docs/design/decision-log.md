@@ -397,3 +397,13 @@
 `operations/outbox-admin.ts` 使用一次 REPEATABLE READ 事务，先锁当前 TenantMember/ProjectMember 并验证 operations.manage，再使用同一连接执行唯一 Outbox 读取 SQL。人工恢复继续由 executePmCommand 负责原子回执、审计、事件及重试版本，不创建另一套命令执行器或业务存储。健康领取不能被人工重置。
 
 真实 PostgreSQL 覆盖 Owner/Observer、跨租户、权限撤销、重复请求、两次真实恢复及版本递增。仍需多实例故障注入、主动告警和生产实机验收。
+
+## ADR-072 · Reporting Core 的授权快照与正式命令所有权（2026-10-17）
+
+**问题。** 现有 `report-routes.ts` 以先查成员权限、后使用另一个 Pool 连接读取 Report 的方式响应 GET；授权撤销可能发生在两个语句之间。POST generate/publish 在 HTTP 路由直接持有 `executePmCommand` 与发布 SQL，导致正式 Reporting 模块有多个写入所有者，与已收敛的 Task/Risk/Approval/Operations Core 边界不一致。
+
+**决定。** Reporting 是 `reports` 与报告快照的唯一事实 owner。增加 `reporting/report-services.ts`：`listProjectReports` 在 REPEATABLE READ 的同一事务内锁住当前 TenantMember/ProjectMember，返回最多 50 条当前项目报告；`requestProjectReport` 和 `publishProjectReport` 复用已有 `executePmCommand` 与现有 `generateReport` 单快照函数。只有项目 Owner 有 `report.manage` 写权限，普通项目成员仍可只读，组织管理员身份不等于跨项目阅读。已发布报告不可修改，版本冲突 409；请求幂等沿用 Receipt，不能产生额外版本/事件。
+
+**取舍。** 保留所有既有 URL、Zod DTO、回应形状、已发布迁移、`reports` 数据和 Worker 定期报告路径；不建兼容层、不引入 Reporting 表镜像、任务外的消息历史推断或新的工作流引擎。此次仍沿用已有 `report.generation_requested.v1` 事件对已发布报告的人工重新生成请求记账语义，未擅改其正式契约。大规模历史分页、报告内容版本化编辑、PDF 导出和真实跨平台实测仍属于后续工作。
+
+**验收。** 同 PR 增加真实 PostgreSQL 对 Owner/Manager/Observer/跨 Tenant、重试、冲突、发布后不可变、撤权和版本化 Receipt/Event 的验证，配合 API Smoke、全套 CI、文档检查；未执行的生产验收不标记完成。

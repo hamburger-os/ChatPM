@@ -162,3 +162,9 @@ English: AI events keep their sole delivery claim in PostgreSQL Outbox. During s
 中文：项目 Outbox 错误统计、死信列表和人工恢复仍只允许当前项目负责人使用。系统在同一数据库事务中重新检查并锁住组织、项目成员资格，再读取对应项目的诊断数据；失去权限的请求不能凭早先的角色查询结果继续读取。恢复仍有持久幂等回执和版本，不会改写健康任务。此功能不表示外部主动告警或正式生产恢复已经验收。
 
 English: Project Outbox diagnostics and manual dead-letter recovery remain restricted to the current project owner. The server locks and checks the current organization and project membership in the same database transaction used to read the diagnostics, so stale authorization cannot be reused after revocation. Recovery retains durable idempotency receipts and revisions and cannot reset healthy work. External alerts and production disaster recovery remain unverified.
+
+### 报告读取与发布权限 / Scoped reporting and publication
+
+中文：ChatPM 项目周报与月报继续以 PostgreSQL 的正式项目事实为唯一来源。项目成员可以阅读自己有访问权的报告；只有当前项目负责人可以手动生成和发布。读取、权限检查在同一数据库事务内完成，原项目负责人被组织或项目撤权后不能凭旧会话查询新数据。发布严格检查修订版本；已发布的正文保留，网络超时重试使用原命令回执防止重复正式变更。此次没有改变报告接口，也不表示 PDF 导出、大规模分页或企业生产验收完成。
+
+English: Project weekly and monthly reports continue to use authoritative PostgreSQL project facts. Current project members can read their own project's reports; only the current project owner can manually generate and publish them. Authorization and retrieval share one database transaction, so revoked membership cannot authorize a later read. Publication enforces the report revision, protects published content and uses durable command receipts for idempotent retries. This does not add PDF export, large-scale pagination or production certification.
