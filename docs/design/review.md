@@ -382,3 +382,9 @@ CI 须验证 PostgreSQL 游标 200 条边界、25 条更早记录、跨项目与
 采用 `MODEL_DOCKER_GATEWAY_IPS` **精确 IP 字面名单**作为唯一部署信任锚；漏配即在 DNS 前拒绝，错配/包含不可信地址及 A/AAAA 中混入其他内网地址直接拒绝，Node socket 仍 PIN 已验证结果。不保留旧“整个内网均可信”的兼容后门。API/Worker 共享原 `model-egress.ts` 与配置变量，Compose 加真实 host-gateway 别名，Web 仍不持有模型配置。回归测试覆盖合法与恶意网关、IPv4/IPv6、地址家族一致性、重定向/敏感头/大体积响应及结构化调用；架构静态守卫防止绕过。文档说明网关变动需人工重新核验，真实 QNAP/Win11/Linux/公网出站实测不由 CI 绿灯取代。PR 必须五组最新 HEAD 检查与未解决 Review 线程零个，主干无漂移才能合并。
 
 其它开放安全问题：公开部署邀请和账号滥用的针对性攻防、真实模型出口封锁策略、宿主机内部 DNS 污染与代理、全链路 HTTPS、密钥/日志、部署级 TLS/防火墙验证。不声称 #39 或 #51 全部完成。
+
+## ADR-083 · 邀请邮箱敏感读取 /review（2026-10-17）
+
+以 #109 已合并后 `main` `db624a2` 为基线，复查所有邀请管理员路由及现有 ADR-079 的组织成员敏感读取。发现 GET /tenants/:tenantId/invitations 在 HTTP 先 `requireTenant(admin)` 后跨连接 `pool.query`，若管理员在此期间撤权，将暴露当前不再授权的邀请邮箱；POST 签发/撤销也有不必要的旧角色预检查（真实写授权已由 `organizationCommand` 同事务重做）。本 PR 提取原共享查询为 `identity/tenant-admin-read.ts` 单源授权助手，三类组织敏感 GET 与邀请元数据均在同一 REPEATABLE READ DB 快照及 `FOR SHARE` 当前管理员行锁内执行；HTTP 只有 Session/UUID/DTO。签发/撤销保留原命令 receipt、审计、邀请 digest 与单次接受，取消重复 HTTP 预检查，未创建新兼容路径。
+
+测试覆盖管理/普通/跨租户读取、密文摘要不泄露、管理员撤权行锁竞态导致拒绝、撤权后无读/写权限，已有邀请单次接受/重复领取/过期/撤销与 Fastify API Smoke/原生/Docker 也必须通过。静态架构守卫保护唯一权限 helper 与路由薄边界；CI/审查清零后方可合并。该 PR 不声称 #39 公网注册风控、#41 QNAP/IPv6 真实网络、#51 生产安装/备份恢复验收完整完成。

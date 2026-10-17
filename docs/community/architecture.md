@@ -232,3 +232,9 @@ English: Registration, sign-in, self-profile and tenant navigation are now owned
 中文：若把本地 AI 模型连接地址配置为 `http://host.docker.internal:<端口>`，必须由部署者在服务器的 `MODEL_DOCKER_GATEWAY_IPS` 中列出**实际验证过**的 Docker 宿主机网关 IP。解析结果的每个 A/AAAA IP 都要在精确名单里，不能仅因为它是局域网 IP 就放行。网关 IP 改变时请求会失败，直到部署者重新检查并更新配置。普通公网 HTTPS 模型无需该配置；此规则不在浏览器中存放模型密钥或网关 IP 权限。不得把 CI 通过视为现场网络攻击验收。
 
 English: When a self-hosted model uses `http://host.docker.internal:<port>`, operators must explicitly pin verified gateway IPs in server-side `MODEL_DOCKER_GATEWAY_IPS`. Every DNS A/AAAA answer must exactly match the allowlist; an arbitrary private LAN address is not trusted. If the Docker gateway changes, requests fail closed until the operator revalidates it. Public HTTPS providers do not need this setting. CI validation alone does not certify live QNAP/Windows/IPv6 network isolation or production egress security.
+
+### 组织邀请权限与邮箱隐私 / Invitation access and privacy
+
+中文：邀请名单包含收件人的邮箱和状态，只有该组织**当前**管理员能查看。服务端会在同一数据库事务内校验并锁定管理员成员关系、读取邀请记录；已被撤权的管理员不能利用请求时间差继续查看名单。成员名单、资源配置及邀请名单使用同一授权事实源，不保存第二套角色缓存。邀请码仅在签发时返回一次，邀请列表不展示可恢复的邀请码或摘要。正式公网部署仍需额外对邀请、滥用和邮箱泄露进行安全审查。
+
+English: Invitation metadata contains sensitive recipient email addresses. The server verifies and locks the **current** tenant administrator membership in the same database transaction as the list query, preventing read-after-revocation through a stale HTTP precheck. Tenant membership and resource administration reuse that same authorization boundary. Lists never expose invitation bearer codes or token digests. Production invitation abuse, public-network and mail-delivery tests remain separate acceptance gates.

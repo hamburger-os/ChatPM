@@ -2,6 +2,7 @@ import {createHash,randomBytes} from 'node:crypto';
 import {transaction,type DbClient} from '../db.ts';
 import {hashPassword} from '../security.ts';
 import {organizationCommand} from '../organization-commands.ts';
+import {withTenantAdminRead} from './tenant-admin-read.ts';
 
 export const invitationLifetimeDays=7;
 export function inviteDigest(raw:string):string{
@@ -40,6 +41,23 @@ async function lockInvitation(db:DbClient,token:unknown):Promise<InvitationRow>{
   if(!item)denied();
   return item;
 }
+/** Invitation email addresses are sensitive tenant-admin-only records.
+ * The membership row remains locked for the whole authorized read.
+ */
+export function listTenantInvitations(tenantId:string,actorId:string){
+  return withTenantAdminRead(tenantId,actorId,async db=>{
+    const {rows}=await db.query<{
+      id:string;email:string;created_at:Date;expires_at:Date;
+      accepted_at:Date|null;revoked_at:Date|null;
+    }>(`
+      SELECT id,email,created_at,expires_at,accepted_at,revoked_at
+      FROM tenant_invitations WHERE tenant_id=$1
+      ORDER BY created_at DESC LIMIT 100
+    `,[tenantId]);
+    return {invitations:rows};
+  });
+}
+
 export async function createTenantInvitation(args:{
   tenantId:string;actorId:string;email:string;idempotencyKey:string;
 }){

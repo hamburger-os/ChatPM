@@ -507,3 +507,13 @@
 **部署与失败原则。** Docker API/Worker 都通过 Compose 显式映射 `host.docker.internal:host-gateway`，接收部署者提供的同一 `MODEL_DOCKER_GATEWAY_IPS`；默认空值意味着云端模型、显式 localhost 不受影响，但 Docker host 模型在没有网关 IP 审查与配置前拒绝请求。需管理员从实际容器查询该别名的 A/AAAA，验证它确属预期 Docker 宿主机网关，然后在受保护 .env 设置确切 IP；Docker 网络重建或 IP 变化后必须重新审核，绝不自动学习并信任新私网地址。测试涵盖无 PIN、同网段恶意私网 IP、混合 A/AAAA、映射 IPv4、族别伪造、无效 allowlist、正常显式网关、原有公网限制与真实本地 socket 拒绝跳转/超大响应。
 
 **安全边界。** 这只解决应用内 Docker 网关别名冒用，不证明实际 Docker 引擎/QNAP/Windows host-gateway 语义、宿主机端口权限、外部 egress 防火墙、恶意 DNS/代理基础设施、HTTPS/TLS 网络攻防与供应商日志合规；#39、#41、#51 保留开放直到真实公网/IPv6/模型流量/注册邀请/密钥泄漏与宿主机网络隔离验收。模型始终只能由系统总管理员配置，聊天内容不得指定 URL。
+
+## ADR-083 · 租户邀请名单与组织敏感查询统一的事务授权（2026-10-17）
+
+**发现问题。** 邀请管理 GET `/tenants/:tenantId/invitations` 曾在 Fastify 路由中先调用 `requireTenant(...,true)`，随后另取一个数据库连接查询 `tenant_invitations` 并返回邮箱、邀请/过期/接受/撤销时间。这存在当前组织管理员身份被撤销后、旧预校验与后续 SQL 读取交叉的 TOCTOU 窗口，且与 ADR-079 的组织人员/资源敏感读取重复实现管理员校验。邀请邮箱是组织敏感信息，不应以 UI 当下看到按钮或过去的角色作为读取许可。
+
+**决策。** 将原 `governance/tenant-queries.ts` 内的 `withTenantAdminRead` 迁到唯一的 `identity/tenant-admin-read.ts`，由租户成员事实 `tenant_members(role='admin')` 执行统一授权：同一 PostgreSQL REPEATABLE READ 事务查询并 `FOR SHARE` 锁住管理员行，然后使用相同 DbClient 读取目标租户的敏感记录。邀请列表查询实现于唯一的 `identity/invitations.ts`，仅输出既有 `id/email/created_at/expires_at/accepted_at/revoked_at` 字段，不增加 token、token_sha256 或可恢复凭证；原组织成员和资源查询复用此同一个助手，**不存在第二套授权缓存或重复的查询前校验**。路由只做 Session、UUID、Zod 及 Core 服务调用；创建/撤销仍由原 `organizationCommand` 在含 tenant advisory lock、当前管理员行锁及同事务审计/幂等回执下授权，不依赖 Fastify 提前做的 `requireTenant`。
+
+**并发与失败语义。** 管理员降级事务和包含邀请邮箱的读取通过行锁序列化。若 READ REPEATABLE 快照与并发更新冲突，可在 PostgreSQL 返回 `40001`（服务端拒绝本次请求，不返回名单），或在看到最新角色后返回 403；不得把这类异常降级为成功空名单或重试时使用旧权限。完成降级后所有名单读取、发起邀请和撤销请求均必须拒绝。原邀请码使用 32B 随机 token，数据库仅保存 SHA-256 digest，现有签发/单次接受/过期/撤销/重发逻辑、JWT 会话及审计保持不变。
+
+**验证。** 实际 PostgreSQL 集成覆盖管理员可见、普通成员 403、跨组织 403、名单不包含 digest/明文 token、管理员行被其他事务锁住时读取不能越过撤权、撤权后读写请求拒绝；原邀约一次性领取/重放/并发验收继续运行，静态架构守卫禁止在邀请 HTTP 路由恢复 `pool.query` 和 `requireTenant` 权限预检。五组 PR 最新 Head CI 全绿、零未解决审查线程、主干无漂移才可合并；不代表 #39 的公众防滥用、真实公网邀请安全、邮件送达、QNAP/IPv6 实机部署已经完成。

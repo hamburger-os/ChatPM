@@ -61,3 +61,7 @@ MVP 先定义可实际测量的性能和可靠性目标，进行负载、数据�
 ## ADR-082 · Docker 网关服务防止私网 DNS 冒充
 
 对于 `host.docker.internal` 本地模型，`MODEL_DOCKER_GATEWAY_IPS` 是运维审查过的 1–4 个确切 RFC1918/ULA IP 的唯一信任锚；默认无配置即 fail closed。完整 DNS A/AAAA 中存在任一不同 IP、外网、回环、元数据或非法族别，整个模型出站请求失败，Bearer Key 不会发送到其它内网机器。Node HTTP(S) 仍然连接已校验固定 IP，不跟随重定向或环境代理。验证前先在实际 API/Worker 容器检查别名与宿主机网关是否真实一致；网络重建后必须重新核验，禁止为“恢复可用”放行整个私网。外部 egress ACL、网段隔离、日志脱敏、证书、QNAP/IPv6 与真实出站流量攻防测试仍属发布阻断验收。
+
+## ADR-083 · 租户管理员敏感数据读取撤权一致性
+
+邀请邮箱、组织人员列表及组织资源分配属于敏感组织信息，当前统一使用 `identity/tenant-admin-read.ts` 的单事务 REPEATABLE READ + `tenant_members FOR SHARE` 管理员核验。不依赖 HTTP 早期身份检查，不复用 UI 缓存角色。访问权在提交撤销后不可再获取；并发撤权发生于读取开始但未获得锁时允许以 40001/403 fail closed，而非在新连接里根据旧权限返回原文。邀请列表不输出一次性 bearer token 或 SHA-256 digest；创建/撤销仍走受锁保护的正式组织命令。应继续审查公开注册关闭、邀请频率限制、接收邮箱验证、审计与日志、边界安全和目标 QNAP/HTTPS 生产部署。

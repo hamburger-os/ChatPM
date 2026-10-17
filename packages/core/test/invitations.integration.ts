@@ -1,7 +1,8 @@
 import assert from 'node:assert/strict';
 import {randomUUID} from 'node:crypto';
+import {setTimeout as delay} from 'node:timers/promises';
 import {pool} from '../src/db.ts';
-import {createTenantInvitation,revokeTenantInvitation,
+import {createTenantInvitation,revokeTenantInvitation,listTenantInvitations,
   acceptTenantInvitationExisting,acceptTenantInvitationNew} from '../src/identity/invitations.ts';
 
 const suffix=randomUUID();
@@ -16,6 +17,14 @@ try{
   const issued=await createTenantInvitation({tenantId:tenant.id,actorId:a.id,
     email:targetEmail,idempotencyKey:key});
   assert.match(issued.code??'',/^[0-9a-f]{64}$/);
+  const firstList=await listTenantInvitations(tenant.id,a.id);
+  assert.equal(firstList.invitations.length,1);
+  assert.equal(firstList.invitations[0].id,issued.invitation.id);
+  assert.equal(firstList.invitations[0].email,targetEmail);
+  assert.equal('token_sha256' in firstList.invitations[0],false,
+    'Only invitation metadata, never secret digests, may be listed');
+  assert.equal(JSON.stringify(firstList).includes(issued.code??'impossible'),false);
+
   const replay=await createTenantInvitation({tenantId:tenant.id,actorId:a.id,
     email:targetEmail,idempotencyKey:key});
   assert.equal(replay.code,null,'Receipt must never contain a recoverable secret');
@@ -38,6 +47,15 @@ try{
   assert.equal((await pool.query(
     "SELECT role FROM tenant_members WHERE tenant_id=$1 AND user_id=$2",
     [tenant.id,newMember])).rows[0].role,'member');
+  await assert.rejects(listTenantInvitations(tenant.id,newMember),
+    /没有该组织的管理权限/,
+    'Invited ordinary members must not read private invitation email addresses');
+  const foreign=(await pool.query<{id:string}>(`
+    INSERT INTO tenants(name) VALUES('Unrelated invitation tenant')
+    RETURNING id`)).rows[0].id;
+  await assert.rejects(listTenantInvitations(foreign,a.id),
+    /没有该组织的管理权限/,'Cross-tenant invitation reads are denied');
+
   await assert.rejects(acceptTenantInvitationNew({
     token:issued.code!,email:targetEmail,displayName:'Replay',
     password:'Strong-password-12345',
@@ -92,6 +110,48 @@ try{
     })));
   assert.equal(attempts.filter(x=>x.status==='fulfilled').length,1,
     'Concurrent claims must not duplicate user or tenant member');
+  // Hold an admin demotion transaction open while a sensitive read starts.
+  // The query cannot reuse an HTTP precheck and expose emails after revocation.
+  const demote=await pool.connect();
+  try{
+    await demote.query('BEGIN');
+    await demote.query(`
+      UPDATE tenant_members SET role='member'
+      WHERE tenant_id=$1 AND user_id=$2`,[tenant.id,a.id]);
+    let finished=false;
+    // Attach BOTH promise branches immediately to avoid a transient
+    // unhandled rejection when PostgreSQL detects serialization failure.
+    const pending=listTenantInvitations(tenant.id,a.id).then(
+      ()=>{finished=true;return {ok:true,error:null};},
+      (error:unknown)=>{finished=true;return {ok:false,error};},
+    );
+    await delay(80);
+    assert.equal(finished,false,'Revocation row lock must block the sensitive read');
+    await demote.query('COMMIT');
+    const outcome=await pending;
+    assert.equal(outcome.ok,false,'Revoked administrator must never receive invite emails');
+    const e=outcome.error as {code?:string;statusCode?:number};
+    // REPEATABLE READ can fail with 40001 when the locked grant changed
+    // since the read snapshot; both outcomes fail closed with no emails.
+    assert.ok(e.code==='40001'||e.statusCode===403);
+  }finally{
+    try{await demote.query('ROLLBACK');}catch{}
+    demote.release();
+  }
+  await assert.rejects(listTenantInvitations(tenant.id,a.id),
+    /没有该组织的管理权限/,
+    'Committed demotion must remove sensitive invitation access');
+  await assert.rejects(createTenantInvitation({
+    tenantId:tenant.id,actorId:a.id,
+    email:'rejected-after-revocation-'+suffix+'@example.test',
+    idempotencyKey:randomUUID(),
+  }),/没有该组织的管理权限/,
+  'Write commands must independently authorize the current admin grant');
+  await assert.rejects(revokeTenantInvitation({
+    tenantId:tenant.id,actorId:a.id,invitationId:issued.invitation.id,
+    idempotencyKey:randomUUID(),
+  }),/没有该组织的管理权限/);
+
   console.log('Invitation integration passed: secret hashing, replay, email scope, revocation and concurrent one-time acceptance');
 }finally{
   await pool.end();
