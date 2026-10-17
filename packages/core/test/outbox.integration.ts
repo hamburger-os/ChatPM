@@ -171,6 +171,9 @@ try {
   await pool.query("UPDATE outbox_events SET claimed_at=NOW()-INTERVAL '6 minutes' WHERE id=$1",
     [timeoutId]);
   assert.equal(await renewEventLease(stale),false);
+  await assert.rejects(withEventLeaseHeartbeat(stale,async()=>{
+    await new Promise<void>(resolve=>setTimeout(resolve,40));
+  },5),/OUTBOX_LEASE_LOST/,'Expired lease must not be rescued by its heartbeat');
   await finishEvent(stale);
   await failEvent(stale,new Error('Must not change expired event'));
   const timeoutState=(await pool.query(
