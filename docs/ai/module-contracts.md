@@ -362,4 +362,4 @@ retryDeadEvent 唯一使用现有 executePmCommand：当前授权、dead_at 非�
 
 - `identity/project-access.ts` 提供 `withProjectRead(projectId,actorId,action,query)`：REPEATABLE READ 事务内执行 `lockProjectAccess`（项目/租户成员 FOR SHARE）与 `assertProject`，同连接读取业务表，成员不存在 404，角色权限不足 403。
 - `project-queries.ts` 是项目详情、仅 Owner 可读的 AI 授权/调用/分析视图的 SQL 所有者；`approval/review-queries.ts` 是进度证据和待审批候选读取 SQL 的所有者。进度与候选依然不是被批准的任务状态。
-- `server.ts` 六个 GET 只做 Cookie/Session、UUID 与委托；禁止恢复先 `member()` 再 `pool.query()` 的分离检查。保留响应字段、顺序与列表上限，测试覆盖实际数据、跨组织、跨项目、两类撤权与 Owner-only 边界。
+- `server.ts` 六个 GET 只做 Cookie/Session、UUID 与委托；禁止恢复先 `member()` 再 `pool.query()` 的分离检查。保留响应字段、顺序与列表上限，测试覆盖实际数据、跨组织、跨项目、两类撤权与 独立的 `ai.audit.read` Owner-only 边界，不能复用 `members.manage` 以免未来授予人员管理权时扩大 AI 审计读取范围。

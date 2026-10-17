@@ -286,5 +286,5 @@ test('project AI and review reads cannot split API authorization from domain SQL
   assert.match(access,/assertProject\(access\.role,action\)/);
   assert.equal((project.match(/withProjectRead\(/g)||[]).length,4);
   assert.equal((review.match(/withProjectRead\(/g)||[]).length,2);
-  assert.equal((project.match(/'members\.manage'/g)||[]).length,3);
+  assert.equal((project.match(/'ai\.audit\.read'/g)||[]).length,3);
 });

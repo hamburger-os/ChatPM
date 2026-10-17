@@ -11,7 +11,7 @@ export function getProjectDetails(projectId:string,actorId:string){
   });
 }
 export function getProjectAiAuthorization(projectId:string,actorId:string){
-  return withProjectRead(projectId,actorId,'members.manage',async db=>{
+  return withProjectRead(projectId,actorId,'ai.audit.read',async db=>{
     const {rows}=await db.query<{enabled:boolean;version:string}>(`
       SELECT ai_enabled AS enabled,ai_authorization_version AS version
       FROM projects WHERE id=$1`,[projectId]);
@@ -19,7 +19,7 @@ export function getProjectAiAuthorization(projectId:string,actorId:string){
   });
 }
 export function listProjectAiInvocations(projectId:string,actorId:string){
-  return withProjectRead(projectId,actorId,'members.manage',async db=>{
+  return withProjectRead(projectId,actorId,'ai.audit.read',async db=>{
     const {rows}=await db.query(`
       SELECT id,authorization_version,model_identity,prompt_version,status,
         error_code,latency_ms,input_tokens,output_tokens,started_at,finished_at
@@ -29,7 +29,7 @@ export function listProjectAiInvocations(projectId:string,actorId:string){
   });
 }
 export function listProjectAiRuns(projectId:string,actorId:string){
-  return withProjectRead(projectId,actorId,'members.manage',async db=>{
+  return withProjectRead(projectId,actorId,'ai.audit.read',async db=>{
     const {rows}=await db.query(`
       SELECT source_message_id,kind,status,model_name,error_code,
         created_at,updated_at FROM ai_analysis_runs WHERE project_id=$1

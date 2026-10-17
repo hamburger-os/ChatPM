@@ -1,12 +1,12 @@
 import { pool } from './db.ts';
 
 export type ProjectRole='owner'|'manager'|'member'|'observer';
-export type ProjectAction='read'|'message.write'|'task.create'|'task.plan'|
+export type ProjectAction='read'|'ai.audit.read'|'message.write'|'task.create'|'task.plan'|
   'task.status'|'proposal.approve'|'report.manage'|'members.manage'|
   'settings.manage'|'operations.manage'|'pm.plan'|'pm.submit'|'pm.accept'|'pm.approve';
 
 const grants:Record<ProjectRole,ReadonlySet<ProjectAction>>={
-  owner:new Set(['read','message.write','task.create','task.plan','task.status',
+  owner:new Set(['read','ai.audit.read','message.write','task.create','task.plan','task.status',
     'proposal.approve','report.manage','members.manage','settings.manage','operations.manage',
     'pm.plan','pm.submit','pm.accept','pm.approve']),
   manager:new Set(['read','message.write','task.create','task.plan','task.status',

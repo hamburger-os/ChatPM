@@ -418,6 +418,6 @@
 
 **问题。** 项目详情、AI 授权与调用/分析列表、待审核进度与候选的六个 GET 入口先由 HTTP 层执行项目成员查询，再通过另一条连接读取业务内容；在两步之间撤销项目或组织成员资格时，旧角色结果可能放行已失去权限的读取。
 
-**决定。** 继续使用已有 PostgreSQL 和角色授权，不增加缓存、额外角色表或兼容 API。Identity Core 的 `withProjectRead` 在 REPEATABLE READ 事务内锁当前项目和组织成员资格，调用既有 `assertProject` 后使用同一个 DbClient 读取所属领域的业务数据。Project Core 负责项目详情及 Owner 专属 AI 视图，Approval Core 负责进度和候选只读视图，Fastify 只处理身份与 UUID。普通成员和观察者可读项目详情/候选，Owner 才能读取 AI 调用账本；不允许借系统管理员或组织管理员身份越过项目成员要求。
+**决定。** 继续使用已有 PostgreSQL 和角色授权，不增加缓存、额外角色表或兼容 API。Identity Core 的 `withProjectRead` 在 REPEATABLE READ 事务内锁当前项目和组织成员资格，调用既有 `assertProject` 后使用同一个 DbClient 读取所属领域的业务数据。Project Core 负责项目详情及 Owner 专属 AI 视图，Approval Core 负责进度和候选只读视图，Fastify 只处理身份与 UUID。普通成员和观察者可读项目详情/候选，Owner 通过独立的 `ai.audit.read` 操作才能读取 AI 调用账本，不与 `members.manage` 耦合；不允许借系统管理员或组织管理员身份越过项目成员要求。
 
 **取舍与验收。** 六个现有 URL、原返回字段及 40/60/150/200 上限不变，不引入新的数据源或 Repository 基类。撤权与读取在数据库成员行锁上串行化；不能撤回此前合法完成的已返回数据。真实 PostgreSQL 验证 Owner/Manager/Observer、跨租户与跨项目、实际数据隔离、组织与项目撤权；HTTP 无直接 SQL 的架构断言纳入 CI。其他仍留在 HTTP 层的领域查询、数据迁移与生产实机验收继续按 #49/#51 追踪。
