@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import { pool, transaction } from '../src/db.ts';
-import { claimEvents, failEvent, finishEvent, deadEvents, assertEventClaim, MAX_EVENT_ATTEMPTS } from '../src/outbox.ts';
+import { claimEvents, failEvent, finishEvent, deadEvents, assertEventClaim, renewEventLease, withEventLeaseHeartbeat, MAX_EVENT_ATTEMPTS } from '../src/outbox.ts';
 import { DailyAIBudgetExceeded } from '../src/ai-provider.ts';
 import { referencedCandidate } from '../src/clarification.ts';
 
@@ -133,6 +133,60 @@ try {
     WHERE project_id=$1 AND action='outbox.committed_owner_fenced'`,
     [project.id])).rows[0].n,1);
 
+
+
+  // A long-running model owner renews a still-valid claim without consuming
+  // another attempt or changing the fencing token.
+  const slowId=(await pool.query(
+    `INSERT INTO outbox_events(project_id,kind) VALUES($1,'message.created') RETURNING id`,
+    [project.id])).rows[0].id as string;
+  const slow=(await claimEvents(1))[0];
+  assert.equal(slow.id,slowId);
+  await pool.query("UPDATE outbox_events SET claimed_at=NOW()-INTERVAL '4 minutes 50 seconds' WHERE id=$1",
+    [slowId]);
+  assert.equal(await renewEventLease(slow),true);
+  const renewedState=(await pool.query(
+    'SELECT claimed_at,claim_token,attempts FROM outbox_events WHERE id=$1',
+    [slowId])).rows[0];
+  assert.equal(renewedState.claim_token,slow.claim_token);
+  assert.equal(renewedState.attempts,1);
+  assert.ok(new Date(renewedState.claimed_at).getTime()>Date.now()-60_000);
+  await pool.query("UPDATE outbox_events SET claimed_at=NOW()-INTERVAL '4 minutes 50 seconds' WHERE id=$1",
+    [slowId]);
+  await withEventLeaseHeartbeat(slow,async()=>{
+    await new Promise<void>(resolve=>setTimeout(resolve,70));
+  },10);
+  await transaction(db=>assertEventClaim(db,slow));
+  await finishEvent(slow);
+  assert.equal(await renewEventLease(slow),false,
+    'A finished event cannot be renewed or revived');
+
+  // An expired token loses *all* authority, even before reclaim. Neither
+  // heartbeat nor finish/failure may silently acknowledge another attempt.
+  const timeoutId=(await pool.query(
+    `INSERT INTO outbox_events(project_id,kind) VALUES($1,'message.created') RETURNING id`,
+    [project.id])).rows[0].id as string;
+  const stale=(await claimEvents(1))[0];
+  assert.equal(stale.id,timeoutId);
+  await pool.query("UPDATE outbox_events SET claimed_at=NOW()-INTERVAL '6 minutes' WHERE id=$1",
+    [timeoutId]);
+  assert.equal(await renewEventLease(stale),false);
+  await finishEvent(stale);
+  await failEvent(stale,new Error('Must not change expired event'));
+  const timeoutState=(await pool.query(
+    'SELECT processed_at,last_error_code,claim_token,attempts FROM outbox_events WHERE id=$1',
+    [timeoutId])).rows[0];
+  assert.equal(timeoutState.processed_at,null);
+  assert.equal(timeoutState.last_error_code,null);
+  assert.equal(timeoutState.claim_token,stale.claim_token);
+  assert.equal(timeoutState.attempts,1);
+  const newOwner=(await claimEvents(1))[0];
+  assert.equal(newOwner.id,timeoutId);
+  assert.notEqual(newOwner.claim_token,stale.claim_token);
+  assert.equal(await renewEventLease(stale),false,
+    'Previous worker must not extend another worker lease');
+  assert.equal(await renewEventLease(newOwner),true);
+  await finishEvent(newOwner);
 
   const crashed=(await pool.query(
     `INSERT INTO outbox_events(project_id,kind,attempts,claimed_at)
