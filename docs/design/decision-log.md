@@ -529,3 +529,13 @@
 **验证。** 真实 PostgreSQL 集成核验管理员名单与模型凭据分隔、普通用户不能读、凭据仅受保护事务内访问、管理员行锁阻止降权和读取竞态、降权后拒绝；静态架构守卫阻止在 Fastify 模型路由重新使用旧 `requireSystemAdmin` 预检及无上下文的目录/模型配置查询，并验证网络调用发生在事务外。原模型目录、DNS/SSRF、结构化响应、API Smoke、Win11/Linux 原生构建、Docker 和安全扫描继续作为最新 PR Head 的合并门禁。#39 的实际公网出口安全、#49 的剩余 API/Worker 边界和 #51 的生产正式验收仍独立开放。
 
 **权限先于写入参数校验。** 既有编译版 API Smoke 要求非管理员即使提交不完整的模型 POST 请求，也必须返回 403，不能因 DTO 先校验而返回 400。模型创建/修改、导入及连接测试的敏感 body 校验已移入 `systemAdminTransaction` 的有效管理员行锁之后，原有 Zod 严格字段定义并未改变；校验失败仍整体回滚事务与冷却记录。这使异常参数无权访问时不会泄露写入规则，同时避免再次引入独立 HTTP 预检。
+
+## ADR-085 · 平台模型正式命令与审计唯一所有权（2026-10-17）
+
+**背景。** ADR-084 已把系统管理员模型配置的全部敏感读取置于同一当前权限事务，但 `admin-model-routes.ts` 仍持有供应商/模型创建、修改、删除、批量导入以及测试冷却的业务 SQL、交易回调与系统审计。API 与 Core 共同维护命令过程，使审计遗漏、权限检查顺序漂移和重复行为难以预防。
+
+**决定。** 统一由 `identity/platform-model-commands.ts` 拥有八类管理操作：`createPlatformProvider`、`updatePlatformProvider`、`deletePlatformProvider`、`importPlatformModels`、`createPlatformModel`、`updatePlatformModel`、`deletePlatformModel`、`preparePlatformModelTest`。所有操作复用现有唯一 `systemAdminTransaction` 与原 `project-model.ts` 存储/密钥逻辑；事务内先锁定当前 `users.is_system_admin`、再按原 Zod 严格输入规则验证、变更数据并写 `system_audit_entries`，失败自动回滚数据和审计。七个持久变更复用一个审计写入辅助函数，保留原 action 名及 metadata、删除前引用检查、批量导入幂等结果；模型探针以同一授权事务读取解密配置并写原 30 秒请求冷却。不存在旧业务逻辑保留在路由的双轨兼容实现，也不新增 command bus、镜像 DB 表或事件通道。
+
+**HTTP 分工。** `admin-model-routes.ts` 仍负责会话、UUID 路由参数、HTTP 201/200、发现错误翻译、可控文本/结构化探针及响应；平台模型 GET 和目录读取继续在 `systemAdminTransaction` 使用同一个 DbClient。外部网络模型调用必须在冷却+授权事务提交后执行，绝不在 SQL 行锁内等待 DNS/HTTP。无论输入是否完整，非总管理员管理 POST 首先 403，再考虑 Zod 输入错误；不向客户端或系统审计暴露 provider API Key。
+
+**验收。** 新增真实 PostgreSQL 模型全生命周期回归：非法/越权输入、加密 key 不进公开 DTO、更新保留密钥、模型批量导入幂等、供应商存在模型时删除 409、模型测试 30 秒冷却、删除后 404、系统审计动作及密钥脱敏、管理员撤权后拒绝。静态架构测试禁止 Fastify 模型 HTTP 再出现业务 SQL/模型 schema/保存 API，确保八个业务操作只由 Core 和唯一管理员授权事务处理。五组最新 Head CI、审查线程和主干漂移作为合并门禁。此切片不声明企业 SSO/MFA、真实厂商测试或 #39/#49/#50/#51 全面完成。

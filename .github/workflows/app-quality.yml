@@ -97,6 +97,8 @@ jobs:
         run: node --import tsx packages/core/test/system-access.integration.ts
       - name: Platform model credential read scope and grant revocation integration
         run: node --import tsx packages/core/test/admin-model-scope.integration.ts
+      - name: Platform model Core CRUD, provider import, cooldown and audit integration
+        run: node --import tsx packages/core/test/platform-model-commands.integration.ts
       - name: Current-authorized Outbox diagnostics and replay integration
         run: node --import tsx packages/core/test/outbox-operations.integration.ts
       - name: Outbox reliability integration
