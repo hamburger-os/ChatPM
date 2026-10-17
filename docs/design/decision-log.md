@@ -389,3 +389,11 @@
 **决策。** 保留单一 PostgreSQL Outbox 与既有五分钟租约，不新增 Kafka/Redis/新表。将领取、最后尝试隔离、权限证明、续租、正常完成及失败退避统一使用 `OUTBOX_LEASE_SECONDS=300`。领取后只在真正调用外部模型的 `runAnalysis` 期间以一分钟节拍执行 `renewEventLease`：更新条件同时要求 project、event、当前 token、未完成、未隔离，且原租约仍有效；绝不恢复已经过期的 claim。事件执行器只能有一个正在进行的 heartbeat SQL；结束时释放 timer 并等待在途 SQL 完成。瞬时数据库故障不转化为授权，所有正式发布依然须在写事务内 `assertEventClaim` 且持有 `FOR UPDATE`。任何租约过期或被新 Worker 改写的旧请求均不得确认完成、失败重试或隔离事件。
 
 **取舍。** 时间更新不会推进 attempts 或制造 DomainEvent/Audit；令牌保持不变，新的 Worker 仍可按过期条件 SKIP LOCKED 接管。续租不能取消已发送到第三方模型的 HTTP 请求，也不是跨进程外部执行 exactly-once 保证。5 分钟 DB 租约的正常 60 秒模型 timeout 足够安全；长耗时/DB 瞬断依赖有界续租和发布时 fencing。真实多 Worker crash/慢模型/网络中断故障注入及主动运维告警仍需继续；不能把本 PR 等同生产队列可靠性验收。
+
+## ADR-071 · Outbox 运维权限的事务一致性（2026-10-17）
+
+现有 Outbox 运维路由先检查权限，再通过独立连接读取统计与死信；在两步之间撤权，可能仍返回不应访问的信息。确定由 Core 统一拥有运维查询和死信恢复，Fastify 只解析身份、UUID 和 DTO。
+
+`operations/outbox-admin.ts` 使用一次 REPEATABLE READ 事务，先锁当前 TenantMember/ProjectMember 并验证 operations.manage，再使用同一连接执行唯一 Outbox 读取 SQL。人工恢复继续由 executePmCommand 负责原子回执、审计、事件及重试版本，不创建另一套命令执行器或业务存储。健康领取不能被人工重置。
+
+真实 PostgreSQL 覆盖 Owner/Observer、跨租户、权限撤销、重复请求、两次真实恢复及版本递增。仍需多实例故障注入、主动告警和生产实机验收。
