@@ -51,6 +51,8 @@ jobs:
         run: npm run test:ai-evals
       - name: Deployment bootstrap tests
         run: npm run test:ops
+      - name: SSE bounded backpressure, drain and disconnected-client tests
+        run: node --import tsx --test tools/test/sse-backpressure.test.mjs
       - name: Database schema
         run: npm run db:migrate
       - name: Verify migrations are repeatable

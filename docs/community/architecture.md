@@ -256,3 +256,9 @@ English: Platform provider/model create, edit, delete, import and connection-tes
 中文：AI 任务在合法续租且仍处理中时，不会仅因消息早于十分钟就被误报为“排队逾期”。新的运维诊断分别展示**超过十分钟仍未开始执行**的队列、**超时未续期**的 Worker claim、**已到期重试等待队列**和死信，阈值维护在同一个私有 Doctor 模块中。预约到明天执行的 AI 预算延期不会被计为立即积压。诊断仍为只读，不接触消息正文或模型密钥；系统计划任务的非零退出需要管理员连接受信任的值班通知系统。
 
 English: Doctor now separates waiting overdue queue items from **active, renewed** AI/Outbox leases. It reports independently stale claims, retry-ready backlog pressure, ready work and dead letters; intentionally deferred work is not treated as overdue. A diagnostic is read-only and never mutates the Outbox or publishes AI output. Alert delivery, rate/SLA measurement and true outage drills still need production validation.
+
+### 实时消息弱网保护 / Slow-client SSE backpressure
+
+中文：项目聊天室的 SSE 实时连接不仅支持顺序消息、断线重连和历史分页，还为弱网/半开连接增加有界背压：浏览器持续不读取时，服务器最多等待十秒恢复写入，然后关闭连接、释放占用的实时连接名额。浏览器可使用原来的事件序号和 REST 增量重新获取消息；服务端不会额外缓存一份项目正式数据。这有助于避免移动网络长期断开占满连接，但真实 iOS、Android、反向代理和大规模连接仍须测试。
+
+English: The project chat SSE stream now times out stalled backpressure writes after 10 seconds and releases user connection quota even when a half-open client never emits a TCP close event. Ordinary drain/close paths clean up listeners. The original committed PostgreSQL message sequence, `Last-Event-ID` resume, REST reconciliation and membership checks remain authoritative. Real mobile browser and shared-NAT tests remain release gates.

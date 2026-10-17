@@ -108,3 +108,7 @@ Linux 已有 `infra/linux/chatpm-doctor.service` + `chatpm-doctor.timer` 每 5 �
 ## ADR-086 · Outbox 可执行队列和超时 claim 运维判断
 
 运行已有的私有 `npm run doctor`，现在会输出 `readyEvents`（当前到期且无 claim）、`overdueEvents`（未领取且超过 10 分钟）、`stalledClaims`（持有 claim 却已 10 分钟未更新）、`retryReadyEvents`（此前失败、现在到期且无 claim）及未处理 `deadLetters`；活跃续租的模型调用不计入逾期队列，跨午夜/预算系统主动延后的下一次尝试在到期前也不报警。若重试待执行条数达到 10 将输出 `OUTBOX_RETRY_READY_PRESSURE`，任何卡死 claim 单独输出 `OUTBOX_STALLED_CLAIM`，死信仍要求人工审核并在授权界面重放。业务租约 300 秒的唯一实现仍在 Core，Doctor 的十分钟是监控观察阈值，不能修改正式租约或自行清理 DB。系统管理员应通过 Windows Task Scheduler/事件日志或 Linux journal/systemd 读取诊断的非零退出与错误码，将其送入受信任的监控系统；本 PR 不包含远程 webhook/通知插件，更不对用户聊天发送自动业务状态。长期压测后再据真实误报与吞吐制定阈值/SLA。
+
+## ADR-087 · SSE 弱网流式传输和中间代理
+
+项目消息 SSE 在 Fastify 中采用十秒背压 deadline：当下游客户端一直不读取导致 Node `write` 返回 false 且未继续 `drain`，主动关闭该连接并释放每用户并发名额，而不是在等待期间无限持有服务器连接。Next.js 同源 `/api` 仍必须无缓冲转发 `text/event-stream`；部署 HTTPS 反向代理需禁止对 SSE 缓冲与无界等待，同时允许心跳和事件游标，不能因为增加超时保护而将整流缓存成完整 HTTP 响应。断线浏览器继续通过 Last-Event-ID 和 REST 增量恢复；真实 Android/iOS、共享 NAT、移动切后台/杀进程与服务器无数据时的浏览器重连行为须现场测试。

@@ -549,3 +549,11 @@
 **边界。** 十分钟 stale claim 是**独立告警观察阈值**而不是对 Core 300 秒正式租约 TTL 的第二份配置；没有 active heartbeat 的 stale claim 在实际过期后仍由 Worker 既有 `claimEvents` 恢复，此改动不会给诊断器重试、消费或重新授权的能力。重试压力是当前**待重试件数**，并不是根据时间窗口计算出的重试失败率；缺少必需的队列指标则 `OUTBOX_TELEMETRY_INVALID` fail closed，不把缺值当零。默认阈值是运维起始值，不是实测业务 SLA；后续应结合真实入站量/排队、失败时长、模型限流和告警噪音基线调优。
 
 **验证与遗留。** 保留原 Outbox PostgreSQL lease/heartbeat/fencing/final-attempt/replay 回归和 Worker 分 lane 测试；加入 SQL **真实 PostgreSQL** 场景测试，直接使用生产 Doctor 同一聚合查询对比长耗时合法续期、尚未到期的预算延期、排队超时、已停止续期的 claim、批量 429 待重试和死信、已处理事件及清理后信号恢复；pure ops 和架构守卫阻止回退到旧的无 claim 过滤聚合，Product CI 运行最新测试。此 PR 不代表 #4 外部邮件/IM/PagerDuty 告警送达、重试**失败率**时间序列、完整进程崩溃和 DB/网络故障注入、真实设备/跨实例恢复性能验收已完成；它们继续开放。
+
+## ADR-087 · SSE 慢连接背压等待有界化（2026-10-18）
+
+**发现。** 实时聊天 SSE 已拥有 PostgreSQL 顺序游标/分页、`Last-Event-ID` 断线恢复、每批当前会话+租户/项目成员授权、同源代理、流式心跳及每个用户最多 3 条并发连接；但 `message-stream-routes.ts` 中 `write` 当 `ServerResponse.write()` 返回 false 时无限等待 `drain` 或 `close`。如果弱网、后台浏览器或半开 TCP 长期停止消费，OS socket 未关闭且 Node.js 无 drain，则 stream `busy=true`，定时 pump 不能继续验证授权、事件帧缓冲无法前进且一个用户 stream 名额可能永久占用。HTTP backpressure 是好机制，但无有界死区会造成连接容量泄漏与可用性故障。
+
+**决定。** 仍保持单 Fastify SSE Handler/Next 同源代理、PostgreSQL 消息序号与原会话事实源，不建第二套 websocket/broker 或兼容 SSE route。将背压写入抽取为同模块 `writeSseFrame`，唯一固定 `SSE_DRAIN_TIMEOUT_MS=10000`：`raw.write` 即时接受则成功；否则等待 `drain`、`close` 或十秒截止，任何结局都清理自身 drain/close 监听器和计时器。非 drain 结局让路由先调用幂等 `cleanup()`（减少 `activeStreams`、清理 pump/ping timer），再 `raw.destroy()` 关闭半开连接。正常 drain 才继续泵送下一帧及更新 `after` 游标，截止不会被当成已投递的消息。心跳写失败也执行同样清理，而非让未处理 Promise rejection 漏出进程。
+
+**测试与边界。** Node Events fake socket 覆盖即时 write、背压后 drain、客户端 close、无 drain 截止、清理 listener、晚到 drain 不复活连接及固定十秒阈值；静态架构守卫要求失败路径销毁 socket 并释放每用户配额，加入 Product CI。原编译 API Smoke 检查真实 SSE 订阅、跨项目拒绝、游标重放、登出关闭；Web 构建/Docker/原生与安全扫描保持。截止造成的断线由浏览器 EventSource 根据原 `Last-Event-ID` 或 REST 增量恢复，不会发送项目外数据。该改动不等于共享 NAT/逆向代理压力基线、iOS Safari/Android Chrome 真实设备键盘与安全区、部署层 WebSocket/HTTP2 真实网络验证全部完成；#40/#51 保持开放。

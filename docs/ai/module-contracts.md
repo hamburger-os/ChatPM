@@ -449,3 +449,10 @@ retryDeadEvent 唯一使用现有 executePmCommand：当前授权、dead_at 非�
 - `tools/ops/doctor.mjs` 的 `OUTBOX_QUEUE_THRESHOLDS` 与 `OUTBOX_HEALTH_SQL` 是 Outbox **运维告警**的唯一阈值和聚合 SQL，避免多个部署脚本为重试/超时定义不同判断。正式租约 TTL/续期/claim/发布资格仍由 `packages/core/src/outbox.ts` 唯一控制；诊断不能修改租约、竞争领取、写业务消息或调用 AI。
 - `OUTBOX_OVERDUE` 只统计已到期超过阈值且 **claimed_at IS NULL** 的未处理、非死信事件；合法 heartbeat 下长模型调用不算 backlog。`OUTBOX_STALLED_CLAIM` 仅统计有 claim 且超过独立观察阈值未刷新；`OUTBOX_RETRY_READY_PRESSURE` 是当前可执行、有失败代码的未领取重试件数，不能宣称其为统计失败率。死信作为单独告警保留，已处理记录和未到期预算延期不计入可执行队列。
 - Doctor 所有指标缺值/无效必须故障关闭，向本地监控返回机器错误码和非零退出；不回传正文、令牌、模型输出或错误堆栈。Windows/Linux 的周期诊断与外部值班系统必须独立对接/验收，不能声称 CLI JSON 就等于远程主动告警。
+
+## ADR-087 · SSE 有界传输、连接预算与消息恢复
+
+- `apps/api/src/message-stream-routes.ts` 只承载流式传输和每进程用户连接预算；项目消息始终来自 `conversation/message-queries.ts` 中同一受权限锁保护的 PostgreSQL 顺序游标。不可在 SSE 层另建正式缓存、业务事实或项目权限镜像。
+- `writeSseFrame` 是唯一慢连接写入等待规则：响应 `write(false)` 后最多等待 `SSE_DRAIN_TIMEOUT_MS`（10 秒），可由 drain 恢复、由 close/timeout 结束。任何结束必须移除 drain/close 监听器和期限计时器；服务端释放用户配额并销毁长时间无响应的半开 HTTP socket，不得无限等待或在超时后继续前移 `after`。
+- Ping 写入失败不得产生未处理 rejection，必须按与消息写入相同的连接清理规则处理；订阅和每次发送仍复核当前 Session、租户/项目权限。浏览器原 EventSource + `Last-Event-ID`/REST 增量负责重连后从 PostgreSQL 恢复漏消息，不能将 TCP write 接受等同于已读回执。
+- 真实浏览器、反向代理和移动端丢包/断网性能与键盘安全区属于独立正式验收。
