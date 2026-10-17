@@ -336,3 +336,9 @@ Docker 工作流为验证多账号 HTTP/Origin/Cookie 人为设置 `REGISTRATION
 - `withEventLeaseHeartbeat(event,()=>runAnalysis(event))` 围绕外部模型慢调用，不能在其他 Worker lane 并发重入相同 Event；不可预领 12 个慢事件。timer 在工作成功/失败时都必须清理，任何时刻最多一个 heartbeat SQL in flight。
 - heartbeat 失败不授予任何额外发布权；真正的消息、澄清、候选和审计数据库写入必须在同一事务中 `assertEventClaim`，用 `FOR UPDATE` 和当前 token 锁住租约直到提交。已过期的旧领取不得由 heartbeat 重启，也不能 `finishEvent` 或 `failEvent` 改写新/旧状态。
 - CI 必须含真实 PostgreSQL 多次领取、旧 token 回写、未被接管但已过期、DB 行锁、续租后的 token/attempts 不变和 worker heartbeat 路径静态守卫。不得将该测试宣传为真实故障环境或外部 AI 供应商延迟验收。
+
+## Outbox 运维权限与命令契约（ADR-071）
+
+运维 HTTP 层仅接受登录身份及 UUID/Zod DTO，不自行执行权限 SQL、运维数据查询或命令执行器。Core 中 readOutboxSummary/readDeadEvents 必须在一个 REPEATABLE READ 事务内先 lockProjectAccess，验证 operations.manage，再用同一 DbClient 调用 outboxSummary/deadEvents。非项目 Owner、失效组织成员或跨项目请求不得取得统计与死信数据。
+
+retryDeadEvent 唯一使用现有 executePmCommand：当前授权、dead_at 非空、未完成、同项目、行锁、manual_retry_revision 递增、审计/领域事件/Outbox/Receipt 原子提交。重放同键命令不触发第二次恢复，任何新命令不可恢复健康事件。新增 Core 集成与架构静态守卫，API/Worker 仍需全域模块边界审查。
