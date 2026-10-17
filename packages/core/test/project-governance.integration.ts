@@ -16,6 +16,7 @@ async function newUser(label:string):Promise<string>{
   `,[label+'-'+suffix+'@example.test',label]);
   return rows[0].id;
 }
+let testProject:string|null=null;
 try{
   const owner=await newUser('governance-owner');
   const member=await newUser('governance-member');
@@ -36,6 +37,7 @@ try{
     INSERT INTO projects(tenant_id,name,owner_id)
     VALUES($1,'Governance project',$2) RETURNING id
   `,[tenant,owner])).rows[0].id;
+  testProject=project;
   const foreignProject=(await pool.query<{id:string}>(`
     INSERT INTO projects(tenant_id,name,owner_id)
     VALUES($1,'Foreign project',$2) RETURNING id
@@ -199,5 +201,13 @@ try{
   await assert.rejects(listProjectMembers(project,owner),/项目不存在或无权限/);
   console.log('Project governance Core: five obligations, transfer, roles, revocation, receipts');
 }finally{
+  if(testProject){
+    // These integration events must not be claimed by the next test process.
+    // Only touch the freshly created fixture project, never global queue rows.
+    await pool.query(`
+      UPDATE outbox_events SET processed_at=NOW(),claimed_at=NULL,claim_token=NULL
+      WHERE project_id=$1 AND processed_at IS NULL AND dead_at IS NULL
+    `,[testProject]);
+  }
   await pool.end();
 }
