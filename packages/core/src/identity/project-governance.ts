@@ -192,7 +192,7 @@ export function transferProjectOwnership(projectId:string,actor:string,input:Own
     });
 }
 
-export function updateProjectSettings(projectId:string,actor:string,input:ProjectSettingsInput){
+export async function updateProjectSettings(projectId:string,actor:string,input:ProjectSettingsInput){
   const noReminder=input.workStart===null&&input.workEnd===null&&
     input.cooldownHours===null;
   if(!noReminder&&(input.workStart===null||input.workEnd===null||
