@@ -381,3 +381,11 @@
 
 
 **ADR-069 并发补充：** 仅在 Worker 的 `INSERT ... SELECT archived_at IS NULL` 做检查仍存在 MVCC 竞态。迁移 027 为所有 `task_progress_updates` 插入增加 `BEFORE INSERT` 触发器，先对目标 Task 加 `FOR SHARE` 锁并核验未归档，归档事务对 Task 持 `FOR UPDATE` 且随后检查 pending progress。两条路径互斥，无论顺序如何都不会提交归档后新增的 pending progress。原进度来源、索引和幂等键不变。
+
+## ADR-070 · Outbox 长耗时事件租约续期与过期回写隔离（2026-10-17）
+
+**问题。** 现有 Outbox 单事件领取、5 分钟租约、`claim_token` 和 DB 事务内的 `assertEventClaim(FOR UPDATE)` 能阻止已被重新认领的 Worker 发布旧结果，却不能保持长时间 AI 推理的处理权。超时但尚未被认领的旧 Worker 仍可能调用只验证 token 的 `finishEvent` 或 `failEvent`，错误确认/重新排期一个早已失效的领取。另一个新 Worker 如果确实接管，旧任务继续做外部推理会浪费计算/模型预算，但不得提交结果。
+
+**决策。** 保留单一 PostgreSQL Outbox 与既有五分钟租约，不新增 Kafka/Redis/新表。将领取、最后尝试隔离、权限证明、续租、正常完成及失败退避统一使用 `OUTBOX_LEASE_SECONDS=300`。领取后只在真正调用外部模型的 `runAnalysis` 期间以一分钟节拍执行 `renewEventLease`：更新条件同时要求 project、event、当前 token、未完成、未隔离，且原租约仍有效；绝不恢复已经过期的 claim。事件执行器只能有一个正在进行的 heartbeat SQL；结束时释放 timer 并等待在途 SQL 完成。瞬时数据库故障不转化为授权，所有正式发布依然须在写事务内 `assertEventClaim` 且持有 `FOR UPDATE`。任何租约过期或被新 Worker 改写的旧请求均不得确认完成、失败重试或隔离事件。
+
+**取舍。** 时间更新不会推进 attempts 或制造 DomainEvent/Audit；令牌保持不变，新的 Worker 仍可按过期条件 SKIP LOCKED 接管。续租不能取消已发送到第三方模型的 HTTP 请求，也不是跨进程外部执行 exactly-once 保证。5 分钟 DB 租约的正常 60 秒模型 timeout 足够安全；长耗时/DB 瞬断依赖有界续租和发布时 fencing。真实多 Worker crash/慢模型/网络中断故障注入及主动运维告警仍需继续；不能把本 PR 等同生产队列可靠性验收。
