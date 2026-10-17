@@ -13,7 +13,36 @@ export const WORKER_LANE_THRESHOLDS={
   reports:{heartbeat:900,success:900},
 };
 
-export function evaluateHealth({apiOk,lanes,overdue,dead,migrations}){
+/** Queue observation policy (NOT the five-minute lease TTL).
+ * A still-claimed/heartbeating long-running model call is not overdue queue
+ * work. Ten-minute stale claims are actionable independently of retry delay.
+ * These values live only here; operations, SQL and tests share this contract.
+ */
+export const OUTBOX_QUEUE_THRESHOLDS=Object.freeze({
+  overdueMinutes:10,
+  stalledClaimMinutes:10,
+  retryReadyCount:10,
+});
+
+export const OUTBOX_HEALTH_SQL=`
+  SELECT
+    COUNT(*) FILTER (WHERE dead_at IS NULL
+      AND claimed_at IS NULL
+      AND next_attempt_at < NOW()-($1::int*INTERVAL '1 minute'))::integer AS overdue,
+    COUNT(*) FILTER (WHERE dead_at IS NULL
+      AND claimed_at IS NOT NULL
+      AND claimed_at < NOW()-($2::int*INTERVAL '1 minute'))::integer AS stalled_claims,
+    COUNT(*) FILTER (WHERE dead_at IS NULL
+      AND claimed_at IS NULL AND next_attempt_at <= NOW()
+      AND attempts>0 AND last_error_code IS NOT NULL)::integer AS retry_ready,
+    COUNT(*) FILTER (WHERE dead_at IS NULL
+      AND claimed_at IS NULL AND next_attempt_at <= NOW())::integer AS ready,
+    COUNT(*) FILTER (WHERE dead_at IS NOT NULL)::integer AS dead
+  FROM outbox_events WHERE processed_at IS NULL
+`;
+
+
+export function evaluateHealth({apiOk,lanes,overdue,stalledClaims,retryReady,dead,migrations}){
   const issues=[];
   if(!apiOk)issues.push('API_UNREACHABLE');
   for(const [name,threshold] of Object.entries(WORKER_LANE_THRESHOLDS)){
@@ -29,7 +58,17 @@ export function evaluateHealth({apiOk,lanes,overdue,dead,migrations}){
        (lane.successAgeSec===null||lane.failureAgeSec<lane.successAgeSec))
       issues.push('WORKER_'+code+'_LAST_TICK_FAILED');
   }
+  // No quiet fallback if an operations caller forgets the queue metrics.
+  for(const value of [overdue,stalledClaims,retryReady,dead]){
+    if(!Number.isSafeInteger(value)||value<0){
+      issues.push('OUTBOX_TELEMETRY_INVALID');
+      break;
+    }
+  }
   if(overdue>0)issues.push('OUTBOX_OVERDUE');
+  if(stalledClaims>0)issues.push('OUTBOX_STALLED_CLAIM');
+  if(retryReady>=OUTBOX_QUEUE_THRESHOLDS.retryReadyCount)
+    issues.push('OUTBOX_RETRY_READY_PRESSURE');
   if(dead>0)issues.push('OUTBOX_DEAD_LETTER');
   if(!migrations.includes('029_worker_lane_health.sql'))
     issues.push('DATABASE_NOT_MIGRATED');
@@ -76,19 +115,21 @@ export async function main() {
         EXTRACT(EPOCH FROM (NOW()-last_success_at))::double precision AS success_age,
         EXTRACT(EPOCH FROM (NOW()-last_failure_at))::double precision AS failure_age
         FROM worker_health`),
-      pool.query(`SELECT
-        COUNT(*) FILTER (WHERE processed_at IS NULL AND dead_at IS NULL
-          AND next_attempt_at < NOW()-INTERVAL '10 minutes')::integer AS overdue,
-        COUNT(*) FILTER (WHERE dead_at IS NOT NULL)::integer AS dead
-        FROM outbox_events`),
+      pool.query(OUTBOX_HEALTH_SQL,[
+        OUTBOX_QUEUE_THRESHOLDS.overdueMinutes,
+        OUTBOX_QUEUE_THRESHOLDS.stalledClaimMinutes,
+      ]),
       pool.query('SELECT version FROM schema_migrations ORDER BY version'),
     ]);
     const lanes=parseWorkerLanes(heartbeat.rows);
     const data = {
       apiOk,
       lanes,
-      overdue: events.rows[0]?.overdue ?? 0,
-      dead: events.rows[0]?.dead ?? 0,
+      overdue: events.rows[0]?.overdue,
+      stalledClaims: events.rows[0]?.stalled_claims,
+      retryReady: events.rows[0]?.retry_ready,
+      ready: events.rows[0]?.ready,
+      dead: events.rows[0]?.dead,
       migrations: history.rows.map(r => r.version),
     };
     const summary = evaluateHealth(data);
@@ -98,6 +139,9 @@ export async function main() {
       api: apiOk ? 'ok' : 'unavailable',
       workerLanes: data.lanes,
       overdueEvents: data.overdue,
+      stalledClaims: data.stalledClaims,
+      retryReadyEvents: data.retryReady,
+      readyEvents: data.ready,
       deadLetters: data.dead,
       latestMigration: data.migrations.at(-1) ?? null,
     }, null, 2));

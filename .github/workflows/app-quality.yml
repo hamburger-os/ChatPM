@@ -59,6 +59,8 @@ jobs:
         run: node --import tsx tools/test/worker-health.integration.mjs
       - name: First-account bootstrap token and race integration
         run: node --import tsx packages/core/test/bootstrap.integration.ts
+      - name: Outbox lease-aware queue metrics and fault-state PostgreSQL integration
+        run: node --import tsx tools/test/outbox-queue-health.integration.mjs
       - name: Account Identity Core registration, login, tenant access and revocation
         run: node --import tsx packages/core/test/account-services.integration.ts
       - name: Single authoritative project owner and migration constraints

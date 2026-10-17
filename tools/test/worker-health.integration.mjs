@@ -14,7 +14,7 @@ const read=async()=>{
   return parseWorkerLanes(rows);
 };
 const check=async()=>evaluateHealth({
-  apiOk:true,lanes:await read(),overdue:0,dead:0,
+  apiOk:true,lanes:await read(),overdue:0,stalledClaims:0,retryReady:0,dead:0,
   migrations:['029_worker_lane_health.sql'],
 });
 try{

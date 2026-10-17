@@ -104,3 +104,7 @@ Linux 已有 `infra/linux/chatpm-doctor.service` + `chatpm-doctor.timer` 每 5 �
 ## ADR-082 · Docker 模型网关 IP 明确允许名单
 
 默认云端 HTTPS 模型不需要任何网关环境变量。若系统总管理员选择 `http://host.docker.internal:<port>/v1` 作为本地模型基础 URL，则生产 Compose 为 API 与 Worker 容器配置 `extra_hosts: host.docker.internal:host-gateway`，但只有运维者**先验证真实网关身份**，再在受保护 `.env` 设置 `MODEL_DOCKER_GATEWAY_IPS=172.18.0.1`（IP **仅示例，不可照抄**）才允许模型请求。可逗号分隔最多 4 个已验证 A/AAAA 网关 IP，**不接受网段 CIDR、`localhost`、任意内网服务地址或公网 IP**；没有配置或有一个未知解析 IP 就拒绝请求。建议在已部署 API/Worker 容器内执行 `getent hosts host.docker.internal`，结合容器路由/宿主机 Docker 网络配置核对每条地址的归属，不仅凭 DNS 输出即信任。容器网络重建、升级或网关变更后按停写/维护策略重新核对并更新允许名单，避免用一个更宽的私网段掩盖实际问题。若本地模型运行在原生 Windows/Linux 同一进程命名空间，可显式配置 `localhost`；不能因此扩展任意内网别名为可信。QNAP/IPv6/HTTPS、模型所在宿主机端口与 egress 防火墙仍需目标机器实测。
+
+## ADR-086 · Outbox 可执行队列和超时 claim 运维判断
+
+运行已有的私有 `npm run doctor`，现在会输出 `readyEvents`（当前到期且无 claim）、`overdueEvents`（未领取且超过 10 分钟）、`stalledClaims`（持有 claim 却已 10 分钟未更新）、`retryReadyEvents`（此前失败、现在到期且无 claim）及未处理 `deadLetters`；活跃续租的模型调用不计入逾期队列，跨午夜/预算系统主动延后的下一次尝试在到期前也不报警。若重试待执行条数达到 10 将输出 `OUTBOX_RETRY_READY_PRESSURE`，任何卡死 claim 单独输出 `OUTBOX_STALLED_CLAIM`，死信仍要求人工审核并在授权界面重放。业务租约 300 秒的唯一实现仍在 Core，Doctor 的十分钟是监控观察阈值，不能修改正式租约或自行清理 DB。系统管理员应通过 Windows Task Scheduler/事件日志或 Linux journal/systemd 读取诊断的非零退出与错误码，将其送入受信任的监控系统；本 PR 不包含远程 webhook/通知插件，更不对用户聊天发送自动业务状态。长期压测后再据真实误报与吞吐制定阈值/SLA。

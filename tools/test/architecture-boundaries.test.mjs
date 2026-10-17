@@ -522,3 +522,26 @@ test('platform model metadata and credentials stay in current grant snapshots, n
   const call=route.indexOf('const started=Date.now();');
   assert.ok(probeStart>=0&&call>probeStart,'Core grant/cooldown must complete before model HTTP');
 });
+
+
+test('Doctor Outbox alert predicates distinguish active claims from queued and stalled work',()=>{
+  const doctor=readFileSync(new URL('../../tools/ops/doctor.mjs',import.meta.url),'utf8');
+  const outbox=readFileSync(new URL('../../packages/core/src/outbox.ts',import.meta.url),'utf8');
+  const ci=readFileSync(new URL('../../.github/workflows/app-quality.yml',import.meta.url),'utf8');
+  assert.match(doctor,/export const OUTBOX_QUEUE_THRESHOLDS=Object\.freeze\(/);
+  assert.match(doctor,/export const OUTBOX_HEALTH_SQL=/);
+  assert.match(doctor,/claimed_at IS NULL\s+AND next_attempt_at < NOW\(\)/,
+    'A long-running live claim cannot be misclassified as unclaimed overdue queue');
+  assert.match(doctor,/claimed_at IS NOT NULL\s+AND claimed_at < NOW\(\)/,
+    'Stalled claims must have their own independent diagnostic');
+  assert.match(doctor,/attempts>0 AND last_error_code IS NOT NULL/,
+    'Retry pressure counts ONLY due unclaimed events with a prior failure');
+  assert.match(doctor,/OUTBOX_STALLED_CLAIM/);
+  assert.match(doctor,/OUTBOX_RETRY_READY_PRESSURE/);
+  assert.match(doctor,/OUTBOX_TELEMETRY_INVALID/);
+  assert.match(doctor,/pool\.query\(OUTBOX_HEALTH_SQL,\[/,
+    'Doctor must run its single canonical parameterized operational query');
+  assert.match(outbox,/withEventLeaseHeartbeat/);
+  assert.match(outbox,/renewEventLease\(event\)/);
+  assert.match(ci,/tools\/test\/outbox-queue-health\.integration\.mjs/);
+});

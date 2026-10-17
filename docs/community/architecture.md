@@ -250,3 +250,9 @@ English: Platform AI provider/model metadata and catalog credentials are read on
 中文：系统总管理员可以维护 AI 供应商与模型、导入供应商列表及发起模型连通性测试。所有正式操作现在由 Identity Core 的同一管理命令服务处理，先校验当前管理员身份、再验证请求和执行数据库事务，并同步记录不可遗漏的系统审计。后端仅存储加密 API Key，页面不会返回密钥；模型测试受 30 秒冷却保护，真正网络请求在事务外执行。普通项目成员只使用管理员配置且获项目授权的模型，不自行设置供应商。
 
 English: Platform provider/model create, edit, delete, import and connection-test preparation are owned by one Core command service. Current system-admin authorization, strict DTO validation, mutations, the existing audit trail and model-test cooldown share a database transaction. Secrets are encrypted and never returned in public management DTOs; external provider HTTP runs after the transaction commits. Full enterprise authentication, vendor billing and production egress certification remain separate validation tasks.
+
+### Outbox 租约感知的故障诊断 / Lease-aware Outbox diagnostics
+
+中文：AI 任务在合法续租且仍处理中时，不会仅因消息早于十分钟就被误报为“排队逾期”。新的运维诊断分别展示**超过十分钟仍未开始执行**的队列、**超时未续期**的 Worker claim、**已到期重试等待队列**和死信，阈值维护在同一个私有 Doctor 模块中。预约到明天执行的 AI 预算延期不会被计为立即积压。诊断仍为只读，不接触消息正文或模型密钥；系统计划任务的非零退出需要管理员连接受信任的值班通知系统。
+
+English: Doctor now separates waiting overdue queue items from **active, renewed** AI/Outbox leases. It reports independently stale claims, retry-ready backlog pressure, ready work and dead letters; intentionally deferred work is not treated as overdue. A diagnostic is read-only and never mutates the Outbox or publishes AI output. Alert delivery, rate/SLA measurement and true outage drills still need production validation.
