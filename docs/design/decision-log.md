@@ -579,3 +579,12 @@
 ## ADR-090 · 外部投递的独立接受状态（2026-10-25）
 
 **决定。** 项目已提交的 AI 消息通过 PostgreSQL Trigger 写入 `im_deliveries`，Worker 负责发至明确绑定的 Bot+群。网络调用前先领取 durable 意图；SDK 响应只记 accepted；连接未认证时保持 pending；失败、超时、Crash 后未知结果转 unknown，不自动重发；撤销绑定后尚未发送的记录取消。无需 Redis/Kafka/第二套计划任务。依旧存在在途撤权竞态，未来需加入可审计的人工核对和独立投递安全演练。未进行真实群回执 E2E。
+
+
+## ADR-091 · PostgreSQL 会话领导锁保护企业微信连接唯一性（2026-10-25）
+
+**发现。** 在多 Worker 部署中，同一个机器人的多个 SDK WebSocket 可能相互踢线、重复接收事件或重复发送通知。即使 Inbox 唯一约束可以抑制数据库重复副作用，SDK 连接自身仍必须唯一。
+
+**决定。** WecomSupervisor 使用直接 PostgreSQL 会话级 `pg_try_advisory_lock` 选举部署级唯一 IM 连接管理者；只有持锁进程加载已启用的 Bot。释放/断线时停止本进程的 SDK 连接并允许另一 Worker 在下一次协调时接管；投递意图仍由 `im_deliveries` 去重和限流。该锁明确要求数据库连接会话亲和性，不支持透明 transaction-pooling 代理。
+
+**未验收。** 真实多进程并发、数据库网络分区、Server Disconnect 与高可用切换、跨节点时间竞态和上线重试策略仍需专门故障演练；不能凭静态锁代码声称完整高可用。

@@ -12,3 +12,6 @@
 强制约束：所有业务写入必须经过有权限的 Core 命令；跨租户、观察者、未绑定群、撤权用户严格拒绝；平台消息 ID 不可自行转换为 ChatPM session。SDK 不得记录明文正文/凭据。
 
 当前缺口：企业微信真实连接与群端到端、媒体、持续群监听、外部群成员完整映射与告知、凭据轮换、手动 Unknown 处置、插件化 Harness AI 工具、后台 UI、完整安全与可靠性实测。测试文件 `im-wecom.test.ts` 与 `im-bindings.integration.ts` 分别为离线与 PostgreSQL 回归，不构成实机证明。
+
+
+连接唯一性：`WecomSupervisor` 必须占有同一数据库的 PostgreSQL **session-level advisory lock** 才能启动平台 SDK；进程退出或 DB session 丢失时停止连接。此设计要求 direct PostgreSQL/session affinity，不允许事务池复用误认为已有独占锁。生产仍须演练数据库断线、故障切换和多进程高并发。当前 /im 管理界面为基本操作表单，非完整安全验收。

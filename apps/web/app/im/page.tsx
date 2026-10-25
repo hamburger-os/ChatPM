@@ -34,9 +34,9 @@ export default function ImSettings(){
     setReady(true);
   },[]);
   useEffect(()=>{void load().catch(e=>setNotice(e instanceof Error?e.message:'加载失败'));},[load]);
-  async function run<T>(action:()=>Promise<T>,onSuccess:(r:T)=>void){
+  async function run<T>(action:()=>Promise<T>,onSuccess:(r:T)=>void|Promise<void>){
     setBusy(true);setNotice('');
-    try{const result=await action();onSuccess(result);}
+    try{const result=await action();await onSuccess(result);}
     catch(e){setNotice(e instanceof Error?e.message:'操作失败');}
     finally{setBusy(false);}
   }
