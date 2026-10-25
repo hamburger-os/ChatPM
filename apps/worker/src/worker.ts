@@ -1,5 +1,6 @@
 import 'dotenv/config';
 import {WecomSupervisor} from '../../../packages/core/src/im/wecom-supervisor.ts';
+import {processImDeliveries} from '../../../packages/core/src/im/delivery-runner.ts';
 import { pool } from '../../../packages/core/src/db.ts';
 import {recordWorkerHeartbeat,type WorkerLane} from '../../../packages/core/src/operations/worker-heartbeat.ts';
 import { processEvents } from '../../../packages/core/src/conversation/ai-event-runner.ts';
@@ -10,6 +11,14 @@ import { processReports } from '../../../packages/core/src/reporting/period-runn
 // behind it. Each lane has its own single-flight lock and independent retry.
 const inFlight = new Map<WorkerLane,Promise<void>>();
 const im=new WecomSupervisor();
+let imSendInFlight:Promise<void>|null=null;
+function dispatchImDeliveries():void{
+  if(stopping||imSendInFlight)return;
+  const task=processImDeliveries((id,message)=>im.send(id,message))
+    .catch(()=>console.warn('IM delivery runner failed'));
+  imSendInFlight=task;
+  void task.finally(()=>{if(imSendInFlight===task)imSendInFlight=null;});
+}
 let stopping=false;
 let lastReportScanSlot=-1;
 
@@ -52,12 +61,16 @@ const imTimer=setInterval(()=>void im.synchronize().catch(()=>{
   console.warn('IM channel reconciliation failed');
 }),60000);
 void im.synchronize().catch(()=>{console.warn('IM startup reconciliation failed');});
+const imSendTimer=setInterval(dispatchImDeliveries,15000);
+dispatchImDeliveries();
 async function shutdown(){
   if(stopping)return;
   stopping=true;
   clearInterval(timer);
   clearInterval(imTimer);
+  clearInterval(imSendTimer);
   await im.stop();
+  if(imSendInFlight)await Promise.allSettled([imSendInFlight]);
   await Promise.allSettled([...inFlight.values()]);
   await pool.end();
   if(process.connected)process.disconnect();

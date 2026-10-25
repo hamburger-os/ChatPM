@@ -1,4 +1,5 @@
 import {WecomAdapter} from '../../../im/src/wecom.ts';
+import type {OutboundText} from '../../../im/src/contracts.ts';
 import {acceptWecomMessage,listEnabledWecomBots} from '../im/wecom-service.ts';
 
 /** One SDK client per registered bot; never start a second IM service. */
@@ -41,6 +42,11 @@ export class WecomSupervisor {
         console.warn('IM channel startup failed');
       }
     }
+  }
+  async send(accountId:string,message:OutboundText):Promise<unknown>{
+    const entry=this.running.get(accountId);
+    if(!entry)throw Object.assign(new Error('No active IM session'),{code:'BOT_NOT_CONNECTED'});
+    return entry.adapter.send(message);
   }
   async stop():Promise<void>{
     this.stopping=true;

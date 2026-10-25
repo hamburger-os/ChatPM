@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import {randomUUID} from 'node:crypto';
 import {pool} from '../src/db.ts';
+import {processImDeliveries} from '../src/im/delivery-runner.ts';
 import {
   registerWecomBot,listWecomBots,listEnabledWecomBots,
   beginWecomUserBinding,beginWecomRoomBinding,revokeWecomRoomBinding,
@@ -74,6 +75,30 @@ try{
   assert.deepEqual(await acceptWecomMessage(bot.id,event(
     'group','external-owner','@项目经理 '+room.command,'m-room',botId)),
     {status:'room-bound'});
+
+  // Transactional AI-message publication is the *only* outbound source.
+  const published=await pool.query<{id:string}>(`
+    INSERT INTO messages(project_id,kind,content,client_nonce)
+    VALUES($1,'ai','当前项目提醒', $2) RETURNING id`,[project,randomUUID()]);
+  const mid=published.rows[0].id;
+  const pending=await pool.query<{state:string}>(`
+    SELECT state FROM im_deliveries WHERE project_id=$1 AND message_id=$2`,[project,mid]);
+  assert.equal(pending.rows[0].state,'pending');
+  await processImDeliveries(async()=>{throw Object.assign(new Error('offline'),
+    {code:'BOT_NOT_CONNECTED'});});
+  assert.equal((await pool.query<{state:string}>(`
+    SELECT state FROM im_deliveries WHERE message_id=$1`,[mid])).rows[0].state,'pending');
+  let delivered=0;
+  await processImDeliveries(async (_accountId,message)=>{
+    assert.equal(message.route.externalConversationId,'wecom-room-1');
+    assert.equal(message.accountId,botId);
+    assert.equal(message.text,'当前项目提醒');delivered++;
+  });
+  assert.equal(delivered,1);
+  assert.equal((await pool.query<{state:string}>(`
+    SELECT state FROM im_deliveries WHERE message_id=$1`,[mid])).rows[0].state,'accepted');
+  await processImDeliveries(async()=>{delivered++;});
+  assert.equal(delivered,1,'accepted outbound must never resend itself');
   const inbound=event('group','external-member','任务延期两天','m-1',botId);
   assert.deepEqual(await acceptWecomMessage(bot.id,inbound),{status:'stored'});
   assert.deepEqual(await acceptWecomMessage(bot.id,inbound),{status:'duplicate'});
@@ -82,7 +107,7 @@ try{
   assert.equal(counts.rows[0].count,'1');
   const messages=await pool.query<{count:string}>(`
     SELECT COUNT(*)::text AS count FROM messages WHERE project_id=$1`,[project]);
-  assert.equal(messages.rows[0].count,'1');
+  assert.equal(messages.rows[0].count,'2','one AI outbound and one inbound user message');
   const events=await pool.query<{count:string}>(`
     SELECT COUNT(*)::text AS count FROM outbox_events
     WHERE project_id=$1 AND kind='message.created'`,[project]);
@@ -103,6 +128,7 @@ try{
   throw err;
 }finally{
   await pool.query('DELETE FROM projects WHERE id=$1',[project]);
+  await pool.query('DELETE FROM tenant_members WHERE tenant_id=$1',[tenant]);
   await pool.query('DELETE FROM tenants WHERE id=$1',[tenant]);
   await pool.query('DELETE FROM users WHERE id IN ($1,$2)',[owner,member]);
   await pool.end();
