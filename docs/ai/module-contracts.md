@@ -460,4 +460,4 @@ retryDeadEvent 唯一使用现有 executePmCommand：当前授权、dead_at 非�
 
 ## 自主 IM 接入（ADR-088）
 
-渠道 SDK 与 IM Transport 不拥有正式用户身份和项目写入权限。已实现的企业微信文本适配器尚未接入生产；事务 Inbox、当前身份/群绑定授权、外部 Outbox 仍待实现。工程契约见 [IM](im-contract.md)。
+渠道 SDK 与 IM Transport 不拥有正式用户身份和项目写入权限。企业微信文本适配器已接入实验性 API/Worker；数据库事务 Inbox、一次性身份与群绑定授权、外部投递意图已实现并由 PostgreSQL 集成测试覆盖。**尚未真实企业微信群验收或接入 Harness PM 工具**。工程契约见 [IM](im-contract.md)。

@@ -4,6 +4,7 @@
 
 - [产品目标与优先级](project-context.md)
 - [模块所有权和对外契约](module-contracts.md)
+- [自主 IM、企业微信可信身份与投递契约](im-contract.md)
 - [组织治理与模型管理实现契约](organization-governance.md)
 - [工程不变量](engineering-guardrails.md)
 - [设计到实施的交付流程](delivery-workflow.md)

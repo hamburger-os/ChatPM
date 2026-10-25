@@ -100,6 +100,8 @@ export class WecomSupervisor {
     }
   }
 
+  isLeader():boolean{return this.leader!==null&&!this.stopping;}
+
   async send(accountId:string,message:OutboundText):Promise<unknown>{
     const entry=this.leader?this.running.get(accountId):null;
     if(!entry)throw Object.assign(new Error('No active IM session'),{code:'BOT_NOT_CONNECTED'});

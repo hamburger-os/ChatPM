@@ -13,7 +13,7 @@ const inFlight = new Map<WorkerLane,Promise<void>>();
 const im=new WecomSupervisor();
 let imSendInFlight:Promise<void>|null=null;
 function dispatchImDeliveries():void{
-  if(stopping||imSendInFlight)return;
+  if(stopping||imSendInFlight||!im.isLeader())return;
   const task=processImDeliveries((id,message)=>im.send(id,message))
     .catch(()=>console.warn('IM delivery runner failed'));
   imSendInFlight=task;

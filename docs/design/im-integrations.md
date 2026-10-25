@@ -9,7 +9,7 @@ ChatPM 自主维护 IM 接入、身份与消息契约，dsh-im 仅供参考，�
 - `packages/im`：纯文本入站归一化、Bot ID 校验、仅认证后消费、群/私聊路由、主动 Markdown 发送；SDK 日志静默避免写出聊天正文或凭据。非 @ 群消息、历史、文件和卡片标记不支持。
 - `030_im_inbox.sql`：组织机器人账户、AES-256-GCM 加密凭据、一次性绑定挑战、Verified User/Project Room 绑定和 Inbox 唯一键。机器人注册仅租户管理员可做；用户自己发起私聊 `/bind <token>`，群绑定仅项目 Owner 发起、同一 Owner 用已绑定企微账号在群发 `@机器人 /link <token>` 才生效。口令以 SHA-256 保存，10 分钟失效、一次性消费，不写入审计。
 - `acceptWecomMessage`：把渠道认证后的事件再按有效 Bot、项目群和成员进行事务授权。观察者、已撤权成员、未知群、未绑定 ID 无写权限。已授权事件通过原 Conversation 消息序号、Outbox 与审计一次性事务入库，唯一 Inbox 防重复。绑定指令不作为项目消息。
-- `031_im_delivery.sql`：项目正式 AI 消息创建时，对已绑定项目群写入外部投递意图；Worker 定期发送、区分 pending/sending/accepted/failed/unknown/cancelled；离线时重试未发送意图，发送结果未知或 Worker 崩溃不自动重发。
+- `031_im_delivery.sql`：项目正式 AI 消息创建时，对已绑定项目群写入外部投递意图；只有持有数据库会话领导锁的 Worker 领取投递，其他 Worker 不争抢消息；按 pending/sending/accepted/failed/unknown/cancelled 区分结果；离线时重试未发送意图，发送结果未知或 Worker 崩溃不自动重发。
 - Fastify API 提供带登录会话的机器人注册/列表/禁用、自助身份绑定、项目 Owner 群绑定/撤销入口。Worker 定期协调已注册机器人连接和投递；同一 PostgreSQL 以会话级 Advisory Lock 选举唯一 IM Connector Leader，多 Worker 不应重复建立同一个机器人 WebSocket。需直连 PostgreSQL，事务池代理不满足该锁的会话亲和要求。
 - `IM_ENCRYPTION_KEY` 从统一服务配置读取；API 和 Worker 必须使用相同密钥。现有模型配置仍由 ChatPM 管理，向 Harness 迁移尚未完成。
 
