@@ -11,8 +11,9 @@ export class WecomSupervisor {
     if(this.stopping)return Promise.resolve();
     if(this.inflight)return this.inflight;
     const task=this.reconcile();
-    this.inflight=task.finally(()=>{if(this.inflight===task)this.inflight=null;});
-    return this.inflight;
+    const tracked=task.finally(()=>{if(this.inflight===tracked)this.inflight=null;});
+    this.inflight=tracked;
+    return tracked;
   }
   private async reconcile():Promise<void>{
     const bots=await listEnabledWecomBots();
