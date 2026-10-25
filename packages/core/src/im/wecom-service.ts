@@ -236,3 +236,14 @@ export function acceptWecomMessage(accountId:string,event:InboundText):Promise<A
     return {status:'stored'};
   });
 }
+
+/** Metadata-only Bot discovery for current members; never expose credentials. */
+export function listVisibleWecomBots(actorId:string){
+  return transaction(async db=>{
+    const r=await db.query<{id:string,tenant_id:string,external_bot_id:string}>(`
+      SELECT a.id,a.tenant_id,a.external_bot_id FROM im_accounts a
+      JOIN tenant_members tm ON tm.tenant_id=a.tenant_id
+      WHERE tm.user_id=$1 AND a.enabled ORDER BY a.created_at`,[actorId]);
+    return {bots:r.rows.map(x=>({id:x.id,tenantId:x.tenant_id,botId:x.external_bot_id}))};
+  });
+}

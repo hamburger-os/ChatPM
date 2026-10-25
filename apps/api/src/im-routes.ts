@@ -1,7 +1,7 @@
 import type {FastifyInstance,FastifyRequest} from 'fastify';
 import {z} from 'zod';
 import {
-  registerWecomBot,listWecomBots,disableWecomBot,beginWecomUserBinding,
+  registerWecomBot,listWecomBots,listVisibleWecomBots,disableWecomBot,beginWecomUserBinding,
   beginWecomRoomBinding,revokeWecomRoomBinding,
 } from '../../../packages/core/src/im/wecom-service.ts';
 
@@ -10,6 +10,7 @@ const uuid=z.string().uuid();
 export function registerImRoutes(
   app:FastifyInstance,authenticated:(req:FastifyRequest)=>Promise<string>,
 ):void{
+  app.get('/im/bots',async req=>listVisibleWecomBots(await authenticated(req)));
   app.get('/tenants/:tenantId/im/bots',async req=>{
     const actor=await authenticated(req);
     const tenantId=uuid.parse((req.params as {tenantId:string}).tenantId);
