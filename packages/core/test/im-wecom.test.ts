@@ -51,6 +51,9 @@ test('authenticated connection gates sends; SDK callbacks are not implicitly ded
   await adapter.start();
   const outbound = {accountId:'b1',route:{kind:'group' as const,externalConversationId:'g1'},text:'report'};
   await assert.rejects(adapter.send(outbound), /not authenticated/);
+  sdk.emit('message', group('pre-auth'));
+  await new Promise<void>(resolve=>setImmediate(resolve));
+  assert.deepEqual(events, [], 'inbound events must be authenticated first');
   sdk.emit('authenticated');
   sdk.emit('message', group());
   sdk.emit('message', group());
@@ -58,6 +61,12 @@ test('authenticated connection gates sends; SDK callbacks are not implicitly ded
   assert.deepEqual(events, ['m1','m1']);
   assert.equal((await adapter.send(outbound)).state,'accepted');
   assert.deepEqual(sdk.sent,[['g1','report']]);
+  sdk.emit('disconnected');
+  sdk.emit('message', group('offline'));
+  await new Promise<void>(resolve=>setImmediate(resolve));
+  assert.deepEqual(events, ['m1','m1']);
+  await assert.rejects(adapter.send(outbound), /not authenticated/);
+  sdk.emit('authenticated');
   await assert.rejects(adapter.send({...outbound,accountId:'b2'}), /mismatch/);
   await adapter.stop();
   sdk.emit('message',group('late'));
