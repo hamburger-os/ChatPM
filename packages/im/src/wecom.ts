@@ -10,6 +10,11 @@ export const WECOM_CAPABILITIES: ChannelCapabilities = Object.freeze({
   groupHistory: false, proactiveText: true, interactiveCards: false,
   attachments: false,
 });
+// The upstream SDK debug logger prints complete inbound bodies and may include
+// sensitive project text. Do not forward SDK diagnostics to application logs.
+const privateSdkLogger = Object.freeze({
+  debug() {}, info() {}, warn() {}, error() {},
+});
 const id = (v: unknown): string | null => (
   typeof v === 'string' && v.trim() && v.trim() === v ? v : null
 );
@@ -63,6 +68,7 @@ export class WecomAdapter implements ChannelAdapter {
     if (this.client) return;
     const client = this.options.createClient?.() ?? new WSClient({
       botId: this.options.botId, secret: this.options.secret,
+      logger: privateSdkLogger,
     });
     this.client = client;
     this.ready = false;
