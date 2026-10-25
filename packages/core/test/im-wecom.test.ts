@@ -85,7 +85,7 @@ test('WeCom catches sink rejection and exposes only a diagnostic code', async ()
     msgid:'d1',aibotid:'b1',msgtype:'text',chattype:'single',
     from:{userid:'person'},text:{content:'hello'},
   }),'b1')?.route.externalConversationId,'person');
-  await adapter.start(); sdk.emit('message',group());
+  await adapter.start(); sdk.emit('authenticated'); sdk.emit('message',group());
   await new Promise<void>(resolve=>setImmediate(resolve));
   assert.deepEqual(errors,['wecom-inbound-persistence-failed']);
   await adapter.stop();
