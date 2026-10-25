@@ -13,6 +13,7 @@
 7. [知识和项目报告](knowledge-reporting.md)
 8. [安全、隐私与运维](security-operations.md)
 9. [扩展与第三方集成](integrations.md)
+   - [自主 IM 接入与企业微信首发](im-integrations.md)
 10. [交付与验收路线图](roadmap-acceptance.md)
 11. [架构决策记录](decision-log.md)
 12. [实施状态与剩余差距](implementation-status.md)

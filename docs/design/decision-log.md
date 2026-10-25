@@ -557,3 +557,34 @@
 **决定。** 仍保持单 Fastify SSE Handler/Next 同源代理、PostgreSQL 消息序号与原会话事实源，不建第二套 websocket/broker 或兼容 SSE route。将背压写入抽取为同模块 `writeSseFrame`，唯一固定 `SSE_DRAIN_TIMEOUT_MS=10000`：`raw.write` 即时接受则成功；否则等待 `drain`、`close` 或十秒截止，任何结局都清理自身 drain/close 监听器和计时器。非 drain 结局让路由先调用幂等 `cleanup()`（减少 `activeStreams`、清理 pump/ping timer），再 `raw.destroy()` 关闭半开连接。正常 drain 才继续泵送下一帧及更新 `after` 游标，截止不会被当成已投递的消息。心跳写失败也执行同样清理，而非让未处理 Promise rejection 漏出进程。
 
 **测试与边界。** Node Events fake socket 覆盖即时 write、背压后 drain、客户端 close、无 drain 截止、清理 listener、晚到 drain 不复活连接及固定十秒阈值；静态架构守卫要求失败路径销毁 socket 并释放每用户配额，加入 Product CI。原编译 API Smoke 检查真实 SSE 订阅、跨项目拒绝、游标重放、登出关闭；Web 构建/Docker/原生与安全扫描保持。截止造成的断线由浏览器 EventSource 根据原 `Last-Event-ID` 或 REST 增量恢复，不会发送项目外数据。该改动不等于共享 NAT/逆向代理压力基线、iOS Safari/Android Chrome 真实设备键盘与安全区、部署层 WebSocket/HTTP2 真实网络验证全部完成；#40/#51 保持开放。
+
+
+## ADR-088 · ChatPM 自主 IM 与企业微信官方 SDK（2026-10-25）
+
+**已确认方向：** ChatPM 自主维护 IM 语义和渠道适配器，dsh-im 仅供设计参考，不构成运行依赖；优先使用各平台官方 SDK。第一个渠道采用企业微信智能机器人长连接。
+
+**不变量：** 渠道与用户真实身份必须经服务端可信绑定；外部消息不授予 PM 权限；正式项目事实只能由 Core 命令写入，不能由 Harness/Prompt 更改；消息、提醒与外部投递持久化、去重和审计；非 @ 群记录及未实测能力不能标为已支持。
+
+**本批范围：** 标准化消息契约、WeCom 纯文本 transport、离线 SDK 假客户端测试。尚无生产连接、身份绑定、持久 Inbox/Outbox 或企业微信群实测，不能声称企业微信已经完整接入。后续验收见 [IM 设计](im-integrations.md)。
+
+**替代方案：** 不依赖 dsh-im，不复制其私有 Bridge，不重写企业微信 WebSocket SDK，不建立第二个可写项目数据源或单独的通用 IM 服务。官方 SDK 停止维护时复审底层适配。
+
+
+## ADR-089 · 可信企微绑定与事务 Inbox（2026-10-25）
+
+**决定。** 在 PostgreSQL 内建立按租户隔离的 Bot、加密凭据、一次性 SHA-256 口令挑战、外部身份/项目群绑定，以及 Bot+外部消息 ID Inbox 唯一事实源。用户必须通过私聊口令证明企业微信身份；项目 Owner 通过自己已绑定的企微身份在目标群内回复口令证明群上下文。所有项目消息同事务重新校验 Bot、组织与项目成员、当前角色后，按现有消息序号/Outbox/审计写入，重复回调不得复制正式事实。API 仅接受现有会话凭据，不向模型授予人工身份。
+
+**限制。** Bot 智能机器人不承诺普通未 @ 群消息或完整历史；群成员名单无法自动证明与项目成员严格相同，Owner 必须确认群资料共享范围。源码和自动化测试不等同真实企业微信/生产安全验收。
+
+## ADR-090 · 外部投递的独立接受状态（2026-10-25）
+
+**决定。** 项目已提交的 AI 消息通过 PostgreSQL Trigger 写入 `im_deliveries`，Worker 负责发至明确绑定的 Bot+群。网络调用前先领取 durable 意图；SDK 响应只记 accepted；连接未认证时保持 pending；失败、超时、Crash 后未知结果转 unknown，不自动重发；撤销绑定后尚未发送的记录取消。无需 Redis/Kafka/第二套计划任务。依旧存在在途撤权竞态，未来需加入可审计的人工核对和独立投递安全演练。未进行真实群回执 E2E。
+
+
+## ADR-091 · PostgreSQL 会话领导锁保护企业微信连接唯一性（2026-10-25）
+
+**发现。** 在多 Worker 部署中，同一个机器人的多个 SDK WebSocket 可能相互踢线、重复接收事件或重复发送通知。即使 Inbox 唯一约束可以抑制数据库重复副作用，SDK 连接自身仍必须唯一。
+
+**决定。** WecomSupervisor 使用直接 PostgreSQL 会话级 `pg_try_advisory_lock` 选举部署级唯一 IM 连接管理者；只有持锁进程加载已启用的 Bot。释放/断线时停止本进程的 SDK 连接并允许另一 Worker 在下一次协调时接管；投递意图仍由 `im_deliveries` 去重和限流。该锁明确要求数据库连接会话亲和性，不支持透明 transaction-pooling 代理。
+
+**未验收。** 真实多进程并发、数据库网络分区、Server Disconnect 与高可用切换、跨节点时间竞态和上线重试策略仍需专门故障演练；不能凭静态锁代码声称完整高可用。

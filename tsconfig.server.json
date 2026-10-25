@@ -13,7 +13,8 @@
   "include": [
     "apps/api/src/**/*.ts",
     "apps/worker/src/**/*.ts",
-    "packages/core/src/**/*.ts"
+    "packages/core/src/**/*.ts",
+    "packages/im/src/**/*.ts"
   ],
   "exclude": [
     "**/*.test.ts",

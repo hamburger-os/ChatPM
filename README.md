@@ -30,6 +30,10 @@
 
 **尚未实现：** 本地模型与多提供商的真实兼容性验收、文档知识库、通用语义相似度检索、完整风险升级、实时推送、完整企业身份管理和正式 SaaS 运营。以上属于 [路线图](docs/design/roadmap-acceptance.md)，不是现有功能。
 
+## 自主 IM · 企业微信实验渠道
+
+ChatPM 已集成自主企业微信智能机器人文本适配、一次性用户及项目群绑定、持久 Inbox/外发意图和基础 `/im` 设置界面。**不依赖 dsh-im；未完成企业微信真实群端到端验收，也未替换为 Harness AI 编排，不可用于敏感生产群。** 未 @ 的普通群消息、全部历史与附件仍不支持。见 [自主 IM 使用与限制](docs/community/im-integrations.md) 和 [待完成清单](https://github.com/hamburger-os/ChatPM/issues/121)。
+
 ## 最简安装：Docker 一条命令
 
 已安装并启动 Docker Engine/Compose、Node.js 后，在仓库根目录运行：

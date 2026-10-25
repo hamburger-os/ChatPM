@@ -333,6 +333,7 @@ export default function Home(){
           <RailIcon view={item}/><span className="rail-label">
             {{projects:'项目',organization:'组织',system:'系统',account:'我的'}[item]}</span>
         </button>)}
+      <a className="rail-action" href="/im" title="IM 集成（实验）" aria-label="IM 集成（实验）"><span className="rail-label">IM</span></a>
       <button className={'rail-action rail-account '+(view==='account'?'active':'')}
         title="个人设置" aria-label="个人设置" aria-current={view==='account'?'page':undefined}
         onClick={()=>navigate('account')}><RailIcon view="account"/><span className="rail-label">我的</span></button>

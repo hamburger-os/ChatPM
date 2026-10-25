@@ -422,3 +422,12 @@ CI 须验证 PostgreSQL 游标 200 条边界、25 条更早记录、跨项目与
 修复把慢写等待抽到唯一 `writeSseFrame`，10 秒有界 deadline，清理 drain/close 监听器与 timeout。客户端 close 或截止均令路由释放 `activeStreams`、关闭流与定时器并销毁 socket；成功 drain 继续按原数据库序号发送和更新 cursor。Ping 拒绝写入亦有 catch 防止漏掉未处理 rejection。新增 fake stream 的即时、异步 drain、远端 close、半开超时、监听器清理回归，静态架构检查固定泄漏防护，原 API Smoke 的真实 Last-Event-ID、跨项目拒绝、注销关闭和 Docker/Web/Native 五组 CI 须最新 Head 通过、未解决审查线程为 0、主干无漂移才合并。无需新服务、数据库迁移或历史兼容端点。
 
 **剩余：** 流背压截止不提供消息已读回执，不证明每个移动网络断线客户端丢包为零；移动真实设备、浏览器长时间后台、反向代理超时与压测资源预算以及跨实例全局 SSE 配额、录像/实机 CI 仍为 #40/#51 未完成验收。
+
+
+## /review · 自主企业微信 IM 独立接入切片（2026-10-25）
+
+本批审查 `packages/im`、Core IM 身份/数据库与投递、Fastify 受保护路由、Worker 多实例连接、Web 基础配置与 SDK 依赖。经实际 PR #120 CI，TypeScript、Windows/Linux、PostgreSQL 集成测试、生产安全审计、CodeQL、Docker 构建及文档门禁均作为合并准入项；最终结果以**实际合并的 HEAD SHA** 为准。
+
+已发现并修复：SDK 默认日志打印群消息原文；未认证连接的早期回调；AES-GCM 在 `final()` 前调用 `getAuthTag()`；测试基于 Zod v3 错误字符串而不适配安全更新后的 Zod v4；多 Worker 同时连接相同 Bot；非 IM Leader Worker 争抢 Outbox 的风险。
+
+**关键未关闭门槛：** 真实企业微信机器人配置、测试企业内人员/项目群绑定、群消息入库到风险提议/人工审批/催办/周报完整闭环；Harness 插件化模型与专业 PM 工具替换；绑定和审计的真实浏览器与多 Worker 故障注入；人工处理未知投递、凭据轮换、跨群资料范围授权与会话存档合规。这些缺口由 #121 管理，不得将当前 experimental IM 当成生产级发布。固定 PostgreSQL 同一部署 Leader 会话锁仅适用于 session affinity，不能被当成分区网络下 exactly-once 发送证明。

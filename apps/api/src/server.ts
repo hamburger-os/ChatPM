@@ -11,6 +11,7 @@ import { registerOperationsRoutes } from './operations-routes.ts';
 import { registerRiskRoutes } from './risk-routes.ts';
 import { registerProjectRoutes } from './project-routes.ts';
 import { registerInvitationRoutes } from './invitation-routes.ts';
+import {registerImRoutes} from './im-routes.ts';
 import { signedQuotaKey } from '../../../packages/core/src/quota-key.ts';
 import Fastify from 'fastify';
 import cors from '@fastify/cors';
@@ -159,6 +160,7 @@ app.get('/projects/:id/proposals',async req=>{
   return listProjectProposals(id,await authenticated(req));
 });
 registerInvitationRoutes(app,authenticated,issueSession);
+registerImRoutes(app,authenticated);
 registerAdminModelRoutes(app,authenticated);
 registerGovernanceRoutes(app,authenticated);
 registerPmRoutes(app,authenticated);

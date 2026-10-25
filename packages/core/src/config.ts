@@ -11,6 +11,7 @@ const schema = z.object({
   PGPASSWORD: z.string().optional(),
   PGDATABASE: z.string().min(1).optional(),
   SESSION_SECRET: z.string().min(32),
+  IM_ENCRYPTION_KEY:z.preprocess(v=>v===''?undefined:v,z.string().min(32).optional()),
   REGISTRATION_MODE:z.enum(['open','bootstrap','closed']).optional(),
   BOOTSTRAP_TOKEN:z.preprocess(v=>v===''?undefined:v,
     z.string().regex(/^[a-fA-F0-9]{64}$/).optional()),

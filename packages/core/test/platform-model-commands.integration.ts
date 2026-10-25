@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import {ZodError} from 'zod';
 import {randomUUID} from 'node:crypto';
 import {pool} from '../src/db.ts';
 import {systemAdminTransaction} from '../src/identity/system-access.ts';
@@ -33,7 +34,7 @@ try{
   await assert.rejects(importPlatformModels(member,{providerId:'not-an-id'}),
     (e:unknown)=>(e as {statusCode?:number}).statusCode===403);
   await assert.rejects(createPlatformProvider(admin,{name:'missing-fields'}),
-    /Required/,'Authorized but invalid input must never be persisted');
+    (e:unknown)=>e instanceof ZodError,'Authorized but invalid input must never be persisted');
 
   const provider=await createPlatformProvider(admin,initial);
   providerId=provider.id;
