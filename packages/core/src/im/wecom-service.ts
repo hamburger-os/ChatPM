@@ -68,10 +68,10 @@ export function listEnabledWecomBots(){
     return r.rows.map(x=>({id:x.id,botId:x.external_bot_id,secret:decrypt(x.secret_ciphertext)}));
   });
 }
-export function disableWecomBot(tenantId:string,actorId:string,accountId:string){
+export function disableWecomBot(tenantId:string,actorId:string,accountId:string,idempotencyKey:string){
+  uuid.parse(idempotencyKey);
   return organizationCommand(tenantId,actorId,'im.bot_disabled',{
-    idempotencyKey:randomBytes(16).toString('hex').replace(
-      /^(.{8})(.{4})(.{4})(.{4})(.{12})$/,'$1-$2-$3-$4-$5'),
+    idempotencyKey,
     payload:{accountId},
   },async db=>{
     const updated=await db.query<{id:string}>(`
