@@ -72,7 +72,7 @@ export class WecomAdapter implements ChannelAdapter {
       if (this.client === client) this.options.onError?.('wecom-connection-error');
     });
     client.on('message', (frame: WsFrame<BaseMessage>) => {
-      if (this.client !== client) return;
+      if (this.client !== client || !this.ready) return;
       const event = normalizeWecomText(frame, this.options.botId);
       if (!event) return;
       // SDK may redeliver; persistence, not an in-memory Set, is the idempotency authority.
