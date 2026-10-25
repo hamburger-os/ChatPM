@@ -50,7 +50,7 @@
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
     "zod": "4.6.7",
-    "@fastify/helmet": "^13.1.2",
+    "@fastify/helmet": "^13.2.0",
     "@fastify/rate-limit": "^11.2.1",
     "dotenv": "^16.6.0",
     "@wecom/aibot-node-sdk": "1.0.7"
