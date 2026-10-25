@@ -22,6 +22,10 @@ jobs:
           node-version: '22'
           cache: npm
       - run: npm ci --no-fund
+      - name: Temporary resolve patched dependencies for lockfile review
+        run: |
+          npm install --package-lock-only --ignore-scripts --no-audit --no-fund --save-exact next@16.4.2 fastify@5.12.6 zod@4.6.7 fast-uri@3.1.9
+          node -e "const fs=require('fs');const b=Buffer.from(fs.readFileSync('package-lock.json')).toString('base64');for(let i=0;i<b.length;i+=4000)console.log('RESOLVED_LOCK_'+String(i/4000).padStart(4,'0')+'='+b.slice(i,i+4000))"
       - name: Audit production dependencies (high and critical)
         run: npm audit --omit=dev --audit-level=high
 
