@@ -1,6 +1,7 @@
 import {createCipheriv,createDecipheriv,createHash,randomBytes} from 'node:crypto';
 import {z} from 'zod';
 import {transaction,audit,type DbClient} from '../db.ts';
+import {serverConfig} from '../config.ts';
 import {organizationCommand} from '../organization-commands.ts';
 import {lockProjectAccess} from '../identity/project-access.ts';
 import {assertProject} from '../permissions.ts';
@@ -15,7 +16,7 @@ const fail=(statusCode:number,message:string):never=>{
   throw Object.assign(new Error(message),{statusCode});
 };
 function secretKey():Buffer{
-  const secret=process.env.IM_ENCRYPTION_KEY;
+  const secret=serverConfig.IM_ENCRYPTION_KEY;
   if(!secret||secret.length<32)throw new Error('IM_ENCRYPTION_KEY_NOT_CONFIGURED');
   return createHash('sha256').update('chatpm:im:v1:').update(secret).digest();
 }

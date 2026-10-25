@@ -1,31 +1,33 @@
-# 自主 IM 接入与企业微信首发
+# 自主 IM 接入与企业微信首发（ADR-088/089/090）
 
-## 核心决策
+## 架构决定
 
-ChatPM 维护自己的 IM 接入层；dsh-im 是独立开源参考，不是运行依赖。每个平台实现独立 ChannelAdapter，优先使用官方 SDK。当前首发企业微信智能机器人长连接；不拆微服务或另建通用 IM 服务。
+ChatPM 自主维护 IM 接入、身份与消息契约，dsh-im 仅供参考，不作为运行或构建依赖。企业微信使用官方 @wecom/aibot-node-sdk，未来独立添加渠道，不拆微服务。官方 SDK 拥有认证、重连与 WebSocket 协议；ChatPM Core/PostgreSQL 持有唯一正式业务事实及 IM 状态；Harness 只可执行有边界的 AI 工具，不授予业务授权。
 
-消息语义与通道代码分别归属 packages/im；项目、用户、任务、风险、报告、审批和审计始终归属原 Core/PostgreSQL。Harness 若在后续接入，负责 AI 执行，不作为企业成员鉴权或项目事实来源。
+## 当前实现（待真实企业微信环境验证）
 
-## 本 PR 实际代码范围
+- `packages/im`：纯文本入站归一化、Bot ID 校验、仅认证后消费、群/私聊路由、主动 Markdown 发送；SDK 日志静默避免写出聊天正文或凭据。非 @ 群消息、历史、文件和卡片标记不支持。
+- `030_im_inbox.sql`：组织机器人账户、AES-256-GCM 加密凭据、一次性绑定挑战、Verified User/Project Room 绑定和 Inbox 唯一键。机器人注册仅租户管理员可做；用户自己发起私聊 `/bind <token>`，群绑定仅项目 Owner 发起、同一 Owner 用已绑定企微账号在群发 `@机器人 /link <token>` 才生效。口令以 SHA-256 保存，10 分钟失效、一次性消费，不写入审计。
+- `acceptWecomMessage`：把渠道认证后的事件再按有效 Bot、项目群和成员进行事务授权。观察者、已撤权成员、未知群、未绑定 ID 无写权限。已授权事件通过原 Conversation 消息序号、Outbox 与审计一次性事务入库，唯一 Inbox 防重复。绑定指令不作为项目消息。
+- `031_im_delivery.sql`：项目正式 AI 消息创建时，对已绑定项目群写入外部投递意图；Worker 定期发送、区分 pending/sending/accepted/failed/unknown/cancelled；离线时重试未发送意图，发送结果未知或 Worker 崩溃不自动重发。
+- Fastify API 提供带登录会话的机器人注册/列表/禁用、自助身份绑定、项目 Owner 群绑定/撤销入口。Worker 定期协调已注册机器人连接和投递。
+- `IM_ENCRYPTION_KEY` 从统一服务配置读取；API 和 Worker 必须使用相同密钥。现有模型配置仍由 ChatPM 管理，向 Harness 迁移尚未完成。
 
-- ChannelAdapter、InboundText、OutboundText、ChannelCapabilities 的唯一契约；消息稳定键为 (channel, accountId, externalMessageId)。
-- WecomAdapter 直接使用 @wecom/aibot-node-sdk 的官方 WebSocket 客户端；负责机器人登录状态、text 事件归一化、group/direct 路由、发送 Markdown。SDK 负责协议心跳和重连；send 的 accepted 不是已读。
-- 严格校验机器人 ID、外部消息 ID、发送人和会话类型；没有真实持久绑定以前，外部发送人 ID 绝不能推断成 ChatPM User。
-- 本次只提供文本传输适配器与离线测试，**未创建运行配置和生产启动接线**。因此企业微信群机器人尚未形成业务闭环。
+## API 流程（当前无完整可视化管理界面）
 
-## 真实交付前必须补齐的设计
+1. 组织管理员设置 IM_ENCRYPTION_KEY 后，通过 POST /tenants/:tenantId/im/bots 使用 {botId,secret,idempotencyKey} 注册机器人。列表 GET /tenants/:tenantId/im/bots 不返回密钥；停用 POST /tenants/:tenantId/im/bots/:accountId/disable 使用 idempotencyKey。
+2. 成员使用 POST /im/bots/:accountId/bind-me 获取一次性 `/bind` 口令，直接在企微机器人**私聊**发送；同一账号对应一个当前有效的 ChatPM 用户。
+3. 项目 Owner 使用 POST /projects/:projectId/im/bots/:accountId/link 获取 `/link` 口令，使用**自己已绑定的企业微信身份**在目标群 @机器人并发出命令。撤销使用 DELETE /projects/:projectId/im/bots/:accountId/link。
+4. 群成员消息只有收到、身份匹配、拥有当前项目/组织成员权限时才写入；Worker 对聊天进行既有 AI 分析，AI 系统消息进入外部投递队列。
 
-1. 后端持久 ChannelAccount 配置、加密凭据、重连/轮换，管理员唯一写入口；不把 Key 暴露在 Harness Prompt 中。
-2. 经验证的 ExternalIdentityBinding（组织/用户）与 ProjectRoomBinding（机器人/群/项目）；每次接收和后续命令均事务重验权限、撤销及时生效。
-3. 事务 Inbox：外部事件唯一键、来源消息、去重、业务转交结果、错误分类与失败恢复；用户消息只能经 Conversation Core 写入，自动化不可冒充人工。
-4. 持久出站 Outbox：以项目/目标/操作绑定授权，重审目标，发送 accepted/unknown/failed 分离，结果未知不盲目重试，项目工作时间与冷却规则适用。
-5. 隔离的 PM Agent 运行工具、真实成员审批证据、防提示注入与跨项目访问；模型出站遵守项目显式授权。
-6. 生产管理 UI（机器人创建、绑定、撤销、能力状态）与企业微信真实账号群聊 E2E；生产测试不得在实验环境使用敏感业务数据。
+## 安全与局限
 
-## 能力声明
+- 未验证群成员完整列表，项目 Owner 必须保证该群参与者有权看到项目内容；不能把群绑定视为企业微信内部群权限与 ChatPM RBAC 自动一致。绑定撤销后新消息不再入库；在途外部投递仍有网络竞态。
+- 平台事件投递范围和重投递能力取决于企业微信。适配器只能保证**已成功收到并入库**事件的去重，不能声称群内所有未 @ 消息被采集或平台停机期间零丢失。
+- SDK accepted 不是已读/送达，网络超时属于 unknown，不自动重发。消息过大/媒体验证失败不会悄悄降级为完整群数据。
+- 机器人凭据轮换、手动外部投递结果核对/重试、完整绑定管理 UI、多 Bot 扩缩容冲突防护、系统管理员跨租户治理、会话存档合规、告警及企业微信实机端到端仍需完成。
+- DeepSeek Harness 仍是开发者预览；本改动未替换原 AI 编排。不能将此代码直接认定生产安全发布。
 
-当前企业微信官方 Bot SDK 有群内 @ 交互和主动消息接口，但 ChatPM 尚未实测接线。groupHistory、passiveGroupMessages、attachments、interactiveCards 为 false。平台有群聊 ≠ 产品已经交付群聊。无稳定官方群聊机器人的渠道可明确标记“不支持群聊”；未实现的平台标记“尚未接入”。不可静默补造不存在的消息。
+## 验证
 
-## 为什么不选择其他方案
-
-不依赖 dsh-im 内部动态服务接口，不复制其 WeCom bridge；不将平台 SDK 的回复回调当成项目授权；不建立第二个可写业务事实源；不把模型会话当作持久任务表；不为多渠道预先建立无人使用的复杂框架。新增第二渠道前复审当前契约在媒体、线程和群授权上的表达能力。
+离线假 SDK 测试 + PostgreSQL 集成测试（机器人角色、组织/项目、挑战口令、重复消息、撤权、Outbox 投递状态）。真实企业微信、模型供应商与跨平台安装仍属外部验收。后续清单见 GitHub Issue #121。

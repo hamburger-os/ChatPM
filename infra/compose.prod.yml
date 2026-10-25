@@ -13,6 +13,7 @@ x-app: &app
     PGPASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
     SESSION_SECRET: ${SESSION_SECRET:?Set SESSION_SECRET in .env}
     MODEL_ENCRYPTION_KEY: ${MODEL_ENCRYPTION_KEY:?Set MODEL_ENCRYPTION_KEY in .env}
+    IM_ENCRYPTION_KEY: ${IM_ENCRYPTION_KEY:-}
     # Only used for explicit host.docker.internal model targets; empty is fail-closed.
     MODEL_DOCKER_GATEWAY_IPS: ${MODEL_DOCKER_GATEWAY_IPS:-}
     WEB_ORIGIN: ${WEB_ORIGIN:-http://localhost:3000}
