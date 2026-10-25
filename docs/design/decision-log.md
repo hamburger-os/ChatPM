@@ -557,3 +557,14 @@
 **决定。** 仍保持单 Fastify SSE Handler/Next 同源代理、PostgreSQL 消息序号与原会话事实源，不建第二套 websocket/broker 或兼容 SSE route。将背压写入抽取为同模块 `writeSseFrame`，唯一固定 `SSE_DRAIN_TIMEOUT_MS=10000`：`raw.write` 即时接受则成功；否则等待 `drain`、`close` 或十秒截止，任何结局都清理自身 drain/close 监听器和计时器。非 drain 结局让路由先调用幂等 `cleanup()`（减少 `activeStreams`、清理 pump/ping timer），再 `raw.destroy()` 关闭半开连接。正常 drain 才继续泵送下一帧及更新 `after` 游标，截止不会被当成已投递的消息。心跳写失败也执行同样清理，而非让未处理 Promise rejection 漏出进程。
 
 **测试与边界。** Node Events fake socket 覆盖即时 write、背压后 drain、客户端 close、无 drain 截止、清理 listener、晚到 drain 不复活连接及固定十秒阈值；静态架构守卫要求失败路径销毁 socket 并释放每用户配额，加入 Product CI。原编译 API Smoke 检查真实 SSE 订阅、跨项目拒绝、游标重放、登出关闭；Web 构建/Docker/原生与安全扫描保持。截止造成的断线由浏览器 EventSource 根据原 `Last-Event-ID` 或 REST 增量恢复，不会发送项目外数据。该改动不等于共享 NAT/逆向代理压力基线、iOS Safari/Android Chrome 真实设备键盘与安全区、部署层 WebSocket/HTTP2 真实网络验证全部完成；#40/#51 保持开放。
+
+
+## ADR-088 · ChatPM 自主 IM 与企业微信官方 SDK（2026-10-25）
+
+**已确认方向：** ChatPM 自主维护 IM 语义和渠道适配器，dsh-im 仅供设计参考，不构成运行依赖；优先使用各平台官方 SDK。第一个渠道采用企业微信智能机器人长连接。
+
+**不变量：** 渠道与用户真实身份必须经服务端可信绑定；外部消息不授予 PM 权限；正式项目事实只能由 Core 命令写入，不能由 Harness/Prompt 更改；消息、提醒与外部投递持久化、去重和审计；非 @ 群记录及未实测能力不能标为已支持。
+
+**本批范围：** 标准化消息契约、WeCom 纯文本 transport、离线 SDK 假客户端测试。尚无生产连接、身份绑定、持久 Inbox/Outbox 或企业微信群实测，不能声称企业微信已经完整接入。后续验收见 [IM 设计](im-integrations.md)。
+
+**替代方案：** 不依赖 dsh-im，不复制其私有 Bridge，不重写企业微信 WebSocket SDK，不建立第二个可写项目数据源或单独的通用 IM 服务。官方 SDK 停止维护时复审底层适配。

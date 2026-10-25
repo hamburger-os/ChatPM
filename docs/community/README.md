@@ -17,3 +17,6 @@ ChatPM 是可运行的实验性 AI 项目经理应用，尚未完成生产验收
 [Apache-2.0](../../LICENSE) · [行为准则](../../CODE_OF_CONDUCT.md) · [安全](../../SECURITY.md) · [支持](../../SUPPORT.md) · [治理](../../GOVERNANCE.md)
 
 **声明 / Note:** 双语章节共享一个文档，但语义仍需人工保持一致；不可把未交付功能描述为已实现。
+
+
+自主 IM 渠道（实验切片）/ Native IM channels (experimental): [中文 / English](im-integrations.md)。

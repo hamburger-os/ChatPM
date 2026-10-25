@@ -456,3 +456,8 @@ retryDeadEvent 唯一使用现有 executePmCommand：当前授权、dead_at 非�
 - `writeSseFrame` 是唯一慢连接写入等待规则：响应 `write(false)` 后最多等待 `SSE_DRAIN_TIMEOUT_MS`（10 秒），可由 drain 恢复、由 close/timeout 结束。任何结束必须移除 drain/close 监听器和期限计时器；服务端释放用户配额并销毁长时间无响应的半开 HTTP socket，不得无限等待或在超时后继续前移 `after`。
 - Ping 写入失败不得产生未处理 rejection，必须按与消息写入相同的连接清理规则处理；订阅和每次发送仍复核当前 Session、租户/项目权限。浏览器原 EventSource + `Last-Event-ID`/REST 增量负责重连后从 PostgreSQL 恢复漏消息，不能将 TCP write 接受等同于已读回执。
 - 真实浏览器、反向代理和移动端丢包/断网性能与键盘安全区属于独立正式验收。
+
+
+## 自主 IM 接入（ADR-088）
+
+渠道 SDK 与 IM Transport 不拥有正式用户身份和项目写入权限。已实现的企业微信文本适配器尚未接入生产；事务 Inbox、当前身份/群绑定授权、外部 Outbox 仍待实现。工程契约见 [IM](im-contract.md)。
