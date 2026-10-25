@@ -23,7 +23,8 @@ function secretKey():Buffer{
 function encrypt(value:string):string{
   const nonce=randomBytes(12);
   const cipher=createCipheriv('aes-256-gcm',secretKey(),nonce);
-  return Buffer.concat([nonce,cipher.getAuthTag(),cipher.update(value,'utf8'),cipher.final()]).toString('base64');
+  const ciphertext=Buffer.concat([cipher.update(value,'utf8'),cipher.final()]);
+  return Buffer.concat([nonce,cipher.getAuthTag(),ciphertext]).toString('base64');
 }
 function decrypt(value:string):string{
   try{
