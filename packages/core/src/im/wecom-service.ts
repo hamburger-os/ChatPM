@@ -127,7 +127,219 @@ export function revokeWecomRoomBinding(projectId:string,accountId:string,actorId
   });
 }
 function commandToken(text:string,kind:'bind'|'link'):string|null{
-  const re=new RegExp('^/'+kind+' ([a-f0-9]{48})$');
+  const re=new RegExp(kind==='link'
+    ? '(?:^|\\s)/link ([a-f0-9]{48})
+  return re.exec(text)?.[1]??null;
+}
+type Acceptance={status:'ignored'|'user-bound'|'room-bound'|'stored'|'duplicate'};
+/**
+ * Invoked only by the authenticated channel connection, never by an HTTP endpoint.
+ * All authorizations and message+Outbox writes belong to this ONE transaction.
+ */
+export function acceptWecomMessage(accountId:string,event:InboundText):Promise<Acceptance>{
+  return transaction(async db=>{
+    if(event.channel!=='wecom')return {status:'ignored'};
+    const account=await db.query<{tenant_id:string,external_bot_id:string}>(`
+      SELECT tenant_id,external_bot_id FROM im_accounts
+      WHERE id=$1 AND channel='wecom' AND enabled FOR SHARE`,[accountId]);
+    const a=account.rows[0];
+    if(!a||a.external_bot_id!==event.accountId)return {status:'ignored'};
+    if(!externalId.safeParse(event.externalActorId).success
+      ||!externalId.safeParse(event.externalMessageId).success
+      ||!externalId.safeParse(event.route?.externalConversationId).success
+      ||typeof event.text!=='string'||event.text.length>10000)return {status:'ignored'};
+    const tenantId=a.tenant_id;
+    if(event.route.kind==='direct'){
+      const token=commandToken(event.text,'bind');
+      if(!token||event.route.externalConversationId!==event.externalActorId)
+        return {status:'ignored'};
+      const q=await db.query<{id:string,actor_id:string}>(`
+        SELECT id,actor_id FROM im_binding_challenges
+        WHERE tenant_id=$1 AND account_id=$2 AND purpose='user'
+          AND code_hash=$3 AND consumed_at IS NULL AND expires_at>now()
+        FOR UPDATE`,[tenantId,accountId,hash(token)]);
+      if(!q.rows[0])return {status:'ignored'};
+      const m=await db.query(`
+        SELECT 1 FROM tenant_members WHERE tenant_id=$1 AND user_id=$2 FOR SHARE`,
+        [tenantId,q.rows[0].actor_id]);
+      if(!m.rowCount)return {status:'ignored'};
+      await db.query(`
+        INSERT INTO im_user_bindings(tenant_id,account_id,user_id,external_user_id)
+        VALUES($1,$2,$3,$4)`,
+        [tenantId,accountId,q.rows[0].actor_id,event.externalActorId]);
+      await db.query('UPDATE im_binding_challenges SET consumed_at=now() WHERE id=$1',
+        [q.rows[0].id]);
+      return {status:'user-bound'};
+    }
+    if(event.route.kind!=='group')return {status:'ignored'};
+    const link=commandToken(event.text,'link');
+    if(link){
+      const q=await db.query<{id:string,actor_id:string,project_id:string}>(`
+        SELECT id,actor_id,project_id FROM im_binding_challenges
+        WHERE tenant_id=$1 AND account_id=$2 AND purpose='room'
+        AND code_hash=$3 AND consumed_at IS NULL AND expires_at>now()
+        FOR UPDATE`,[tenantId,accountId,hash(link)]);
+      if(!q.rows[0])return {status:'ignored'};
+      const linked=await db.query(`
+        SELECT 1 FROM im_user_bindings
+        WHERE tenant_id=$1 AND account_id=$2 AND user_id=$3
+          AND external_user_id=$4 AND active FOR SHARE`,
+        [tenantId,accountId,q.rows[0].actor_id,event.externalActorId]);
+      if(!linked.rowCount)return {status:'ignored'};
+      const access=await lockProjectAccess(db,q.rows[0].project_id,q.rows[0].actor_id);
+      assertProject(access.role,'members.manage');
+      await db.query(`
+        INSERT INTO im_room_bindings(tenant_id,account_id,project_id,external_chat_id)
+        VALUES($1,$2,$3,$4)`,[tenantId,accountId,
+        q.rows[0].project_id,event.route.externalConversationId]);
+      await audit(db,q.rows[0].project_id,q.rows[0].actor_id,
+        'im.room_bound',accountId);
+      await db.query('UPDATE im_binding_challenges SET consumed_at=now() WHERE id=$1',
+        [q.rows[0].id]);
+      return {status:'room-bound'};
+    }
+    const binding=await db.query<{project_id:string,user_id:string}>(`
+      SELECT room.project_id,person.user_id FROM im_room_bindings room
+      JOIN im_user_bindings person ON person.tenant_id=room.tenant_id
+        AND person.account_id=room.account_id
+        AND person.external_user_id=$3 AND person.active
+      WHERE room.tenant_id=$1 AND room.account_id=$2
+        AND room.external_chat_id=$4 AND room.active
+      FOR SHARE OF room,person`,
+      [tenantId,accountId,event.externalActorId,event.route.externalConversationId]);
+    if(!binding.rows[0])return {status:'ignored'};
+    const {project_id:projectId,user_id:userId}=binding.rows[0];
+    const access=await lockProjectAccess(db,projectId,userId);
+    assertProject(access.role,'message.write');
+    const nonce='im:'+hash(JSON.stringify([accountId,event.externalMessageId]));
+    const old=await db.query(`
+      SELECT id FROM im_inbox WHERE account_id=$1 AND external_message_id=$2`,
+      [accountId,event.externalMessageId]);
+    if(old.rowCount)return {status:'duplicate'};
+    const message=await insertMessage(db,{
+      projectId,authorId:userId,kind:'user',content:event.text,nonce,
+    });
+    if(!message)return {status:'duplicate'};
+    await db.query(`
+      INSERT INTO im_inbox
+      (tenant_id,account_id,external_message_id,external_user_id,project_id,user_id,message_id)
+      VALUES($1,$2,$3,$4,$5,$6,$7)`,
+      [tenantId,accountId,event.externalMessageId,event.externalActorId,
+        projectId,userId,message.id]);
+    await db.query(`
+      INSERT INTO outbox_events(project_id,kind,message_id)
+      VALUES($1,'message.created',$2)`,[projectId,message.id]);
+    await audit(db,projectId,userId,'message.created',message.id,{source:'wecom'});
+    return {status:'stored'};
+  });
+}
+
+    : '^/bind ([a-f0-9]{48})
+  return re.exec(text)?.[1]??null;
+}
+type Acceptance={status:'ignored'|'user-bound'|'room-bound'|'stored'|'duplicate'};
+/**
+ * Invoked only by the authenticated channel connection, never by an HTTP endpoint.
+ * All authorizations and message+Outbox writes belong to this ONE transaction.
+ */
+export function acceptWecomMessage(accountId:string,event:InboundText):Promise<Acceptance>{
+  return transaction(async db=>{
+    if(event.channel!=='wecom')return {status:'ignored'};
+    const account=await db.query<{tenant_id:string,external_bot_id:string}>(`
+      SELECT tenant_id,external_bot_id FROM im_accounts
+      WHERE id=$1 AND channel='wecom' AND enabled FOR SHARE`,[accountId]);
+    const a=account.rows[0];
+    if(!a||a.external_bot_id!==event.accountId)return {status:'ignored'};
+    if(!externalId.safeParse(event.externalActorId).success
+      ||!externalId.safeParse(event.externalMessageId).success
+      ||!externalId.safeParse(event.route?.externalConversationId).success
+      ||typeof event.text!=='string'||event.text.length>10000)return {status:'ignored'};
+    const tenantId=a.tenant_id;
+    if(event.route.kind==='direct'){
+      const token=commandToken(event.text,'bind');
+      if(!token||event.route.externalConversationId!==event.externalActorId)
+        return {status:'ignored'};
+      const q=await db.query<{id:string,actor_id:string}>(`
+        SELECT id,actor_id FROM im_binding_challenges
+        WHERE tenant_id=$1 AND account_id=$2 AND purpose='user'
+          AND code_hash=$3 AND consumed_at IS NULL AND expires_at>now()
+        FOR UPDATE`,[tenantId,accountId,hash(token)]);
+      if(!q.rows[0])return {status:'ignored'};
+      const m=await db.query(`
+        SELECT 1 FROM tenant_members WHERE tenant_id=$1 AND user_id=$2 FOR SHARE`,
+        [tenantId,q.rows[0].actor_id]);
+      if(!m.rowCount)return {status:'ignored'};
+      await db.query(`
+        INSERT INTO im_user_bindings(tenant_id,account_id,user_id,external_user_id)
+        VALUES($1,$2,$3,$4)`,
+        [tenantId,accountId,q.rows[0].actor_id,event.externalActorId]);
+      await db.query('UPDATE im_binding_challenges SET consumed_at=now() WHERE id=$1',
+        [q.rows[0].id]);
+      return {status:'user-bound'};
+    }
+    if(event.route.kind!=='group')return {status:'ignored'};
+    const link=commandToken(event.text,'link');
+    if(link){
+      const q=await db.query<{id:string,actor_id:string,project_id:string}>(`
+        SELECT id,actor_id,project_id FROM im_binding_challenges
+        WHERE tenant_id=$1 AND account_id=$2 AND purpose='room'
+        AND code_hash=$3 AND consumed_at IS NULL AND expires_at>now()
+        FOR UPDATE`,[tenantId,accountId,hash(link)]);
+      if(!q.rows[0])return {status:'ignored'};
+      const linked=await db.query(`
+        SELECT 1 FROM im_user_bindings
+        WHERE tenant_id=$1 AND account_id=$2 AND user_id=$3
+          AND external_user_id=$4 AND active FOR SHARE`,
+        [tenantId,accountId,q.rows[0].actor_id,event.externalActorId]);
+      if(!linked.rowCount)return {status:'ignored'};
+      const access=await lockProjectAccess(db,q.rows[0].project_id,q.rows[0].actor_id);
+      assertProject(access.role,'members.manage');
+      await db.query(`
+        INSERT INTO im_room_bindings(tenant_id,account_id,project_id,external_chat_id)
+        VALUES($1,$2,$3,$4)`,[tenantId,accountId,
+        q.rows[0].project_id,event.route.externalConversationId]);
+      await audit(db,q.rows[0].project_id,q.rows[0].actor_id,
+        'im.room_bound',accountId);
+      await db.query('UPDATE im_binding_challenges SET consumed_at=now() WHERE id=$1',
+        [q.rows[0].id]);
+      return {status:'room-bound'};
+    }
+    const binding=await db.query<{project_id:string,user_id:string}>(`
+      SELECT room.project_id,person.user_id FROM im_room_bindings room
+      JOIN im_user_bindings person ON person.tenant_id=room.tenant_id
+        AND person.account_id=room.account_id
+        AND person.external_user_id=$3 AND person.active
+      WHERE room.tenant_id=$1 AND room.account_id=$2
+        AND room.external_chat_id=$4 AND room.active
+      FOR SHARE OF room,person`,
+      [tenantId,accountId,event.externalActorId,event.route.externalConversationId]);
+    if(!binding.rows[0])return {status:'ignored'};
+    const {project_id:projectId,user_id:userId}=binding.rows[0];
+    const access=await lockProjectAccess(db,projectId,userId);
+    assertProject(access.role,'message.write');
+    const nonce='im:'+hash(JSON.stringify([accountId,event.externalMessageId]));
+    const old=await db.query(`
+      SELECT id FROM im_inbox WHERE account_id=$1 AND external_message_id=$2`,
+      [accountId,event.externalMessageId]);
+    if(old.rowCount)return {status:'duplicate'};
+    const message=await insertMessage(db,{
+      projectId,authorId:userId,kind:'user',content:event.text,nonce,
+    });
+    if(!message)return {status:'duplicate'};
+    await db.query(`
+      INSERT INTO im_inbox
+      (tenant_id,account_id,external_message_id,external_user_id,project_id,user_id,message_id)
+      VALUES($1,$2,$3,$4,$5,$6,$7)`,
+      [tenantId,accountId,event.externalMessageId,event.externalActorId,
+        projectId,userId,message.id]);
+    await db.query(`
+      INSERT INTO outbox_events(project_id,kind,message_id)
+      VALUES($1,'message.created',$2)`,[projectId,message.id]);
+    await audit(db,projectId,userId,'message.created',message.id,{source:'wecom'});
+    return {status:'stored'};
+  });
+}
+);
   return re.exec(text)?.[1]??null;
 }
 type Acceptance={status:'ignored'|'user-bound'|'room-bound'|'stored'|'duplicate'};
