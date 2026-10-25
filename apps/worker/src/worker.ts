@@ -1,4 +1,5 @@
 import 'dotenv/config';
+import {WecomSupervisor} from '../../../packages/core/src/im/wecom-supervisor.ts';
 import { pool } from '../../../packages/core/src/db.ts';
 import {recordWorkerHeartbeat,type WorkerLane} from '../../../packages/core/src/operations/worker-heartbeat.ts';
 import { processEvents } from '../../../packages/core/src/conversation/ai-event-runner.ts';
@@ -8,6 +9,7 @@ import { processReports } from '../../../packages/core/src/reporting/period-runn
 // A slow or failed model call must never hold reminders or periodic reporting
 // behind it. Each lane has its own single-flight lock and independent retry.
 const inFlight = new Map<WorkerLane,Promise<void>>();
+const im=new WecomSupervisor();
 let stopping=false;
 let lastReportScanSlot=-1;
 
@@ -46,10 +48,16 @@ function scheduleTick():void{
 }
 console.log('ChatPM worker started: independent AI, reminder and reporting lanes.');
 const timer=setInterval(scheduleTick,15000);
+const imTimer=setInterval(()=>void im.synchronize().catch(()=>{
+  console.warn('IM channel reconciliation failed');
+}),60000);
+void im.synchronize().catch(()=>{console.warn('IM startup reconciliation failed');});
 async function shutdown(){
   if(stopping)return;
   stopping=true;
   clearInterval(timer);
+  clearInterval(imTimer);
+  await im.stop();
   await Promise.allSettled([...inFlight.values()]);
   await pool.end();
   if(process.connected)process.disconnect();
