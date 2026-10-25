@@ -57,6 +57,7 @@ export class WecomAdapter implements ChannelAdapter {
   readonly capabilities = WECOM_CAPABILITIES;
   private client: WSClient | null = null;
   private ready = false;
+  private readonly pending = new Set<Promise<void>>();
 
   constructor(private readonly options: WecomOptions) {
     if (!id(options.botId) || !options.secret || typeof options.accept !== 'function') {
@@ -82,9 +83,14 @@ export class WecomAdapter implements ChannelAdapter {
       const event = normalizeWecomText(frame, this.options.botId);
       if (!event) return;
       // SDK may redeliver; persistence, not an in-memory Set, is the idempotency authority.
-      void Promise.resolve().then(() => this.options.accept(event)).catch(() => {
+      const work = Promise.resolve().then(async () => {
+        if (this.client !== client || !this.ready) return;
+        await this.options.accept(event);
+      }).catch(() => {
         this.options.onError?.('wecom-inbound-persistence-failed');
       });
+      this.pending.add(work);
+      void work.finally(() => this.pending.delete(work));
     });
     try {
       client.connect(); // SDK reports authentication later.
@@ -100,6 +106,7 @@ export class WecomAdapter implements ChannelAdapter {
     this.client = null;
     this.ready = false;
     old?.disconnect();
+    await Promise.allSettled([...this.pending]);
   }
 
   async send(message: OutboundText): Promise<{ state: 'accepted' }> {
