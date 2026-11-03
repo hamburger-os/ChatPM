@@ -588,3 +588,11 @@
 **决定。** WecomSupervisor 使用直接 PostgreSQL 会话级 `pg_try_advisory_lock` 选举部署级唯一 IM 连接管理者；只有持锁进程加载已启用的 Bot。释放/断线时停止本进程的 SDK 连接并允许另一 Worker 在下一次协调时接管；投递意图仍由 `im_deliveries` 去重和限流。该锁明确要求数据库连接会话亲和性，不支持透明 transaction-pooling 代理。
 
 **未验收。** 真实多进程并发、数据库网络分区、Server Disconnect 与高可用切换、跨节点时间竞态和上线重试策略仍需专门故障演练；不能凭静态锁代码声称完整高可用。
+
+## ADR-092 · 依赖升级 PR 的文档门禁豁免（2026-11-02）
+
+**背景。** 原 `check-sync` 把根 `package.json` 的任何变化都当作产品行为，导致 Dependabot 的依赖版本 PR 必须提交与语义无关的三层文档才能合并，门禁把“依赖升级”和“运行行为变更”混为一谈。
+
+**决定。** 仓库根 `package.json` 仅 `dependencies`/`devDependencies`/`optionalDependencies`/`peerDependencies`/`overrides` 变化时视为依赖升级，不要求产品文档。分类比较的基线固定为 `git merge-base <base> <head>`，与三点 diff 的变更集合同源；`scripts`、`engines`、`version` 等任何非依赖字段变化，以及 `package.json` 新增、删除或无法读取时仍按产品变更处理并 fail closed。判断逻辑集中在 `tools/docs/change-classification.mjs`，由 `check-sync` 唯一调用，并纳入文档 CI 回归。
+
+**残余风险与复审。** 依赖新增、删除、替换和主版本升级同样被豁免，因为它们在清单层面无法与普通版本变化可靠区分；若某次依赖替换改变运行时或安全语义，仍须在 PR 中人工说明并按产品变更补齐文档。引入工作区 `package.json`、依赖协议变化或门禁被滥用时，重新收紧规则并更新本 ADR。
