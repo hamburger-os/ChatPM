@@ -19,6 +19,6 @@
 
 ## 实施规则
 - 修改架构之前先改 `docs/design/` 并在 [ADR](docs/design/decision-log.md) 留痕；未经审查不得把“设计中”改成“已批准”。
-- 代码变更和 `docs/ai/` + 对应 `docs/design/` 文档变更在**同一个 PR**；公共行为变更需同步中英文社区文档。
+- 代码变更和 `docs/ai/` + 对应 `docs/design/` 文档变更在**同一个 PR**；公共行为变更需同步中英文社区文档。仓库根 `package.json` 仅依赖字段变化除外，见[文档规则](.agents/rules/documentation.md)。
 - 必须在完成前运行 `node tools/docs/check-docs.mjs`；产品代码变更的 PR 还需运行 `node tools/docs/check-sync.mjs <base> <head>`。
 - TypeScript strict、单向模块依赖、并发与幂等测试、权限及越权测试是实施阶段验收门槛；仅汇报**实际执行**过的检查。
